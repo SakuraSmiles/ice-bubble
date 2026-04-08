@@ -418,7 +418,7 @@ ice-bubble-collector-openclaw/
 
 ### 🚧 阶段 2: 完善 (2-3 周)
 - [ ] FileCollector 实现
-- [ ] RedisAdapter 实现
+- [ ] RedisManager 实现
 - [ ] 策略管理器
 - [ ] 健康监控
 

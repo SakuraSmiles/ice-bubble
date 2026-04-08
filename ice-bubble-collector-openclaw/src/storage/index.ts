@@ -2,5 +2,5 @@
  * Storage Module
  */
 
-export * from './sqlite.js';
-export * from './redis.js';
+export * from './sqlite-manager.js';
+export * from './redis-manager.js';
