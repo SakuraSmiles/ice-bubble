@@ -2,6 +2,9 @@
  * OpenClaw Collector - Type Definitions
  */
 
+// ==================== OpenClaw 原始类型 ====================
+export * from './openclaw';
+
 // ==================== 采集模式 ====================
 export enum CollectionMode {
     WEBSOCKET_ONLY = 'WEBSOCKET_ONLY',
