@@ -5,7 +5,7 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/typescript-5.3-blue)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/ice-bubble/ice-bubble-collector-openclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/ice-bubble/ice-bubble-collector-openclaw/actions/workflows/ci.yml)
+[![CI](https://github.com/SakuraSmiles/ice-bubble/actions/workflows/ci.yml/badge.svg)](https://github.com/SakuraSmiles/ice-bubble/actions/workflows/ci.yml)
 
 ---
 
