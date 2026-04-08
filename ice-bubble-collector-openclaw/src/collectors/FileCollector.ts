@@ -22,9 +22,13 @@ import { BaseCollector } from './base.js';
 import { readJsonlFileIncremental } from '../utils/file-reader.js';
 import { buildSessionKeyFromPath } from '../utils/session-key-builder.js';
 import { convertOpenClawEvent } from '../converters/openclaw-to-unified.js';
-import { UnifiedMessage, Collector } from '../types/index.js';
+import { UnifiedMessage, Collector, SessionMessage } from '../types/index.js';
 import { OpenClawEvent } from '../types/openclaw.js';
 import { Logger } from '../utils/logger.js';
+import { DataValidator } from '../processors/DataValidator.js';
+import { Deduplicator } from '../processors/deduplicator.js';
+import { BatchWriter } from '../processors/BatchWriter.js';
+import { SQLiteManager } from '../storage/sqlite-manager.js';
 
 const logger = new Logger('FileCollector');
 
@@ -144,28 +148,31 @@ export interface FileCollectorConfig {
    */
   retryDelay?: number;
 
-  // ==================== 性能优化：批量事件发送 ====================
-  
-  /**
-   * 批量发送消息的条数阈值
-   * 达到此数量立即发送
-   * @default 100
-   */
-  eventBatchSize?: number;
+  // ==================== 处理层配置 ====================
 
   /**
-   * 批量发送消息的时间间隔（毫秒）
-   * 定时刷新缓冲区
-   * @default 100
+   * 数据库文件路径
+   * SQLite 数据库存储位置
    */
-  eventFlushInterval?: number;
+  dbPath: string;
 
   /**
-   * 文件读取流的缓冲区大小（字节）
-   * 优化文件 I/O 性能
-   * @default 65536 (64KB)
+   * 去重缓存大小
+   * @default 10000
    */
-  highWaterMark?: number;
+  deduplicationCacheSize?: number;
+
+  /**
+   * 批量写入大小
+   * @default 100
+   */
+  writerBatchSize?: number;
+
+  /**
+   * 批量写入刷新间隔（毫秒）
+   * @default 5000
+   */
+  writerFlushInterval?: number;
 }
 
 /**
@@ -233,9 +240,11 @@ export class FileCollector extends BaseCollector implements Collector {
   private fileProgress: Map<string, FileProgress> = new Map();
   private fileErrors: Map<string, FileError> = new Map();  // 任务3: 错误跟踪
   
-  // 性能优化：批量事件发送
-  private messageBuffer: UnifiedMessage[] = [];
-  private flushTimer: NodeJS.Timeout | null = null;
+  // 处理层组件
+  private sqliteManager: SQLiteManager;
+  private validator: DataValidator;
+  private deduplicator: Deduplicator;
+  private batchWriter: BatchWriter;
   
   private stats: CollectorStats = {
     totalFiles: 0,
@@ -270,14 +279,38 @@ export class FileCollector extends BaseCollector implements Collector {
       // 任务3: 异常恢复
       maxRetries: config.maxRetries ?? 3,
       retryDelay: config.retryDelay ?? 1000,
-      // 性能优化：批量事件发送
-      eventBatchSize: config.eventBatchSize ?? 100,
-      eventFlushInterval: config.eventFlushInterval ?? 100,
-      highWaterMark: config.highWaterMark ?? 64 * 1024  // 64KB
+      // 处理层配置
+      dbPath: config.dbPath,
+      deduplicationCacheSize: config.deduplicationCacheSize ?? 10000,
+      writerBatchSize: config.writerBatchSize ?? 100,
+      writerFlushInterval: config.writerFlushInterval ?? 5000
     };
+
+    // 初始化存储层
+    this.sqliteManager = new SQLiteManager();
+    
+    // 初始化处理层组件
+    this.validator = new DataValidator();
+    this.deduplicator = new Deduplicator({ cacheSize: this.config.deduplicationCacheSize });
+    this.batchWriter = new BatchWriter(this.sqliteManager, {
+      batchSize: this.config.writerBatchSize,
+      flushInterval: this.config.writerFlushInterval
+    });
+
+    // 监听 BatchWriter 事件
+    this.batchWriter.on('flush', ({ count }) => {
+      this.emit('batch:flush', { count });
+      logger.debug(`批量写入完成: ${count} 条消息`);
+    });
+
+    this.batchWriter.on('error', (error) => {
+      logger.error('BatchWriter 错误', error);
+      this.emit('error', error);
+    });
 
     logger.info('FileCollector 初始化', {
       数据目录: this.config.openclawDataDir,
+      数据库路径: this.config.dbPath,
       文件监听: this.config.enableWatch,
       扫描间隔: this.config.scanInterval,
       批量大小: this.config.batchSize,
@@ -286,9 +319,9 @@ export class FileCollector extends BaseCollector implements Collector {
       最大行长度: `${this.config.maxLineLength / 1024}KB`,
       监听预设: this.config.watchPreset,
       最大重试次数: this.config.maxRetries,
-      事件批量大小: this.config.eventBatchSize,
-      事件刷新间隔: `${this.config.eventFlushInterval}ms`,
-      流缓冲区: `${this.config.highWaterMark / 1024}KB`
+      去重缓存大小: this.config.deduplicationCacheSize,
+      写入批量大小: this.config.writerBatchSize,
+      写入刷新间隔: `${this.config.writerFlushInterval}ms`
     });
   }
 
@@ -311,8 +344,15 @@ export class FileCollector extends BaseCollector implements Collector {
       throw new Error(`OpenClaw 数据目录不存在: ${this.config.openclawDataDir}`);
     }
 
-    // 启动定时刷新器
-    this.startFlushTimer();
+    // 初始化数据库
+    await this.sqliteManager.init({
+      dbPath: this.config.dbPath,
+      walMode: true,
+      foreignKeys: true
+    });
+
+    // 启动 BatchWriter
+    this.batchWriter.start();
 
     // 初始扫描所有文件
     await this.scanAllFiles();
@@ -339,12 +379,6 @@ export class FileCollector extends BaseCollector implements Collector {
     logger.info('停止 FileCollector...');
     this.isRunning = false;
 
-    // 刷新剩余消息
-    await this.flushMessages();
-
-    // 停止定时刷新器
-    this.stopFlushTimer();
-
     // 停止文件监听
     if (this.watcher) {
       await this.watcher.close();
@@ -359,6 +393,12 @@ export class FileCollector extends BaseCollector implements Collector {
       logger.debug('定时扫描已停止');
     }
 
+    // 停止 BatchWriter（会自动刷新剩余消息）
+    await this.batchWriter.stop();
+
+    // 关闭数据库连接
+    await this.sqliteManager.close();
+
     logger.info('FileCollector 已停止', this.stats);
   }
 
@@ -367,74 +407,6 @@ export class FileCollector extends BaseCollector implements Collector {
    */
   getName(): string {
     return 'FileCollector';
-  }
-
-  // ==================== 性能优化：批量事件发送 ====================
-
-  /**
-   * 启动定时刷新器
-   */
-  private startFlushTimer(): void {
-    if (this.flushTimer) {
-      return;
-    }
-
-    this.flushTimer = setInterval(() => {
-      this.flushMessages().catch(error => {
-        logger.error('定时刷新消息失败', error as Error);
-      });
-    }, this.config.eventFlushInterval);
-
-    logger.debug(`启动定时刷新器，间隔: ${this.config.eventFlushInterval}ms`);
-  }
-
-  /**
-   * 停止定时刷新器
-   */
-  private stopFlushTimer(): void {
-    if (this.flushTimer) {
-      clearInterval(this.flushTimer);
-      this.flushTimer = null;
-      logger.debug('定时刷新器已停止');
-    }
-  }
-
-  /**
-   * 添加消息到缓冲区
-   * 
-   * @param message - 统一消息
-   */
-  private addMessageToBuffer(message: UnifiedMessage): void {
-    this.messageBuffer.push(message);
-
-    // 达到批量大小，立即刷新
-    if (this.messageBuffer.length >= this.config.eventBatchSize) {
-      this.flushMessages().catch(error => {
-        logger.error('批量刷新消息失败', error as Error);
-      });
-    }
-  }
-
-  /**
-   * 刷新消息缓冲区（批量发送）
-   */
-  private async flushMessages(): Promise<void> {
-    if (this.messageBuffer.length === 0) {
-      return;
-    }
-
-    const messages = [...this.messageBuffer];
-    this.messageBuffer = [];
-
-    logger.debug(`批量发送 ${messages.length} 条消息`);
-
-    // 发送批量消息事件
-    this.emit('messages', messages);
-
-    // 兼容性：同时发送单个消息事件
-    for (const message of messages) {
-      this.emit('message', message);
-    }
   }
 
   // ==================== 任务1: 文件大小验证 ====================
@@ -788,6 +760,44 @@ export class FileCollector extends BaseCollector implements Collector {
   // ==================== 文件处理 ====================
 
   /**
+   * 确保 session 存在于数据库中
+   *
+   * @param sessionKey - Session Key
+   */
+  private async ensureSession(sessionKey: string): Promise<void> {
+    // 解析 sessionKey: agent:{agentId}:{channel}:{accountId}:{type}:{peerId}
+    const parts = sessionKey.split(':');
+    if (parts.length !== 6 || parts[0] !== 'agent') {
+      logger.warn(`无效的 SessionKey 格式: ${sessionKey}`);
+      return;
+    }
+
+    const [, agentId, channel, accountId, sessionType, peerId] = parts;
+
+    // 检查 session 是否已存在
+    const existingSession = await this.sqliteManager.getSession(sessionKey);
+    if (existingSession) {
+      return;
+    }
+
+    // 创建新的 session
+    const session = {
+      sessionKey,
+      agentId,
+      channel,
+      accountId: accountId || undefined,
+      peerId: peerId || undefined,
+      guildId: sessionType === 'guild' ? peerId : undefined,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      messageCount: 0
+    };
+
+    await this.sqliteManager.upsertSession(session);
+    logger.debug(`创建 Session: ${sessionKey}`);
+  }
+
+  /**
    * 处理单个文件
    * 
    * @param filePath - 文件路径
@@ -824,6 +834,9 @@ export class FileCollector extends BaseCollector implements Collector {
     }
 
     logger.debug(`读取到 ${events.length} 个事件，起始行: ${startLine}，结束行: ${endLine}`);
+
+    // 确保 session 存在
+    await this.ensureSession(sessionKey);
 
     // 任务1: 行长度验证（过滤超长行）
     const validEvents: OpenClawEvent[] = [];
@@ -877,15 +890,50 @@ export class FileCollector extends BaseCollector implements Collector {
         try {
           this.stats.totalEvents++;
 
-          // 转换为 UnifiedMessage
+          // 步骤1: 转换为 UnifiedMessage
           const message = convertOpenClawEvent(event, sessionKey);
 
-          if (message) {
-            // 性能优化：添加到缓冲区而不是立即发送
-            this.addMessageToBuffer(message);
-            this.stats.successEvents++;
-            logger.debug(`缓存消息: ${message.id}`);
+          if (!message) {
+            logger.debug(`事件转换返回 null，跳过: ${event.id}`);
+            continue;
           }
+
+          // 步骤2: 数据验证 (DataValidator)
+          const validation = this.validator.validate(message);
+          if (!validation.valid) {
+            this.stats.failedEvents++;
+            this.emit('invalid', { message, errors: validation.errors });
+            logger.warn(`消息验证失败: ${message.id}`, { errors: validation.errors });
+            continue;
+          }
+
+          // 步骤3: 去重检查 (Deduplicator)
+          if (this.deduplicator.isDuplicate(message.id)) {
+            this.emit('duplicate', { messageId: message.id });
+            logger.debug(`重复消息，跳过: ${message.id}`);
+            continue;
+          }
+          this.deduplicator.markAsProcessed(message.id);
+
+          // 步骤4: 转换为 SessionMessage 格式
+          const sessionMessage: SessionMessage = {
+            sessionKey: message.sessionKey,
+            messageType: message.messageType,
+            content: message.content,
+            model: message.model,
+            tokensInput: message.tokens?.input,
+            tokensOutput: message.tokens?.output,
+            toolsJson: message.tools ? JSON.stringify(message.tools) : undefined,
+            timestamp: message.timestamp
+          };
+
+          // 步骤5: 批量写入 (BatchWriter)
+          this.batchWriter.addMessage(sessionMessage);
+          this.stats.successEvents++;
+
+          // 发送单条消息事件（保持兼容性）
+          this.emit('message', message);
+
         } catch (error) {
           this.stats.failedEvents++;
           logger.error(`事件处理失败: ${event.id}`, error as Error);

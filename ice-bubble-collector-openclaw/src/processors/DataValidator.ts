@@ -260,16 +260,16 @@ export class DataValidator {
             if (tool.name.length === 0) {
                 return `tools[${i}].name: 长度不能为空`;
             }
-            
-            // input 是必填字段
-            if (tool.input === undefined || tool.input === null) {
-                return `tools[${i}].input: 字段必填`;
+
+            // input 字段验证
+            // 对于 ToolResult 消息,input 可以是 undefined
+            // 对于 ToolCall 消息,input 必须是对象
+            if (tool.input !== undefined && tool.input !== null) {
+                if (typeof tool.input !== 'object') {
+                    return `tools[${i}].input: 必须为对象类型`;
+                }
             }
-            
-            if (typeof tool.input !== 'object' || tool.input === null) {
-                return `tools[${i}].input: 必须为对象类型`;
-            }
-            
+
             // result 和 durationMs 是可选字段，如果存在则验证类型
             if (tool.result !== undefined && tool.result !== null && typeof tool.result !== 'object') {
                 return `tools[${i}].result: 必须为对象类型`;

@@ -29,6 +29,9 @@ describe('FileCollector', () => {
     agentsDir = path.join(tempDir, 'agents');
     fs.mkdirSync(agentsDir, { recursive: true });
 
+    // 创建临时数据库文件
+    const dbPath = path.join(tempDir, 'test.db');
+
     // 重置消息和错误记录
     messages.length = 0;
     errors.length = 0;
@@ -36,6 +39,7 @@ describe('FileCollector', () => {
     // 创建采集器实例
     collector = new FileCollector({
       openclawDataDir: tempDir,
+      dbPath: dbPath,
       enableWatch: false, // 测试时不启用监听
       batchSize: 10,
       enableIncremental: true,
@@ -72,8 +76,10 @@ describe('FileCollector', () => {
     });
 
     it('应该使用默认配置', () => {
+      const dbPath = path.join(tempDir, 'test2.db');
       const c = new FileCollector({
         openclawDataDir: tempDir,
+        dbPath: dbPath,
       });
 
       // 默认配置测试
@@ -82,8 +88,10 @@ describe('FileCollector', () => {
 
     it('应该在数据目录不存在时抛出错误', async () => {
       const nonExistDir = path.join(tempDir, 'not-exist');
+      const dbPath = path.join(tempDir, 'test3.db');
       const c = new FileCollector({
         openclawDataDir: nonExistDir,
+        dbPath: dbPath,
       });
 
       await expect(c.start()).rejects.toThrow('OpenClaw 数据目录不存在');
@@ -522,8 +530,10 @@ describe('FileCollector', () => {
       messages.length = 0;
 
       // 第二次启动（创建新实例）
+      const dbPath2 = path.join(tempDir, 'test4.db');
       const collector2 = new FileCollector({
         openclawDataDir: tempDir,
+        dbPath: dbPath2,
         enableWatch: false,
       });
       collector2.on('message', (msg: UnifiedMessage) => {
@@ -593,8 +603,10 @@ describe('FileCollector', () => {
       await collector.stop();
       
       // 创建新实例重新启动
+      const dbPath2 = path.join(tempDir, 'test5.db');
       const collector2 = new FileCollector({
         openclawDataDir: tempDir,
+        dbPath: dbPath2,
         enableWatch: false,
       });
       await collector2.start();

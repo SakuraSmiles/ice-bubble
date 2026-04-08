@@ -22,6 +22,9 @@ describe('FileCollector 集成测试', () => {
   const messages: UnifiedMessage[] = [];
   const errors: Error[] = [];
   const statusUpdates: any[] = [];
+  const invalidMessages: Array<{ message: UnifiedMessage; errors: string[] }> = [];
+  const duplicates: string[] = [];
+  const batchFlushes: number[] = [];
 
   beforeEach(async () => {
     // 创建临时目录结构
@@ -33,13 +36,21 @@ describe('FileCollector 集成测试', () => {
     messages.length = 0;
     errors.length = 0;
     statusUpdates.length = 0;
+    invalidMessages.length = 0;
+    duplicates.length = 0;
+    batchFlushes.length = 0;
 
     // 创建采集器实例（启用监听）
+    // ✅ 添加 dbPath 必需参数
     collector = new FileCollector({
       openclawDataDir: tempDir,
+      dbPath: path.join(tempDir, 'test.db'),  // ✅ 必需参数
       enableWatch: true,
       batchSize: 10,
       enableIncremental: true,
+      deduplicationCacheSize: 10000,  // 去重缓存大小
+      writerBatchSize: 100,           // 写入批量大小
+      writerFlushInterval: 5000       // 写入刷新间隔
     });
 
     // 监听事件
@@ -54,11 +65,25 @@ describe('FileCollector 集成测试', () => {
     collector.on('status', (stats) => {
       statusUpdates.push(stats);
     });
+
+    // ✅ 新增事件监听器
+    collector.on('invalid', (event: { message: UnifiedMessage; errors: string[] }) => {
+      invalidMessages.push(event);
+    });
+
+    collector.on('duplicate', (event: { messageId: string }) => {
+      duplicates.push(event.messageId);
+    });
+
+    collector.on('batch:flush', (event: { count: number }) => {
+      batchFlushes.push(event.count);
+    });
   });
 
   afterEach(async () => {
     // 停止采集器
     if (collector) {
+      collector.removeAllListeners();  // ✅ 清理所有事件监听器
       await collector.stop();
     }
 
@@ -78,13 +103,15 @@ describe('FileCollector 集成测试', () => {
       const filePath = path.join(agentDir, 'test-session.jsonl');
       
       // 创建包含所有类型消息的数据
+      // ✅ 使用当前时间戳（避免未来时间验证失败）
+      const now = Date.now();
       const lines = [
         // Session 事件
         JSON.stringify({
           type: 'session',
           id: 'session-1',
           parentId: null,
-          timestamp: '2026-04-08T10:00:00.000Z',
+          timestamp: new Date(now - 3000).toISOString(),  // 3秒前
           version: 1,
           cwd: '/test',
         }),
@@ -93,11 +120,11 @@ describe('FileCollector 集成测试', () => {
           type: 'message',
           id: 'msg-1',
           parentId: null,
-          timestamp: '2026-04-08T10:01:00.000Z',
+          timestamp: new Date(now - 2000).toISOString(),  // 2秒前
           message: {
             role: 'user',
             content: [{ type: 'text', text: '帮我分析错误' }],
-            timestamp: Date.now(),
+            timestamp: now - 2000,
           },
         }),
         // Agent 消息（带工具调用）
@@ -105,7 +132,7 @@ describe('FileCollector 集成测试', () => {
           type: 'message',
           id: 'msg-2',
           parentId: 'msg-1',
-          timestamp: '2026-04-08T10:02:00.000Z',
+          timestamp: new Date(now - 1000).toISOString(),  // 1秒前
           message: {
             role: 'assistant',
             content: [
@@ -124,7 +151,7 @@ describe('FileCollector 集成测试', () => {
               cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 },
             },
             stopReason: 'toolUse',
-            timestamp: Date.now(),
+            timestamp: now - 1000,
           },
         }),
         // ToolResult 消息
@@ -132,7 +159,7 @@ describe('FileCollector 集成测试', () => {
           type: 'message',
           id: 'msg-3',
           parentId: 'msg-2',
-          timestamp: '2026-04-08T10:03:00.000Z',
+          timestamp: new Date(now - 500).toISOString(),  // 0.5秒前（避免边界问题）
           message: {
             role: 'toolResult',
             toolCallId: 'call-1',
@@ -143,7 +170,7 @@ describe('FileCollector 集成测试', () => {
               exitCode: 0,
               durationMs: 150,
             },
-            timestamp: Date.now(),
+            timestamp: now - 500,  // 同样修改
           },
         }),
       ];
@@ -392,6 +419,7 @@ describe('FileCollector 集成测试', () => {
       // 第二次读取（应该只读取新增部分）
       const collector2 = new FileCollector({
         openclawDataDir: tempDir,
+        dbPath: path.join(tempDir, 'test.db'),  // ✅ 必需参数
         enableWatch: false,
         enableIncremental: true,
       });
@@ -615,6 +643,139 @@ describe('FileCollector 集成测试', () => {
   });
 
   // ==================== 性能基准测试 ====================
+
+  describe('去重和验证测试', () => {
+    it('应该正确过滤重复消息', async () => {
+      // 创建测试文件
+      const agentDir = path.join(agentsDir, 'dev', 'sessions');
+      fs.mkdirSync(agentDir, { recursive: true });
+      const filePath = path.join(agentDir, 'duplicate-test.jsonl');
+      
+      // 创建包含重复消息的数据
+      const lines: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        lines.push(JSON.stringify({
+          type: 'message',
+          id: `msg-${i % 5}`,  // 只有 5 个唯一 ID，重复 2 次
+          parentId: null,
+          timestamp: new Date().toISOString(),
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: `Message ${i}` }],
+            timestamp: Date.now(),
+          },
+        }));
+      }
+      fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+
+      // 启动采集器
+      await collector.start();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // 验证去重效果
+      expect(messages.length).toBe(5);  // 只保留 5 条唯一消息
+      expect(duplicates.length).toBe(5);  // 检测到 5 个重复
+      
+      await collector.stop();
+    });
+
+    it('应该正确过滤无效消息', async () => {
+      // 创建测试文件
+      const agentDir = path.join(agentsDir, 'dev', 'sessions');
+      fs.mkdirSync(agentDir, { recursive: true });
+      const filePath = path.join(agentDir, 'invalid-test.jsonl');
+      
+      // 创建包含无效消息的数据
+      const lines: string[] = [
+        // 有效消息
+        JSON.stringify({
+          type: 'message',
+          id: 'msg-valid',
+          parentId: null,
+          timestamp: new Date().toISOString(),
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: 'Valid message' }],
+            timestamp: Date.now(),
+          },
+        }),
+        // 无效消息：空 ID
+        JSON.stringify({
+          type: 'message',
+          id: '',  // ❌ 无效
+          parentId: null,
+          timestamp: new Date().toISOString(),
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: 'Invalid message' }],
+            timestamp: Date.now(),
+          },
+        }),
+        // 无效消息：未来时间戳
+        JSON.stringify({
+          type: 'message',
+          id: 'msg-future',
+          parentId: null,
+          timestamp: new Date(Date.now() + 120000).toISOString(),  // ❌ 未来时间
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: 'Future message' }],
+            timestamp: Date.now() + 120000,
+          },
+        }),
+      ];
+      fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+
+      // 启动采集器
+      await collector.start();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // 验证结果
+      expect(messages.length).toBe(1);  // 只有 1 条有效消息
+      expect(invalidMessages.length).toBe(2);  // 2 条无效消息
+      
+      // 验证错误信息
+      expect(invalidMessages[0].errors.length).toBeGreaterThan(0);
+      expect(invalidMessages[1].errors.length).toBeGreaterThan(0);
+      
+      await collector.stop();
+    });
+
+    it('应该批量写入数据库', async () => {
+      // 创建测试文件
+      const agentDir = path.join(agentsDir, 'dev', 'sessions');
+      fs.mkdirSync(agentDir, { recursive: true });
+      const filePath = path.join(agentDir, 'batch-test.jsonl');
+      
+      // 创建 150 条消息（触发批量写入）
+      const lines: string[] = [];
+      for (let i = 0; i < 150; i++) {
+        lines.push(JSON.stringify({
+          type: 'message',
+          id: `msg-${i}`,
+          parentId: null,
+          timestamp: new Date().toISOString(),
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: `Message ${i}` }],
+            timestamp: Date.now(),
+          },
+        }));
+      }
+      fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+
+      // 启动采集器
+      await collector.start();
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // 验证批量写入
+      expect(messages.length).toBe(150);
+      expect(batchFlushes.length).toBeGreaterThan(0);  // 至少触发一次批量写入
+      expect(batchFlushes.reduce((a, b) => a + b, 0)).toBe(150);  // 总数正确
+      
+      await collector.stop();
+    });
+  });
 
   describe('性能基准测试', () => {
     it('应该快速处理小文件（< 100 行）', async () => {
