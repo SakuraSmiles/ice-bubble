@@ -136,3 +136,33 @@ export interface HTTPConfig {
     fullSync: string; // cron expression
     incrementalQuery: boolean;
 }
+
+// ==================== SQLite 配置 ====================
+export interface SQLiteManagerConfig {
+    /**
+     * 数据库文件路径
+     * @example './data/collector.db'
+     */
+    dbPath: string;
+
+    /**
+     * 是否启用 WAL 模式
+     * @default true
+     */
+    walMode?: boolean;
+
+    /**
+     * 是否启用外键约束
+     * @default true
+     */
+    foreignKeys?: boolean;
+
+    /**
+     * 自动清理配置
+     */
+    autoClean?: {
+        enabled: boolean;
+        daysToKeep: number; // 保留天数
+        schedule: string; // cron 表达式
+    };
+}
