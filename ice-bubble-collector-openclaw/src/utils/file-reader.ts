@@ -11,10 +11,40 @@ import { Logger } from './logger';
 
 const logger = new Logger('FileReader');
 
+// BOM 字符的 Buffer 表示（UTF-8 with BOM: EF BB BF）
+const BOM_BUFFER = Buffer.from([0xEF, 0xBB, 0xBF]);
+
+/**
+ * 检查并移除 BOM 字符
+ * 
+ * 仅在文件开头检查一次，后续读取不再处理
+ * 
+ * @param chunk - 文件流数据块
+ * @param bomChecked - 是否已检查过 BOM
+ * @returns 处理后的数据块
+ */
+function checkAndRemoveBom(chunk: Buffer, bomChecked: boolean): { buffer: Buffer; checked: boolean } {
+  // 如果已检查过 BOM，直接返回原数据
+  if (bomChecked) {
+    return { buffer: chunk, checked: true };
+  }
+
+  // 检查数据块是否以 BOM 开头
+  if (chunk.length >= 3 && chunk.compare(BOM_BUFFER, 0, 3, 0, 3) === 0) {
+    logger.debug('检测到 BOM 字符，已移除');
+    // 移除前 3 个字节（BOM）
+    return { buffer: chunk.slice(3), checked: true };
+  }
+
+  // 没有 BOM，标记为已检查
+  return { buffer: chunk, checked: true };
+}
+
 /**
  * 读取 .jsonl 文件,返回 OpenClaw 事件数组
  * 
  * @param filePath - .jsonl 文件路径
+ * @param options - 可选配置
  * @returns OpenClaw 事件数组
  * @throws 文件不存在或格式错误时抛出异常
  * 
@@ -22,7 +52,10 @@ const logger = new Logger('FileReader');
  * const events = await readJsonlFile('/path/to/session.jsonl');
  * console.log(`读取了 ${events.length} 个事件`);
  */
-export async function readJsonlFile(filePath: string): Promise<OpenClawEvent[]> {
+export async function readJsonlFile(
+  filePath: string,
+  options?: { highWaterMark?: number }
+): Promise<OpenClawEvent[]> {
   logger.debug(`开始读取文件: ${filePath}`);
 
   // 检查文件是否存在
@@ -33,11 +66,34 @@ export async function readJsonlFile(filePath: string): Promise<OpenClawEvent[]> 
   const events: OpenClawEvent[] = [];
   let lineCount = 0;
   let errorCount = 0;
+  let bomChecked = false;
 
   return new Promise((resolve, reject) => {
-    const fileStream = fs.createReadStream(filePath, { encoding: 'utf-8' });
+    const fileStream = fs.createReadStream(filePath, {
+      encoding: 'utf-8',
+      highWaterMark: options?.highWaterMark ?? 64 * 1024 // 默认 64KB
+    });
+
+    // 使用 Transform 流处理 BOM
+    let isFirstChunk = true;
+    const processedStream = fileStream.pipe(
+      new (require('stream').Transform)({
+        transform(chunk: Buffer, encoding: string, callback: Function) {
+          // 仅在第一个数据块检查 BOM
+          if (isFirstChunk) {
+            const result = checkAndRemoveBom(chunk, bomChecked);
+            bomChecked = result.checked;
+            isFirstChunk = false;
+            callback(null, result.buffer);
+          } else {
+            callback(null, chunk);
+          }
+        }
+      })
+    );
+
     const rl = readline.createInterface({
-      input: fileStream,
+      input: processedStream,
       crlfDelay: Infinity
     });
 
@@ -81,6 +137,7 @@ export async function readJsonlFile(filePath: string): Promise<OpenClawEvent[]> 
  * 
  * @param filePath - .jsonl 文件路径
  * @param startLine - 起始行号(从 0 开始)
+ * @param options - 可选配置
  * @returns 事件数组和结束行号
  * 
  * @example
@@ -93,7 +150,8 @@ export async function readJsonlFile(filePath: string): Promise<OpenClawEvent[]> 
  */
 export async function readJsonlFileIncremental(
   filePath: string, 
-  startLine: number
+  startLine: number,
+  options?: { highWaterMark?: number }
 ): Promise<{ events: OpenClawEvent[], endLine: number }> {
   logger.debug(`增量读取文件: ${filePath}, 起始行: ${startLine}`);
 
@@ -110,11 +168,34 @@ export async function readJsonlFileIncremental(
   const events: OpenClawEvent[] = [];
   let currentLine = 0;
   let errorCount = 0;
+  let bomChecked = false;
 
   return new Promise((resolve, reject) => {
-    const fileStream = fs.createReadStream(filePath, { encoding: 'utf-8' });
+    const fileStream = fs.createReadStream(filePath, {
+      encoding: 'utf-8',
+      highWaterMark: options?.highWaterMark ?? 64 * 1024 // 默认 64KB
+    });
+
+    // 使用 Transform 流处理 BOM（仅在 startLine=0 时需要检查）
+    let isFirstChunk = startLine === 0;
+    const processedStream = fileStream.pipe(
+      new (require('stream').Transform)({
+        transform(chunk: Buffer, encoding: string, callback: Function) {
+          // 仅在第一个数据块检查 BOM（且从第 0 行开始读取）
+          if (isFirstChunk && startLine === 0) {
+            const result = checkAndRemoveBom(chunk, bomChecked);
+            bomChecked = result.checked;
+            isFirstChunk = false;
+            callback(null, result.buffer);
+          } else {
+            callback(null, chunk);
+          }
+        }
+      })
+    );
+
     const rl = readline.createInterface({
-      input: fileStream,
+      input: processedStream,
       crlfDelay: Infinity
     });
 
@@ -133,9 +214,8 @@ export async function readJsonlFileIncremental(
       }
 
       try {
-        // 移除 BOM 字符（Windows UTF-8 with BOM）
-        const cleanLine = line.replace(/^\uFEFF/, '');
-        const event = JSON.parse(cleanLine) as OpenClawEvent;
+        // BOM 已在流层面处理，无需再移除
+        const event = JSON.parse(line) as OpenClawEvent;
         events.push(event);
       } catch (error) {
         errorCount++;
@@ -179,7 +259,14 @@ export function readJsonlFileSync(filePath: string): OpenClawEvent[] {
     throw new Error(`文件不存在: ${filePath}`);
   }
 
-  const content = fs.readFileSync(filePath, 'utf-8');
+  let content = fs.readFileSync(filePath, 'utf-8');
+  
+  // 移除 BOM（如果存在）
+  if (content.charCodeAt(0) === 0xFEFF) {
+    logger.debug('检测到 BOM 字符，已移除');
+    content = content.slice(1);
+  }
+
   const lines = content.split('\n');
   const events: OpenClawEvent[] = [];
 

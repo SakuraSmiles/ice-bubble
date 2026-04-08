@@ -28,6 +28,37 @@ import { Logger } from '../utils/logger.js';
 
 const logger = new Logger('FileCollector');
 
+// ==================== 预设配置 ====================
+
+/**
+ * 本地文件系统监听配置
+ */
+const LOCAL_WATCH_OPTIONS: chokidar.WatchOptions = {
+  persistent: true,
+  ignoreInitial: false,
+  awaitWriteFinish: {
+    stabilityThreshold: 2000,
+    pollInterval: 100
+  },
+  usePolling: false,
+  atomic: true
+};
+
+/**
+ * 网络共享文件系统监听配置
+ */
+const NETWORK_WATCH_OPTIONS: chokidar.WatchOptions = {
+  persistent: true,
+  ignoreInitial: false,
+  usePolling: true,
+  interval: 1000,
+  binaryInterval: 1000,
+  awaitWriteFinish: {
+    stabilityThreshold: 3000,
+    pollInterval: 500
+  }
+};
+
 // ==================== 配置接口 ====================
 
 /**
@@ -63,6 +94,78 @@ export interface FileCollectorConfig {
    * @default true
    */
   enableIncremental?: boolean;
+
+  // ==================== 任务1: 文件大小限制和保护 ====================
+  
+  /**
+   * 最大文件大小（字节）
+   * 超过此大小的文件将被跳过并记录警告
+   * @default 104857600 (100MB)
+   */
+  maxFileSize?: number;
+
+  /**
+   * 最大单行长度（字节）
+   * 超过此长度的行将被跳过并记录警告
+   * @default 1048576 (1MB)
+   */
+  maxLineLength?: number;
+
+  // ==================== 任务2: 文件监听配置参数化 ====================
+  
+  /**
+   * 文件监听选项（chokidar 配置）
+   * 支持预设配置或自定义配置
+   */
+  watchOptions?: chokidar.WatchOptions;
+
+  /**
+   * 监听环境预设
+   * - 'local': 本地文件系统（默认）
+   * - 'network': 网络共享/NFS
+   * - 'custom': 使用 watchOptions 自定义
+   * @default 'local'
+   */
+  watchPreset?: 'local' | 'network' | 'custom';
+
+  // ==================== 任务3: 异常恢复机制 ====================
+  
+  /**
+   * 最大重试次数
+   * 文件读取失败时的最大重试次数
+   * @default 3
+   */
+  maxRetries?: number;
+
+  /**
+   * 重试延迟（毫秒）
+   * 使用指数退避策略：delay * 2^retryCount
+   * @default 1000
+   */
+  retryDelay?: number;
+
+  // ==================== 性能优化：批量事件发送 ====================
+  
+  /**
+   * 批量发送消息的条数阈值
+   * 达到此数量立即发送
+   * @default 100
+   */
+  eventBatchSize?: number;
+
+  /**
+   * 批量发送消息的时间间隔（毫秒）
+   * 定时刷新缓冲区
+   * @default 100
+   */
+  eventFlushInterval?: number;
+
+  /**
+   * 文件读取流的缓冲区大小（字节）
+   * 优化文件 I/O 性能
+   * @default 65536 (64KB)
+   */
+  highWaterMark?: number;
 }
 
 /**
@@ -80,9 +183,21 @@ interface FileProgress {
 interface CollectorStats {
   totalFiles: number;
   processedFiles: number;
+  skippedFiles: number;  // 任务1: 因大小限制跳过的文件
   totalEvents: number;
   successEvents: number;
   failedEvents: number;
+  retriedEvents: number;  // 任务3: 重试次数
+}
+
+/**
+ * 错误信息（任务3: 用于重试机制）
+ */
+interface FileError {
+  filePath: string;
+  error: Error;
+  retryCount: number;
+  lastRetryAt: number;
 }
 
 // ==================== FileCollector 类 ====================
@@ -116,12 +231,20 @@ export class FileCollector extends BaseCollector implements Collector {
   private watcher: chokidar.FSWatcher | null = null;
   private scanTimer: NodeJS.Timeout | null = null;
   private fileProgress: Map<string, FileProgress> = new Map();
+  private fileErrors: Map<string, FileError> = new Map();  // 任务3: 错误跟踪
+  
+  // 性能优化：批量事件发送
+  private messageBuffer: UnifiedMessage[] = [];
+  private flushTimer: NodeJS.Timeout | null = null;
+  
   private stats: CollectorStats = {
     totalFiles: 0,
     processedFiles: 0,
+    skippedFiles: 0,
     totalEvents: 0,
     successEvents: 0,
-    failedEvents: 0
+    failedEvents: 0,
+    retriedEvents: 0
   };
   private isRunning = false;
 
@@ -137,7 +260,20 @@ export class FileCollector extends BaseCollector implements Collector {
       enableWatch: config.enableWatch ?? true,
       scanInterval: config.scanInterval ?? 5000,
       batchSize: config.batchSize ?? 100,
-      enableIncremental: config.enableIncremental ?? true
+      enableIncremental: config.enableIncremental ?? true,
+      // 任务1: 文件大小限制
+      maxFileSize: config.maxFileSize ?? 100 * 1024 * 1024, // 100MB
+      maxLineLength: config.maxLineLength ?? 1024 * 1024,   // 1MB
+      // 任务2: 文件监听配置
+      watchOptions: config.watchOptions ?? {},
+      watchPreset: config.watchPreset ?? 'local',
+      // 任务3: 异常恢复
+      maxRetries: config.maxRetries ?? 3,
+      retryDelay: config.retryDelay ?? 1000,
+      // 性能优化：批量事件发送
+      eventBatchSize: config.eventBatchSize ?? 100,
+      eventFlushInterval: config.eventFlushInterval ?? 100,
+      highWaterMark: config.highWaterMark ?? 64 * 1024  // 64KB
     };
 
     logger.info('FileCollector 初始化', {
@@ -145,7 +281,14 @@ export class FileCollector extends BaseCollector implements Collector {
       文件监听: this.config.enableWatch,
       扫描间隔: this.config.scanInterval,
       批量大小: this.config.batchSize,
-      增量读取: this.config.enableIncremental
+      增量读取: this.config.enableIncremental,
+      最大文件大小: `${this.config.maxFileSize / 1024 / 1024}MB`,
+      最大行长度: `${this.config.maxLineLength / 1024}KB`,
+      监听预设: this.config.watchPreset,
+      最大重试次数: this.config.maxRetries,
+      事件批量大小: this.config.eventBatchSize,
+      事件刷新间隔: `${this.config.eventFlushInterval}ms`,
+      流缓冲区: `${this.config.highWaterMark / 1024}KB`
     });
   }
 
@@ -167,6 +310,9 @@ export class FileCollector extends BaseCollector implements Collector {
     if (!fs.existsSync(this.config.openclawDataDir)) {
       throw new Error(`OpenClaw 数据目录不存在: ${this.config.openclawDataDir}`);
     }
+
+    // 启动定时刷新器
+    this.startFlushTimer();
 
     // 初始扫描所有文件
     await this.scanAllFiles();
@@ -193,6 +339,12 @@ export class FileCollector extends BaseCollector implements Collector {
     logger.info('停止 FileCollector...');
     this.isRunning = false;
 
+    // 刷新剩余消息
+    await this.flushMessages();
+
+    // 停止定时刷新器
+    this.stopFlushTimer();
+
     // 停止文件监听
     if (this.watcher) {
       await this.watcher.close();
@@ -215,6 +367,215 @@ export class FileCollector extends BaseCollector implements Collector {
    */
   getName(): string {
     return 'FileCollector';
+  }
+
+  // ==================== 性能优化：批量事件发送 ====================
+
+  /**
+   * 启动定时刷新器
+   */
+  private startFlushTimer(): void {
+    if (this.flushTimer) {
+      return;
+    }
+
+    this.flushTimer = setInterval(() => {
+      this.flushMessages().catch(error => {
+        logger.error('定时刷新消息失败', error as Error);
+      });
+    }, this.config.eventFlushInterval);
+
+    logger.debug(`启动定时刷新器，间隔: ${this.config.eventFlushInterval}ms`);
+  }
+
+  /**
+   * 停止定时刷新器
+   */
+  private stopFlushTimer(): void {
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+      logger.debug('定时刷新器已停止');
+    }
+  }
+
+  /**
+   * 添加消息到缓冲区
+   * 
+   * @param message - 统一消息
+   */
+  private addMessageToBuffer(message: UnifiedMessage): void {
+    this.messageBuffer.push(message);
+
+    // 达到批量大小，立即刷新
+    if (this.messageBuffer.length >= this.config.eventBatchSize) {
+      this.flushMessages().catch(error => {
+        logger.error('批量刷新消息失败', error as Error);
+      });
+    }
+  }
+
+  /**
+   * 刷新消息缓冲区（批量发送）
+   */
+  private async flushMessages(): Promise<void> {
+    if (this.messageBuffer.length === 0) {
+      return;
+    }
+
+    const messages = [...this.messageBuffer];
+    this.messageBuffer = [];
+
+    logger.debug(`批量发送 ${messages.length} 条消息`);
+
+    // 发送批量消息事件
+    this.emit('messages', messages);
+
+    // 兼容性：同时发送单个消息事件
+    for (const message of messages) {
+      this.emit('message', message);
+    }
+  }
+
+  // ==================== 任务1: 文件大小验证 ====================
+
+  /**
+   * 验证文件大小是否合法
+   * 
+   * @param filePath - 文件路径
+   * @returns true: 合法, false: 文件过大
+   */
+  private validateFile(filePath: string): boolean {
+    try {
+      const stats = fs.statSync(filePath);
+      const fileSize = stats.size;
+
+      if (fileSize > this.config.maxFileSize) {
+        logger.warn(
+          `文件大小超出限制，跳过处理: ${filePath}`,
+          {
+            文件大小: `${(fileSize / 1024 / 1024).toFixed(2)}MB`,
+            限制大小: `${(this.config.maxFileSize / 1024 / 1024).toFixed(2)}MB`
+          }
+        );
+        this.stats.skippedFiles++;
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logger.error(`文件状态读取失败: ${filePath}`, error as Error);
+      return false;
+    }
+  }
+
+  /**
+   * 验证单行长度是否合法
+   * 
+   * @param line - 单行内容
+   * @param lineNumber - 行号
+   * @param filePath - 文件路径（用于日志）
+   * @returns true: 合法, false: 行过长
+   */
+  private validateLine(line: string, lineNumber: number, filePath: string): boolean {
+    const lineLength = Buffer.byteLength(line, 'utf-8');
+
+    if (lineLength > this.config.maxLineLength) {
+      logger.warn(
+        `行长度超出限制，跳过此行`,
+        {
+          文件: filePath,
+          行号: lineNumber,
+          行长度: `${(lineLength / 1024).toFixed(2)}KB`,
+          限制长度: `${(this.config.maxLineLength / 1024).toFixed(2)}KB`
+        }
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  // ==================== 任务3: 异常恢复机制 ====================
+
+  /**
+   * 处理文件错误（带重试机制）
+   * 
+   * @param filePath - 文件路径
+   * @param error - 错误对象
+   * @param operation - 操作函数
+   */
+  private async handleFileError(
+    filePath: string,
+    error: Error,
+    operation: () => Promise<void>
+  ): Promise<void> {
+    const existingError = this.fileErrors.get(filePath);
+    const retryCount = existingError ? existingError.retryCount + 1 : 1;
+
+    logger.warn(
+      `文件处理失败，准备重试`,
+      {
+        文件: filePath,
+        重试次数: `${retryCount}/${this.config.maxRetries}`,
+        错误: error.message
+      }
+    );
+
+    // 记录错误信息
+    this.fileErrors.set(filePath, {
+      filePath,
+      error,
+      retryCount,
+      lastRetryAt: Date.now()
+    });
+
+    // 检查是否达到最大重试次数
+    if (retryCount >= this.config.maxRetries) {
+      logger.error(
+        `文件处理失败，已达到最大重试次数`,
+        {
+          文件: filePath,
+          重试次数: retryCount,
+          错误: error.message
+        }
+      );
+      
+      // 发送错误事件
+      this.emit('error', new Error(
+        `文件处理失败（已重试 ${retryCount} 次）: ${filePath} - ${error.message}`
+      ));
+      
+      // 移除错误记录
+      this.fileErrors.delete(filePath);
+      return;
+    }
+
+    // 指数退避延迟
+    const delay = this.config.retryDelay * Math.pow(2, retryCount - 1);
+    await this.sleep(delay);
+
+    // 重试操作
+    try {
+      this.stats.retriedEvents++;
+      await operation();
+      
+      // 重试成功，清除错误记录
+      this.fileErrors.delete(filePath);
+      logger.info(`文件处理重试成功: ${filePath}`, { 重试次数: retryCount });
+    } catch (retryError) {
+      // 递归重试
+      await this.handleFileError(filePath, retryError as Error, operation);
+    }
+  }
+
+  /**
+   * 延迟方法
+   * 
+   * @param ms - 毫秒数
+   */
+  private async sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // ==================== 文件扫描 ====================
@@ -248,11 +609,21 @@ export class FileCollector extends BaseCollector implements Collector {
     // 处理每个文件
     for (const filePath of files) {
       try {
+        // 任务1: 文件大小验证
+        if (!this.validateFile(filePath)) {
+          continue;
+        }
+
         await this.processFile(filePath, true);
         this.stats.processedFiles++;
       } catch (error) {
         logger.error(`文件处理失败: ${filePath}`, error as Error);
-        this.emit('error', error);
+        
+        // 任务3: 异常恢复机制
+        await this.handleFileError(filePath, error as Error, async () => {
+          await this.processFile(filePath, true);
+          this.stats.processedFiles++;
+        });
       }
     }
   }
@@ -306,25 +677,55 @@ export class FileCollector extends BaseCollector implements Collector {
 
     logger.debug(`启动文件监听: ${watchPattern}`);
 
-    this.watcher = chokidar.watch(watchPattern, {
-      persistent: true,
-      ignoreInitial: true, // 忽略初始扫描（已在 scanAllFiles 中处理）
-      awaitWriteFinish: {
-        stabilityThreshold: 1000, // 等待文件写入完成
-        pollInterval: 200
-      }
+    // 任务2: 根据预设选择配置
+    let watchOptions: chokidar.WatchOptions;
+    
+    switch (this.config.watchPreset) {
+      case 'local':
+        watchOptions = { ...LOCAL_WATCH_OPTIONS, ...this.config.watchOptions };
+        break;
+      case 'network':
+        watchOptions = { ...NETWORK_WATCH_OPTIONS, ...this.config.watchOptions };
+        break;
+      case 'custom':
+        watchOptions = this.config.watchOptions;
+        break;
+      default:
+        watchOptions = LOCAL_WATCH_OPTIONS;
+    }
+
+    // 覆盖必要配置
+    watchOptions.ignoreInitial = true; // 忽略初始扫描（已在 scanAllFiles 中处理）
+
+    logger.debug('文件监听配置', {
+      预设: this.config.watchPreset,
+      usePolling: watchOptions.usePolling,
+      awaitWriteFinish: watchOptions.awaitWriteFinish
     });
+
+    this.watcher = chokidar.watch(watchPattern, watchOptions);
 
     // 文件新增
     this.watcher.on('add', async (filePath) => {
       logger.info(`新文件: ${filePath}`);
       try {
+        // 任务1: 文件大小验证
+        if (!this.validateFile(filePath)) {
+          return;
+        }
+
         await this.processFile(filePath, false);
         this.stats.totalFiles++;
         this.stats.processedFiles++;
       } catch (error) {
         logger.error(`处理新文件失败: ${filePath}`, error as Error);
-        this.emit('error', error);
+        
+        // 任务3: 异常恢复机制
+        await this.handleFileError(filePath, error as Error, async () => {
+          await this.processFile(filePath, false);
+          this.stats.totalFiles++;
+          this.stats.processedFiles++;
+        });
       }
     });
 
@@ -332,10 +733,19 @@ export class FileCollector extends BaseCollector implements Collector {
     this.watcher.on('change', async (filePath) => {
       logger.debug(`文件修改: ${filePath}`);
       try {
+        // 任务1: 文件大小验证
+        if (!this.validateFile(filePath)) {
+          return;
+        }
+
         await this.processFile(filePath, false);
       } catch (error) {
         logger.error(`处理文件修改失败: ${filePath}`, error as Error);
-        this.emit('error', error);
+        
+        // 任务3: 异常恢复机制
+        await this.handleFileError(filePath, error as Error, async () => {
+          await this.processFile(filePath, false);
+        });
       }
     });
 
@@ -343,6 +753,7 @@ export class FileCollector extends BaseCollector implements Collector {
     this.watcher.on('unlink', (filePath) => {
       logger.info(`文件删除: ${filePath}`);
       this.fileProgress.delete(filePath);
+      this.fileErrors.delete(filePath);  // 任务3: 清理错误记录
       this.stats.totalFiles--;
     });
 
@@ -352,7 +763,7 @@ export class FileCollector extends BaseCollector implements Collector {
       this.emit('error', error);
     });
 
-    logger.info('文件监听器已启动');
+    logger.info('文件监听器已启动', { 预设: this.config.watchPreset });
   }
 
   /**
@@ -398,17 +809,33 @@ export class FileCollector extends BaseCollector implements Collector {
     let endLine = 0;
 
     if (this.config.enableIncremental) {
-      const result = await readJsonlFileIncremental(filePath, startLine);
+      const result = await readJsonlFileIncremental(filePath, startLine, {
+        highWaterMark: this.config.highWaterMark
+      });
       events = result.events;
       endLine = result.endLine;
     } else {
       // 全量读取（不推荐）
-      const result = await readJsonlFileIncremental(filePath, 0);
+      const result = await readJsonlFileIncremental(filePath, 0, {
+        highWaterMark: this.config.highWaterMark
+      });
       events = result.events;
       endLine = result.endLine;
     }
 
     logger.debug(`读取到 ${events.length} 个事件，起始行: ${startLine}，结束行: ${endLine}`);
+
+    // 任务1: 行长度验证（过滤超长行）
+    const validEvents: OpenClawEvent[] = [];
+    for (let i = 0; i < events.length; i++) {
+      const event = events[i];
+      const eventStr = JSON.stringify(event);
+      const lineNumber = startLine + i + 1;
+
+      if (this.validateLine(eventStr, lineNumber, filePath)) {
+        validEvents.push(event);
+      }
+    }
 
     // 更新进度
     const fileStat = fs.statSync(filePath);
@@ -419,15 +846,17 @@ export class FileCollector extends BaseCollector implements Collector {
     });
 
     // 批量处理事件
-    if (events.length > 0) {
-      await this.processEvents(events, sessionKey);
+    if (validEvents.length > 0) {
+      await this.processEvents(validEvents, sessionKey);
     }
 
     // 发送状态事件
     this.emit('status', {
       total: this.stats.totalEvents,
       processed: this.stats.successEvents,
-      failed: this.stats.failedEvents
+      failed: this.stats.failedEvents,
+      skipped: this.stats.skippedFiles,
+      retried: this.stats.retriedEvents
     });
   }
 
@@ -452,10 +881,10 @@ export class FileCollector extends BaseCollector implements Collector {
           const message = convertOpenClawEvent(event, sessionKey);
 
           if (message) {
-            // 发送消息事件
-            this.emit('message', message);
+            // 性能优化：添加到缓冲区而不是立即发送
+            this.addMessageToBuffer(message);
             this.stats.successEvents++;
-            logger.debug(`发送消息: ${message.id}`);
+            logger.debug(`缓存消息: ${message.id}`);
           }
         } catch (error) {
           this.stats.failedEvents++;
@@ -504,11 +933,14 @@ export class FileCollector extends BaseCollector implements Collector {
     this.stats = {
       totalFiles: 0,
       processedFiles: 0,
+      skippedFiles: 0,
       totalEvents: 0,
       successEvents: 0,
-      failedEvents: 0
+      failedEvents: 0,
+      retriedEvents: 0
     };
     this.fileProgress.clear();
+    this.fileErrors.clear();
     logger.info('统计信息已重置');
   }
 }
