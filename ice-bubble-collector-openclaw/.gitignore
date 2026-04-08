@@ -10,6 +10,23 @@ dist/
 .env.local
 .env.*.local
 
+# Config files (user created)
+config/config.json
+config/config.production.json
+
+# Test output
+tests/output/
+coverage/
+*.lcov
+test-result.txt
+test-report.*
+coverage-*.html
+junit-*.xml
+benchmark-*.json
+
+# Test reports (docs)
+docs/test/
+
 # IDE
 .idea/
 .vscode/
@@ -29,10 +46,12 @@ npm-debug.log*
 *.db
 *.sqlite
 *.sqlite3
-
-# Coverage
-coverage/
+!tests/fixtures/*.db
 
 # Temp
 tmp/
 temp/
+
+# Backups
+backups/
+*.backup

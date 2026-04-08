@@ -1,0 +1,103 @@
+{
+  "openclaw": {
+    "dataDir": "/home/dabai/.openclaw",
+    "gateway": {
+      "enabled": false,
+      "url": "wss://localhost:18789",
+      "token": "",
+      "reconnect": {
+        "enabled": true,
+        "interval": 5000,
+        "maxAttempts": 10
+      }
+    },
+    "api": {
+      "enabled": false,
+      "baseUrl": "http://localhost:18789",
+      "token": ""
+    }
+  },
+  "storage": {
+    "sqlite": {
+      "dbPath": "../data/collector-dev.db",
+      "walMode": true,
+      "busyTimeout": 5000
+    },
+    "redis": {
+      "enabled": false,
+      "url": "redis://localhost:6379",
+      "keyPrefix": "openclaw:dev:"
+    }
+  },
+  "collection": {
+    "mode": "FILE_ONLY",
+    "file": {
+      "watchPath": "/home/dabai/.openclaw/agents",
+      "enableWatch": true,
+      "incremental": {
+        "enabled": true,
+        "statePath": "./data/file-state.json"
+      },
+      "batchSize": 50,
+      "batchTimeout": 3000
+    }
+  },
+  "processing": {
+    "validator": {
+      "enabled": true,
+      "strictMode": false
+    },
+    "deduplicator": {
+      "enabled": true,
+      "cacheSize": 5000,
+      "ttl": 3600000
+    },
+    "batchWriter": {
+      "batchSize": 50,
+      "batchTimeout": 3000,
+      "maxRetries": 3
+    }
+  },
+  "api": {
+    "enabled": false,
+    "port": 3000,
+    "host": "localhost",
+    "cors": {
+      "enabled": true,
+      "origins": ["http://localhost:3000"]
+    }
+  },
+  "logging": {
+    "level": "debug",
+    "format": "pretty",
+    "outputs": [
+      {
+        "type": "console",
+        "colorize": true
+      },
+      {
+        "type": "file",
+        "path": "./logs/collector-dev.log",
+        "maxSize": 10485760,
+        "maxFiles": 3
+      }
+    ]
+  },
+  "monitoring": {
+    "enabled": true,
+    "metrics": {
+      "enabled": true,
+      "interval": 60000
+    },
+    "healthCheck": {
+      "enabled": true,
+      "interval": 30000
+    }
+  },
+  "backup": {
+    "enabled": false,
+    "interval": "0 3 * * *",
+    "retention": 7,
+    "path": "./backups"
+  }
+}

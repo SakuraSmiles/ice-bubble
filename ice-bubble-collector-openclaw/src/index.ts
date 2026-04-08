@@ -5,9 +5,12 @@
  */
 
 import dotenv from 'dotenv';
+import { Logger } from './utils/logger.js';
 
 // 加载环境变量
 dotenv.config();
+
+const mainLogger = new Logger('Main');
 
 // 导出类型
 export * from './types/index.js';
@@ -27,9 +30,9 @@ export const VERSION = '1.0.0';
  * 启动采集服务
  */
 export async function startCollector(): Promise<void> {
-    console.log('OpenClaw Collector starting...');
-    console.log(`Version: ${VERSION}`);
-    console.log('Mode:', process.env.COLLECTION_MODE || 'HYBRID_PRIORITY');
+    mainLogger.info('OpenClaw Collector starting...');
+    mainLogger.info(`Version: ${VERSION}`);
+    mainLogger.info('Mode:', process.env.COLLECTION_MODE || 'HYBRID_PRIORITY');
 
     // TODO: 实现启动逻辑
     // 1. 初始化数据库连接
@@ -38,11 +41,11 @@ export async function startCollector(): Promise<void> {
     // 4. 启动采集器
     // 5. 启动 HTTP API 服务
 
-    console.log('OpenClaw Collector initialized (skeleton mode)');
+    mainLogger.info('OpenClaw Collector initialized (skeleton mode)');
 }
 
 // 如果直接运行此文件 (ESM 模式)
 startCollector().catch((error) => {
-    console.error('Failed to start collector:', error);
+    mainLogger.error('Failed to start collector', error);
     process.exit(1);
 });

@@ -5,6 +5,9 @@
  */
 
 import { BaseCollector } from './base.js';
+import { Logger } from '../utils/logger.js';
+
+const wsLogger = new Logger('WebSocketCollector');
 
 export class WebSocketCollector extends BaseCollector {
     getName(): string {
@@ -13,11 +16,11 @@ export class WebSocketCollector extends BaseCollector {
 
     async start(): Promise<void> {
         // TODO: 实现 WebSocket 连接和订阅
-        console.log('[WebSocketCollector] Starting...');
+        wsLogger.info('Starting...');
     }
 
     async stop(): Promise<void> {
         // TODO: 实现断开连接
-        console.log('[WebSocketCollector] Stopping...');
+        wsLogger.info('Stopping...');
     }
 }

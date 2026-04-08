@@ -332,6 +332,6 @@ A: FileCollector 提供以下保障：
 
 ## 相关文档
 
-- [OpenClaw-Session数据格式参考.md](../docs/OpenClaw-Session数据格式参考.md)
-- [设计文档.md](../docs/设计文档.md)
-- [数据转换映射.md](../docs/数据转换映射.md)
+- [OpenClaw数据格式参考](./dev/OpenClaw-Session数据格式参考.md)
+- [数据转换映射](./dev/数据转换映射.md)
+- [架构设计](./dev/架构设计.md)

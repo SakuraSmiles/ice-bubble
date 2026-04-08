@@ -22,51 +22,118 @@ import {
   ToolCall,
 } from '../types/index';
 
+import { Logger } from '../utils/logger.js';
+
+const converterLogger = new Logger('Converter');
+
 // ==================== 主转换入口 ====================
 
 /**
- * 将 OpenClaw 事件转换为 UnifiedMessage
+ * 将 OpenClaw 事件转换为 UnifiedMessage（安全版本）
+ * 
+ * 增强功能：
+ * - 完整的错误处理和日志记录
+ * - 支持多种消息格式（标准、简化、扁平化）
+ * - 自动修复常见格式问题
  * 
  * @param event - OpenClaw 原始事件
- * @param sessionKey - Session Key（格式：agent:{agentId}:{channel}:{accountId}:{type}:{targetId}）
- * @returns UnifiedMessage 或 null（如果事件不需要转换）
- * 
- * @example
- * const event = JSON.parse(line);
- * const sessionKey = 'agent:dev:local:default:direct:012582c0-3fc5-4a35-818c-0dd9a1c359d4';
- * const message = convertOpenClawEvent(event, sessionKey);
- * 
- * if (message) {
- *   console.log(`Converted ${message.messageType} message: ${message.id}`);
- * }
+ * @param sessionKey - Session Key
+ * @returns UnifiedMessage 或 null
  */
 export function convertOpenClawEvent(
   event: OpenClawEvent,
   sessionKey: string
 ): UnifiedMessage | null {
-  // 只处理 MessageEvent
-  // 其他事件类型（session、model_change、thinking_level_change、custom）不生成 UnifiedMessage
-  if (!isMessageEvent(event)) {
+  try {
+    // 安全检查：验证基本结构
+    if (!event || typeof event !== 'object') {
+      converterLogger.warn('无效的事件对象:', { eventType: typeof event });
+      return null;
+    }
+
+    // 尝试修复和标准化事件格式
+    const normalizedEvent = normalizeEventFormat(event);
+    
+    // 只处理 MessageEvent
+    if (!isMessageEvent(normalizedEvent)) {
+      return null;
+    }
+
+    const messageEvent = normalizedEvent as MessageEvent;
+    
+    // 验证 message 对象是否存在
+    if (!messageEvent.message) {
+      converterLogger.warn('缺少 message 字段', { eventId: messageEvent.id });
+      return null;
+    }
+    
+    // 根据消息角色路由到不同的转换函数
+    switch (messageEvent.message.role) {
+      case 'user':
+        return convertUserMessage(messageEvent, sessionKey);
+      
+      case 'assistant':
+        return convertAssistantMessage(messageEvent, sessionKey);
+      
+      case 'toolResult':
+        return convertToolResultMessage(messageEvent, sessionKey);
+      
+      default:
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 未知消息角色，需要动态访问
+        converterLogger.warn(`未知的消息角色: ${(messageEvent.message as { role?: unknown }).role}`);
+        return null;
+    }
+  } catch (error) {
+    converterLogger.error('转换失败', error instanceof Error ? error : new Error(String(error)), { eventPreview: JSON.stringify(event).slice(0, 500) });
     return null;
   }
+}
 
-  const messageEvent = event as MessageEvent;
-  
-  // 根据消息角色路由到不同的转换函数
-  switch (messageEvent.message.role) {
-    case 'user':
-      return convertUserMessage(messageEvent, sessionKey);
-    
-    case 'assistant':
-      return convertAssistantMessage(messageEvent, sessionKey);
-    
-    case 'toolResult':
-      return convertToolResultMessage(messageEvent, sessionKey);
-    
-    default:
-      console.warn(`Unknown message role: ${(messageEvent.message as any).role}`);
-      return null;
+/**
+ * 标准化事件格式
+ * 
+ * 支持多种格式：
+ * 1. 标准 OpenClaw 格式：{ type: 'message', message: { role: ..., content: ... } }
+ * 2. 简化格式：{ role: 'user', content: '...' } （自动包装为标准格式）
+ * 3. 扁平化格式：{ type: 'message', role: 'user', content: [...] } （message 字段提升到顶层）
+ */
+function normalizeEventFormat(event: unknown): Record<string, unknown> {
+  const e = event as Record<string, unknown>;
+  // 如果已经是标准格式，直接返回
+  if (e.type === 'message' && e.message && typeof e.message === 'object' && (e.message as Record<string, unknown>).role) {
+    return e;
   }
+  
+  // 扁平化格式：message 的字段被提升到顶层
+  if (e.type === 'message' && e.role && !e.message) {
+    return {
+      ...e,
+      parentId: e.parentId || null,
+      message: {
+        role: e.role,
+        content: Array.isArray(e.content) ? e.content : [{ type: 'text', text: String(e.content || '') }],
+        timestamp: e.timestamp || Date.now(),
+      },
+    };
+  }
+  
+  // 简化格式：只有 role 和 content
+  if (e.role && !e.type) {
+    return {
+      type: 'message',
+      id: e.id || `generated-${Date.now()}`,
+      parentId: e.parentId || null,
+      timestamp: e.timestamp || new Date().toISOString(),
+      message: {
+        role: e.role,
+        content: Array.isArray(e.content) ? e.content : [{ type: 'text', text: String(e.content || '') }],
+        timestamp: e.timestamp || Date.now(),
+      },
+    };
+  }
+  
+  // 无法识别的格式，返回原始对象
+  return e;
 }
 
 // ==================== User 消息转换 ====================
@@ -256,7 +323,7 @@ export function convertToolResultMessage(
     name: message.toolName!,
     input: undefined, // toolResult 没有 input
     result: {
-      status: message.details?.status,
+      status: message.details?.status || 'unknown',
       approvalId: message.details?.approvalId,
       output: textContent,
     },

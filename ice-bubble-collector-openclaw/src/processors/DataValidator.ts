@@ -54,7 +54,7 @@ export class DataValidator {
      * @param id - 消息 ID
      * @returns 错误信息，null 表示验证通过
      */
-    private validateId(id: any): string | null {
+    private validateId(id: unknown): string | null {
         if (id === undefined || id === null) {
             return 'id: 字段必填';
         }
@@ -75,7 +75,7 @@ export class DataValidator {
      * @param sessionKey - Session Key
      * @returns 错误信息，null 表示验证通过
      */
-    private validateSessionKey(sessionKey: any): string | null {
+    private validateSessionKey(sessionKey: unknown): string | null {
         if (sessionKey === undefined || sessionKey === null) {
             return 'sessionKey: 字段必填';
         }
@@ -96,7 +96,7 @@ export class DataValidator {
      * @param timestamp - 消息时间戳
      * @returns 错误信息，null 表示验证通过
      */
-    private validateTimestamp(timestamp: any): string | null {
+    private validateTimestamp(timestamp: unknown): string | null {
         if (timestamp === undefined || timestamp === null) {
             return 'timestamp: 字段必填';
         }
@@ -132,7 +132,7 @@ export class DataValidator {
      * @param messageType - 消息类型
      * @returns 错误信息，null 表示验证通过
      */
-    private validateMessageType(messageType: any): string | null {
+    private validateMessageType(messageType: unknown): string | null {
         if (messageType === undefined || messageType === null) {
             return 'messageType: 字段必填';
         }
@@ -141,7 +141,7 @@ export class DataValidator {
             return 'messageType: 必须为字符串类型';
         }
         
-        if (!DataValidator.VALID_MESSAGE_TYPES.includes(messageType as any)) {
+        if (!DataValidator.VALID_MESSAGE_TYPES.includes(messageType as typeof DataValidator.VALID_MESSAGE_TYPES[number])) {
             return `messageType: 值无效，有效值为: ${DataValidator.VALID_MESSAGE_TYPES.join(', ')}`;
         }
         
@@ -153,7 +153,7 @@ export class DataValidator {
      * @param source - 数据来源
      * @returns 错误信息，null 表示验证通过
      */
-    private validateSource(source: any): string | null {
+    private validateSource(source: unknown): string | null {
         if (source === undefined || source === null) {
             return 'source: 字段必填';
         }
@@ -162,7 +162,7 @@ export class DataValidator {
             return 'source: 必须为字符串类型';
         }
         
-        if (!DataValidator.VALID_SOURCES.includes(source as any)) {
+        if (!DataValidator.VALID_SOURCES.includes(source as typeof DataValidator.VALID_SOURCES[number])) {
             return `source: 值无效，有效值为: ${DataValidator.VALID_SOURCES.join(', ')}`;
         }
         
@@ -174,7 +174,7 @@ export class DataValidator {
      * @param content - 消息内容
      * @returns 错误信息，null 表示验证通过
      */
-    private validateContent(content: any): string | null {
+    private validateContent(content: unknown): string | null {
         // Content 是可选字段，如果不存在则跳过
         if (content === undefined || content === null) {
             return null;
@@ -192,7 +192,7 @@ export class DataValidator {
      * @param tokens - Token 统计
      * @returns 错误信息，null 表示验证通过
      */
-    private validateTokens(tokens: any): string | null {
+    private validateTokens(tokens: unknown): string | null {
         // Tokens 是可选字段，如果不存在则跳过
         if (tokens === undefined || tokens === null) {
             return null;
@@ -230,7 +230,7 @@ export class DataValidator {
      * @param tools - 工具调用列表
      * @returns 错误信息，null 表示验证通过
      */
-    private validateTools(tools: any): string | null {
+    private validateTools(tools: unknown): string | null {
         // Tools 是可选字段，如果不存在则跳过
         if (tools === undefined || tools === null) {
             return null;
@@ -293,7 +293,7 @@ export class DataValidator {
      * @param metadata - 元数据
      * @returns 错误信息，null 表示验证通过
      */
-    private validateMetadata(metadata: any): string | null {
+    private validateMetadata(metadata: unknown): string | null {
         // Metadata 是可选字段，如果不存在则跳过
         if (metadata === undefined || metadata === null) {
             return null;

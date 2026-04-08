@@ -5,6 +5,9 @@
  */
 
 import { BaseCollector } from './base.js';
+import { Logger } from '../utils/logger.js';
+
+const httpLogger = new Logger('HTTPCollector');
 
 export class HTTPCollector extends BaseCollector {
     getName(): string {
@@ -13,11 +16,11 @@ export class HTTPCollector extends BaseCollector {
 
     async start(): Promise<void> {
         // TODO: 实现 HTTP 轮询
-        console.log('[HTTPCollector] Starting...');
+        httpLogger.info('Starting...');
     }
 
     async stop(): Promise<void> {
         // TODO: 实现停止轮询
-        console.log('[HTTPCollector] Stopping...');
+        httpLogger.info('Stopping...');
     }
 }

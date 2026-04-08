@@ -21,6 +21,9 @@ const baseLogger = winston.createLogger({
     ],
 });
 
+/** 日志元数据类型 */
+type LogMeta = Record<string, unknown>;
+
 /**
  * Logger 类 - 支持模块化日志
  */
@@ -33,22 +36,22 @@ export class Logger {
         this.logger = baseLogger.child({ module });
     }
 
-    info(message: string, meta?: any): void {
+    info(message: string, meta?: LogMeta): void {
         this.logger.info(`[${this.module}] ${message}`, meta);
     }
 
-    warn(message: string, meta?: any): void {
+    warn(message: string, meta?: LogMeta): void {
         this.logger.warn(`[${this.module}] ${message}`, meta);
     }
 
-    error(message: string, error?: Error | unknown, meta?: any): void {
+    error(message: string, error?: Error | unknown, meta?: LogMeta): void {
         const errorMeta = error instanceof Error 
             ? { error: error.message, stack: error.stack, ...meta }
             : { error, ...meta };
         this.logger.error(`[${this.module}] ${message}`, errorMeta);
     }
 
-    debug(message: string, meta?: any): void {
+    debug(message: string, meta?: LogMeta): void {
         this.logger.debug(`[${this.module}] ${message}`, meta);
     }
 }

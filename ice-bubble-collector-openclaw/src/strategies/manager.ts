@@ -6,13 +6,16 @@
 
 import type { CollectionStrategy } from './base.js';
 import { CollectionMode } from '../types/index.js';
+import { Logger } from '../utils/logger.js';
+
+const logger = new Logger('StrategyManager');
 
 export class StrategyManager {
     private strategy: CollectionStrategy | null = null;
 
     async setMode(mode: CollectionMode): Promise<void> {
         // TODO: 实现策略切换
-        console.log(`[StrategyManager] Setting mode to: ${mode}`);
+        logger.info(`Setting mode to: ${mode}`);
     }
 
     async start(): Promise<void> {

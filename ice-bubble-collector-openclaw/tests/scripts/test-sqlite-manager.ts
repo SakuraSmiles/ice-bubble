@@ -8,8 +8,8 @@ import type { Session, SessionMessage, SQLiteManagerConfig } from '../../src/typ
 import fs from 'fs';
 import path from 'path';
 
-// 测试配置 - 测试数据统一放在 tests/test-output/ 目录
-const TEST_OUTPUT_DIR = path.join(__dirname, '..', 'test-output');
+// 测试配置 - 测试数据统一放在 tests/output/ 目录
+const TEST_OUTPUT_DIR = path.join(__dirname, '..', 'output');
 const TEST_DB_PATH = path.join(TEST_OUTPUT_DIR, 'sqlite-test.db');
 const config: SQLiteManagerConfig = {
     dbPath: TEST_DB_PATH,

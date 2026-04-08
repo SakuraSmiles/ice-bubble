@@ -365,15 +365,16 @@ describe('DataValidator', () => {
             expect(result.errors).toContain('tools[0].name: 长度不能为空');
         });
 
-        test('tools 缺少 input 字段时应该验证失败', () => {
+        test('tools 缺少 input 字段时应该验证通过（ToolResult 场景）', () => {
+            // input 字段已改为可选（支持 ToolResult 消息没有 input）
             const message = createValidMessage({
-                tools: [{ name: 'read_file' } as any]
+                tools: [{ name: 'read_file', result: { status: 'completed' } }] as any
             });
-            
+
             const result = validator.validate(message);
-            
-            expect(result.valid).toBe(false);
-            expect(result.errors).toContain('tools[0].input: 字段必填');
+
+            // input 可选，所以缺少 input 不应报错
+            expect(result.valid).toBe(true);
         });
 
         test('tools.input 类型错误时应该验证失败', () => {

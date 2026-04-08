@@ -1,0 +1,153 @@
+{
+  "openclaw": {
+    "gateway": {
+      "url": "wss://localhost:18789",
+      "token": "your-token-here",
+      "reconnect": {
+        "enabled": true,
+        "maxAttempts": 10,
+        "delay": 5000
+      }
+    },
+    "api": {
+      "url": "http://localhost:18789",
+      "token": "your-token-here",
+      "timeout": 30000
+    },
+    "dataDir": "~/.openclaw"
+  },
+  "storage": {
+    "sqlite": {
+      "enabled": true,
+      "dbPath": "./data/collector.db",
+      "walMode": true,
+      "foreignKeys": true,
+      "pragma": {
+        "cacheSize": -64000,
+        "tempStore": "MEMORY",
+        "mmapSize": 268435456
+      }
+    },
+    "redis": {
+      "enabled": false,
+      "url": "redis://localhost:6379",
+      "password": "",
+      "db": 0,
+      "keyPrefix": "collector:"
+    }
+  },
+  "collection": {
+    "mode": "HYBRID_PRIORITY",
+    "file": {
+      "enabled": true,
+      "watchPath": "~/.openclaw/agents",
+      "enableWatch": true,
+      "scanInterval": 5000,
+      "maxFileSize": 104857600,
+      "maxLineLength": 1048576,
+      "watchPreset": "local",
+      "incremental": {
+        "enabled": true,
+        "statePath": "./data/file-state.json"
+      },
+      "retry": {
+        "maxAttempts": 3,
+        "delay": 1000,
+        "backoffMultiplier": 2
+      }
+    },
+    "websocket": {
+      "enabled": false,
+      "subscriptions": [
+        "session.message",
+        "agent.status",
+        "tool.call",
+        "tool.result"
+      ]
+    },
+    "http": {
+      "enabled": false,
+      "syncInterval": 86400000,
+      "syncTime": "02:00"
+    }
+  },
+  "processing": {
+    "validator": {
+      "enabled": true,
+      "strict": true,
+      "customRules": []
+    },
+    "deduplicator": {
+      "enabled": true,
+      "cacheSize": 10000,
+      "ttl": 86400000
+    },
+    "batchWriter": {
+      "enabled": true,
+      "batchSize": 100,
+      "flushInterval": 5000,
+      "maxQueueSize": 10000
+    }
+  },
+  "api": {
+    "enabled": false,
+    "port": 3000,
+    "host": "0.0.0.0",
+    "cors": {
+      "enabled": true,
+      "origins": ["*"]
+    },
+    "auth": {
+      "enabled": false,
+      "token": ""
+    },
+    "rateLimit": {
+      "enabled": true,
+      "windowMs": 60000,
+      "maxRequests": 100
+    }
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "outputs": [
+      {
+        "type": "console",
+        "colorize": true
+      },
+      {
+        "type": "file",
+        "path": "./logs/collector.log",
+        "maxSize": 10485760,
+        "maxFiles": 5
+      }
+    ]
+  },
+  "monitoring": {
+    "enabled": true,
+    "metrics": {
+      "enabled": true,
+      "port": 9090,
+      "path": "/metrics"
+    },
+    "healthCheck": {
+      "enabled": true,
+      "path": "/health",
+      "interval": 30000
+    }
+  },
+  "performance": {
+    "maxMemory": 52428800,
+    "gcInterval": 60000,
+    "eventLoopLag": {
+      "enabled": true,
+      "threshold": 100
+    }
+  },
+  "backup": {
+    "enabled": true,
+    "schedule": "0 3 * * *",
+    "retention": 7,
+    "path": "./backups"
+  }
+}

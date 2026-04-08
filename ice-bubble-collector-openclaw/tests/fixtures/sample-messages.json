@@ -1,0 +1,48 @@
+{
+  "messages": [
+    {
+      "id": "msg-001",
+      "sessionKey": "agent:agent-001:discord:123456789:direct:987654321",
+      "messageType": "user",
+      "role": "user",
+      "content": "你好，请帮我分析一下这个项目",
+      "timestamp": "2026-04-08T10:00:00.000Z",
+      "source": "file"
+    },
+    {
+      "id": "msg-002",
+      "sessionKey": "agent:agent-001:discord:123456789:direct:987654321",
+      "messageType": "agent",
+      "role": "assistant",
+      "content": "好的，我来帮你分析这个项目。这是一个 OpenClaw 数据采集系统...",
+      "timestamp": "2026-04-08T10:00:05.000Z",
+      "model": "gpt-4",
+      "source": "file"
+    },
+    {
+      "id": "msg-003",
+      "sessionKey": "agent:agent-001:discord:123456789:direct:987654321",
+      "messageType": "tool",
+      "role": "tool",
+      "toolName": "read_file",
+      "toolCallId": "call-001",
+      "input": {
+        "filePath": "/project/README.md"
+      },
+      "output": "# 项目说明\n\n这是一个数据采集系统...",
+      "timestamp": "2026-04-08T10:00:10.000Z",
+      "source": "file"
+    }
+  ],
+  "sessions": [
+    {
+      "sessionKey": "agent:agent-001:discord:123456789:direct:987654321",
+      "agentId": "agent-001",
+      "channel": "discord",
+      "accountId": "123456789",
+      "peerId": "987654321",
+      "createdAt": "2026-04-08T10:00:00.000Z",
+      "updatedAt": "2026-04-08T10:00:10.000Z"
+    }
+  ]
+}

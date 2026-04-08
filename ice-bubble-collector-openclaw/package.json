@@ -5,15 +5,22 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/start.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "test": "tsx tests/scripts/test-sqlite-manager.ts",
+    "start": "node dist/start.js",
+    "test": "vitest run",
+    "test:all": "vitest run",
+    "test:unit": "vitest run tests/unit/",
+    "test:integration": "vitest run tests/integration/",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
     "test:sqlite": "tsx tests/scripts/test-sqlite-manager.ts",
     "lint": "eslint src --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\"",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "clean": "rimraf dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "rebuild": "npm run clean && npm run build"
   },
   "keywords": [
     "openclaw",

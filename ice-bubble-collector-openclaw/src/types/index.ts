@@ -229,47 +229,10 @@ export interface WSMessage {
     error?: { code: number; message: string };
 }
 
-// ==================== 配置 ====================
-export interface CollectorConfig {
-    mode: CollectionMode;
-    websocket: WebSocketConfig;
-    file: FileConfig;
-    http: HTTPConfig;
-}
-
-export interface WebSocketConfig {
-    enabled: boolean;
-    priority: number;
-    url: string;
-    token: string;
-    reconnect: {
-        enabled: boolean;
-        interval: number;
-        maxRetries: number;
-    };
-    subscriptions: Array<{
-        method: string;
-        params: Record<string, unknown>;
-    }>;
-}
-
-export interface FileConfig {
-    enabled: boolean;
-    priority: number;
-    basePath: string;
-    watchInterval: number;
-    checkInterval: number;
-    incremental: boolean;
-}
-
-export interface HTTPConfig {
-    enabled: boolean;
-    priority: number;
-    baseUrl: string;
-    token: string;
-    fullSync: string; // cron expression
-    incrementalQuery: boolean;
-}
+// ==================== 配置（实际定义在 utils/config-loader.ts）====================
+// 注意: 完整的 CollectorConfig 定义在 utils/config-loader.ts
+// 此处仅导出类型供外部使用
+export type { CollectorConfig } from '../utils/config-loader';
 
 // ==================== SQLite 配置 ====================
 export interface SQLiteManagerConfig {

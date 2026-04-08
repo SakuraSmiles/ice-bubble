@@ -7,6 +7,15 @@
 import Database from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import type { Session, SessionMessage, SQLiteManagerConfig } from '../types';
+import { Logger } from '../utils/logger.js';
+
+const sqliteLogger = new Logger('SQLiteManager');
+
+/**
+ * SQLite 查询结果行类型
+ * better-sqlite3 的 get/all 返回 Record<string, unknown> 类型
+ */
+type SqlRow = Record<string, unknown>;
 
 /**
  * SQLite 错误类
@@ -72,7 +81,7 @@ export class SQLiteManager {
             this.createTables();
 
             this.isInitialized = true;
-            console.log('[SQLiteManager] Initialized successfully');
+            sqliteLogger.info('Initialized successfully');
         } catch (error) {
             throw new SQLiteError(
                 'Failed to initialize SQLite database',
@@ -194,7 +203,7 @@ export class SQLiteManager {
             this.db.close();
             this.db = null;
             this.isInitialized = false;
-            console.log('[SQLiteManager] Closed successfully');
+            sqliteLogger.info('Closed successfully');
         }
     }
 
@@ -257,7 +266,7 @@ export class SQLiteManager {
                 SELECT * FROM sessions WHERE session_key = ?
             `);
 
-            const row = stmt.get(sessionKey) as any;
+            const row = stmt.get(sessionKey) as SqlRow | undefined;
 
             if (!row) return null;
 
@@ -290,7 +299,7 @@ export class SQLiteManager {
             const orderBy = options?.orderBy || 'updated_at';
 
             let sql = `SELECT * FROM sessions`;
-            const params: any[] = [];
+            const params: unknown[] = [];
 
             if (options?.agentId) {
                 sql += ` WHERE agent_id = ?`;
@@ -301,7 +310,7 @@ export class SQLiteManager {
             params.push(limit, offset);
 
             const stmt = this.db.prepare(sql);
-            const rows = stmt.all(...params) as any[];
+            const rows = stmt.all(...params) as SqlRow[];
 
             return rows.map(row => this.rowToSession(row));
         } catch (error) {
@@ -316,7 +325,7 @@ export class SQLiteManager {
     /**
      * 数据库行转换为 Session 对象
      */
-    private rowToSession(row: any): Session {
+    private rowToSession(row: SqlRow): Session {
         return {
             sessionKey: row.session_key,
             agentId: row.agent_id,
@@ -460,7 +469,7 @@ export class SQLiteManager {
 
         try {
             const limit = options?.limit || 100;
-            const params: any[] = [sessionKey];
+            const params: unknown[] = [sessionKey];
 
             let sql = `
                 SELECT * FROM session_messages
@@ -476,7 +485,7 @@ export class SQLiteManager {
             params.push(limit);
 
             const stmt = this.db.prepare(sql);
-            const rows = stmt.all(...params) as any[];
+            const rows = stmt.all(...params) as SqlRow[];
 
             return rows.map(row => this.rowToMessage(row));
         } catch (error) {
@@ -491,7 +500,7 @@ export class SQLiteManager {
     /**
      * 数据库行转换为 SessionMessage 对象
      */
-    private rowToMessage(row: any): SessionMessage {
+    private rowToMessage(row: SqlRow): SessionMessage {
         return {
             id: row.id,
             sessionKey: row.session_key,
@@ -524,8 +533,8 @@ export class SQLiteManager {
             const sessionsStmt = this.db.prepare(`SELECT COUNT(*) as count FROM sessions`);
             const messagesStmt = this.db.prepare(`SELECT COUNT(*) as count FROM session_messages`);
 
-            const sessionsResult = sessionsStmt.get() as any;
-            const messagesResult = messagesStmt.get() as any;
+            const sessionsResult = sessionsStmt.get() as SqlRow;
+            const messagesResult = messagesStmt.get() as SqlRow;
 
             // 获取数据库文件大小
             const fs = await import('fs');

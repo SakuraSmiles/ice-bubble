@@ -4,14 +4,18 @@
  * 辅助存储：状态缓存、去重、Pub/Sub
  */
 
+import { Logger } from '../utils/logger.js';
+
+const redisLogger = new Logger('RedisManager');
+
 export class RedisManager {
     async init(): Promise<void> {
         // TODO: 实现 Redis 连接
-        console.log('[RedisManager] Initializing...');
+        redisLogger.info('Initializing...');
     }
 
     async close(): Promise<void> {
         // TODO: 实现 Redis 断开
-        console.log('[RedisManager] Closing...');
+        redisLogger.info('Closing...');
     }
 }
