@@ -1,0 +1,46 @@
+{
+  "server": {
+    "port": 13000,
+    "host": "localhost"
+  },
+  "cors": {
+    "enabled": true,
+    "origins": ["http://localhost:3000"]
+  },
+  "logging": {
+    "level": "info",
+    "format": "pretty"
+  },
+  "database": {
+    "path": "../data/admin.db",
+    "walMode": true,
+    "foreignKeys": true,
+    "performance": {
+      "cacheSize": -64000,
+      "mmapSize": 268435456,
+      "pageSize": 4096,
+      "busyTimeout": 5000
+    }
+  },
+  "cleanup": {
+    "enabled": true,
+    "healthDaysToKeep": 30,
+    "eventDaysToKeep": 90,
+    "statsDaysToKeep": 365,
+    "schedule": "0 2 * * *"
+  },
+  "modules": [
+    {
+      "moduleKey": "collector-openclaw",
+      "name": "OpenClaw采集器",
+      "baseUrl": "http://localhost:13100",
+      "enabled": true,
+      "pollInterval": 30000
+    }
+  ],
+  "dataSync": {
+    "collectorBaseUrl": "http://localhost:13100",
+    "pollInterval": 60000,
+    "batchSize": 500
+  }
+}
