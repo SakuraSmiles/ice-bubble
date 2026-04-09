@@ -78,7 +78,7 @@ export async function readJsonlFile(
     let isFirstChunk = true;
     const processedStream = fileStream.pipe(
       new (require('stream').Transform)({
-        transform(chunk: Buffer, encoding: string, callback: Function) {
+        transform(chunk: Buffer, _encoding: string, callback: Function) {
           // 仅在第一个数据块检查 BOM
           if (isFirstChunk) {
             const result = checkAndRemoveBom(chunk, bomChecked);
@@ -180,7 +180,7 @@ export async function readJsonlFileIncremental(
     let isFirstChunk = startLine === 0;
     const processedStream = fileStream.pipe(
       new (require('stream').Transform)({
-        transform(chunk: Buffer, encoding: string, callback: Function) {
+        transform(chunk: Buffer, _encoding: string, callback: Function) {
           // 仅在第一个数据块检查 BOM（且从第 0 行开始读取）
           if (isFirstChunk && startLine === 0) {
             const result = checkAndRemoveBom(chunk, bomChecked);

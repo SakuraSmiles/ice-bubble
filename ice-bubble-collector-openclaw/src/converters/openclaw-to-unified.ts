@@ -52,7 +52,7 @@ export function convertOpenClawEvent(
     }
 
     // 尝试修复和标准化事件格式
-    const normalizedEvent = normalizeEventFormat(event);
+    const normalizedEvent = normalizeEventFormat(event) as unknown as OpenClawEvent;
     
     // 只处理 MessageEvent
     if (!isMessageEvent(normalizedEvent)) {
@@ -321,7 +321,7 @@ export function convertToolResultMessage(
   // 构造工具结果
   const tools: ToolCall[] = [{
     name: message.toolName!,
-    input: undefined, // toolResult 没有 input
+    input: {} as Record<string, unknown>, // toolResult 没有 input
     result: {
       status: message.details?.status || 'unknown',
       approvalId: message.details?.approvalId,

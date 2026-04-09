@@ -76,7 +76,7 @@ export class FileWatcher extends EventEmitter {
   /**
    * 启动文件监听器
    *
-   * @param pattern - 监听的 glob 模式（如 agents/*/sessions/*.jsonl）
+   * @param pattern - 监听的 glob 模式
    * @param config - 监听配置
    * @param callbacks - 事件回调
    */

@@ -189,14 +189,13 @@ export interface UnifiedMessage {
 export interface Collector {
     /**
      * 启动采集器
-     * @returns EventEmitter - 触发 'message' 事件，传递 UnifiedMessage
      */
-    start(): NodeJS.EventEmitter;
-    
+    start(): Promise<void>;
+
     /**
      * 停止采集器
      */
-    stop(): void;
+    stop(): Promise<void>;
 }
 
 // ==================== 采集日志 ====================

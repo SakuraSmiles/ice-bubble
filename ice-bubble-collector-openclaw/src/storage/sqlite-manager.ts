@@ -8,7 +8,7 @@ import Database from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import type { Session, SessionMessage, SQLiteManagerConfig } from '../types';
 import { Logger } from '../utils/logger.js';
-import { SessionMessageMapper, SessionMapper, AgentMapper, getDbColumns, getPlaceholders } from '../utils/type-mapper.js';
+import { SessionMessageMapper, SessionMapper, getDbColumns, getPlaceholders } from '../utils/type-mapper.js';
 
 const sqliteLogger = new Logger('SQLiteManager');
 
@@ -331,16 +331,16 @@ export class SQLiteManager {
      */
     private rowToSession(row: SqlRow): Session {
         return {
-            sessionKey: row.session_key,
-            agentId: row.agent_id,
-            channel: row.channel,
-            accountId: row.account_id || undefined,
-            peerId: row.peer_id || undefined,
-            guildId: row.guild_id || undefined,
-            createdAt: new Date(row.created_at),
-            updatedAt: new Date(row.updated_at),
-            messageCount: row.message_count,
-            lastMessageAt: row.last_message_at ? new Date(row.last_message_at) : undefined,
+            sessionKey: row.session_key as string,
+            agentId: row.agent_id as string,
+            channel: row.channel as string,
+            accountId: row.account_id as string | undefined,
+            peerId: row.peer_id as string | undefined,
+            guildId: row.guild_id as string | undefined,
+            createdAt: new Date(row.created_at as string | number | Date),
+            updatedAt: new Date(row.updated_at as string | number | Date),
+            messageCount: row.message_count as number,
+            lastMessageAt: row.last_message_at ? new Date(row.last_message_at as string | number | Date) : undefined,
         };
     }
 
@@ -669,8 +669,8 @@ export class SQLiteManager {
             const dbSizeMB = stats.size / (1024 * 1024);
 
             return {
-                totalSessions: sessionsResult.count,
-                totalMessages: messagesResult.count,
+                totalSessions: sessionsResult.count as number,
+                totalMessages: messagesResult.count as number,
                 dbSizeMB: Math.round(dbSizeMB * 100) / 100,
             };
         } catch (error) {

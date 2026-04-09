@@ -39,7 +39,6 @@ async function start() {
     maxFileSize: config.collection.file.maxFileSize,
     maxLineLength: config.collection.file.maxLineLength,
     watchPreset: config.collection.file.watchPreset,
-    watchOptions: config.collection.file.watchOptions,
     deduplicationCacheSize: config.processing.deduplicator.cacheSize,
     writerBatchSize: config.processing.batchWriter.batchSize,
     writerFlushInterval: config.processing.batchWriter.flushInterval,

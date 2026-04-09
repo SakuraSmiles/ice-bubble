@@ -232,7 +232,6 @@ export class SessionCache {
    * 清理过期缓存
    */
   private cleanupExpired(): void {
-    const now = new Date();
     let expiredCount = 0;
     
     for (const [key, item] of this.cache.entries()) {

@@ -399,7 +399,7 @@ export class ConfigLoader {
     // 1. 尝试加载配置文件
     if (fs.existsSync(this.configPath)) {
       const fileConfig = await this.loadConfigFile(this.configPath);
-      this.config = this.mergeConfig(this.config, fileConfig);
+      this.config = this.mergeConfig(this.config as unknown as Record<string, unknown>, fileConfig) as unknown as CollectorConfig;
       configLoaderLogger.info(`配置文件加载成功: ${this.configPath}`);
     } else {
       configLoaderLogger.warn(`配置文件不存在: ${this.configPath}，使用默认配置`);
@@ -522,7 +522,7 @@ export class ConfigLoader {
 
     // 验证端口号
     if (this.config.api.enabled) {
-      if (this.config.api.port < 1 || this.config.api.api.port > 65535) {
+      if (this.config.api.port < 1 || this.config.api.port > 65535) {
         throw new Error('配置错误: api.port 必须在 1-65535 范围内');
       }
     }

@@ -6,7 +6,7 @@
  * @module DataValidator
  */
 
-import { UnifiedMessage, ToolCall } from '../types';
+import { UnifiedMessage } from '../types';
 
 /**
  * 验证结果接口
@@ -197,31 +197,33 @@ export class DataValidator {
         if (tokens === undefined || tokens === null) {
             return null;
         }
-        
+
         if (typeof tokens !== 'object' || tokens === null) {
             return 'tokens: 必须为对象类型';
         }
-        
+
+        const tokenObj = tokens as Record<string, unknown>;
+
         // 验证 input
-        if (tokens.input !== undefined) {
-            if (typeof tokens.input !== 'number') {
+        if (tokenObj.input !== undefined) {
+            if (typeof tokenObj.input !== 'number') {
                 return 'tokens.input: 必须为数字类型';
             }
-            if (tokens.input < 0) {
+            if (tokenObj.input < 0) {
                 return 'tokens.input: 不能为负数';
             }
         }
-        
+
         // 验证 output
-        if (tokens.output !== undefined) {
-            if (typeof tokens.output !== 'number') {
+        if (tokenObj.output !== undefined) {
+            if (typeof tokenObj.output !== 'number') {
                 return 'tokens.output: 必须为数字类型';
             }
-            if (tokens.output < 0) {
+            if (tokenObj.output < 0) {
                 return 'tokens.output: 不能为负数';
             }
         }
-        
+
         return null;
     }
 

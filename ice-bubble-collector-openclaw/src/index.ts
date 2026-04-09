@@ -32,7 +32,7 @@ export const VERSION = '1.0.0';
 export async function startCollector(): Promise<void> {
     mainLogger.info('OpenClaw Collector starting...');
     mainLogger.info(`Version: ${VERSION}`);
-    mainLogger.info('Mode:', process.env.COLLECTION_MODE || 'HYBRID_PRIORITY');
+    mainLogger.info(`Mode: ${process.env.COLLECTION_MODE || 'HYBRID_PRIORITY'}`);
 
     // TODO: 实现启动逻辑
     // 1. 初始化数据库连接

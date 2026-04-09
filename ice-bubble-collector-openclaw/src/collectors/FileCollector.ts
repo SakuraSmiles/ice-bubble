@@ -19,7 +19,7 @@ import { FileWatcher } from './FileWatcher.js';
 import { CollectionPipeline } from './CollectionPipeline.js';
 import { readJsonlFileIncremental } from '../utils/file-reader.js';
 import { buildSessionKeyFromPath } from '../utils/session-key-builder.js';
-import { Collector, SessionMessage } from '../types/index.js';
+import { Collector } from '../types/index.js';
 import { OpenClawEvent } from '../types/openclaw.js';
 import { Logger } from '../utils/logger.js';
 import { DataValidator } from '../processors/DataValidator.js';
@@ -267,7 +267,7 @@ export class FileCollector extends BaseCollector implements Collector {
       this.startPeriodicScan();
     }
 
-    logger.info('FileCollector 启动完成', this.stats);
+    logger.info('FileCollector 启动完成', { ...this.stats });
   }
 
   async waitForWatcherReady(timeoutMs: number = 10000): Promise<void> {
@@ -305,7 +305,7 @@ export class FileCollector extends BaseCollector implements Collector {
     // 关闭数据库
     await this.sqliteManager.close();
 
-    logger.info('FileCollector 已停止', this.stats);
+    logger.info('FileCollector 已停止', { ...this.stats });
   }
 
   getName(): string {

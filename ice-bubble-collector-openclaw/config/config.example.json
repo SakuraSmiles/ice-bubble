@@ -91,7 +91,7 @@
   },
   "api": {
     "enabled": false,
-    "port": 3000,
+    "port": 13100,
     "host": "0.0.0.0",
     "cors": {
       "enabled": true,
