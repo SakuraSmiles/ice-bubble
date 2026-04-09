@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import type { Session, SessionMessage, SQLiteManagerConfig } from '../types';
 import { Logger } from '../utils/logger.js';
+import { SessionMessageMapper, SessionMapper, AgentMapper, getDbColumns, getPlaceholders } from '../utils/type-mapper.js';
 
 const sqliteLogger = new Logger('SQLiteManager');
 
@@ -76,6 +77,14 @@ export class SQLiteManager {
             this.db.pragma('cache_size = -64000'); // 64MB
             this.db.pragma('temp_store = MEMORY');
             this.db.pragma('mmap_size = 268435456'); // 256MB
+            
+            // 并发优化配置
+            this.db.pragma('busy_timeout = 5000'); // 5秒超时
+            this.db.pragma('journal_size_limit = 67108864'); // 64MB WAL 日志限制
+            
+            // 针对批量写入优化
+            this.db.pragma('page_size = 4096');
+            this.db.pragma('auto_vacuum = INCREMENTAL');
 
             // 创建表结构
             this.createTables();
@@ -220,30 +229,25 @@ export class SQLiteManager {
         }
 
         try {
+            // 使用 TypeMapper 转换
+            const dbRow = SessionMapper.toDb(session);
+            
+            // 动态构建 SQL
+            const columns = getDbColumns('sessions').filter(col => col !== 'id');
+            const placeholders = getPlaceholders(columns);
+            
             const stmt = this.db.prepare(`
-                INSERT INTO sessions (
-                    session_key, agent_id, channel, account_id, peer_id, guild_id,
-                    created_at, updated_at, message_count, last_message_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO sessions (${columns.join(', ')})
+                VALUES (${placeholders})
                 ON CONFLICT(session_key) DO UPDATE SET
                     updated_at = excluded.updated_at,
                     message_count = excluded.message_count,
                     last_message_at = excluded.last_message_at
             `);
 
-            stmt.run(
-                session.sessionKey,
-                session.agentId,
-                session.channel,
-                session.accountId || null,
-                session.peerId || null,
-                session.guildId || null,
-                session.createdAt.toISOString(),
-                session.updatedAt.toISOString(),
-                session.messageCount,
-                session.lastMessageAt?.toISOString() || null
-            );
+            // 按列顺序获取值
+            const values = columns.map(col => dbRow[col]);
+            stmt.run(...values);
         } catch (error) {
             throw new SQLiteError(
                 'Failed to upsert session',
@@ -351,24 +355,21 @@ export class SQLiteManager {
         }
 
         try {
+            // 使用 TypeMapper 转换
+            const dbRow = SessionMessageMapper.toDb(message);
+            
+            // 动态构建 SQL
+            const columns = getDbColumns('session_messages').filter(col => col !== 'id');
+            const placeholders = getPlaceholders(columns);
+            
             const stmt = this.db.prepare(`
-                INSERT INTO session_messages (
-                    session_key, message_type, content, model,
-                    tokens_input, tokens_output, tools_json, timestamp
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO session_messages (${columns.join(', ')})
+                VALUES (${placeholders})
             `);
 
-            const result = stmt.run(
-                message.sessionKey,
-                message.messageType,
-                message.content || null,
-                message.model || null,
-                message.tokensInput || null,
-                message.tokensOutput || null,
-                message.toolsJson || null,
-                message.timestamp.toISOString()
-            );
+            // 按列顺序获取值
+            const values = columns.map(col => dbRow[col]);
+            const result = stmt.run(...values);
 
             return result.lastInsertRowid as number;
         } catch (error) {
@@ -393,35 +394,32 @@ export class SQLiteManager {
         if (messages.length === 0) return 0;
 
         try {
-            // 使用事务批量插入
+            // 使用 IMMEDIATE 事务避免 SQLITE_BUSY
             const insertMany = this.db.transaction((msgs: SessionMessage[]) => {
+                // 批量转换为数据库行
+                const dbRows = SessionMessageMapper.batchToDb(msgs);
+                
+                // 动态构建 SQL
+                const columns = getDbColumns('session_messages').filter(col => col !== 'id');
+                const placeholders = getPlaceholders(columns);
+                
                 const stmt = this.db!.prepare(`
-                    INSERT INTO session_messages (
-                        session_key, message_type, content, model,
-                        tokens_input, tokens_output, tools_json, timestamp
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO session_messages (${columns.join(', ')})
+                    VALUES (${placeholders})
                 `);
 
                 let insertedCount = 0;
-                for (const msg of msgs) {
-                    stmt.run(
-                        msg.sessionKey,
-                        msg.messageType,
-                        msg.content || null,
-                        msg.model || null,
-                        msg.tokensInput || null,
-                        msg.tokensOutput || null,
-                        msg.toolsJson || null,
-                        msg.timestamp.toISOString()
-                    );
+                for (const row of dbRows) {
+                    const values = columns.map(col => row[col]);
+                    stmt.run(...values);
                     insertedCount++;
                 }
 
                 return insertedCount;
             });
 
-            const insertedCount = insertMany(messages);
+            // 使用 IMMEDIATE 事务模式，避免并发冲突
+            const insertedCount = insertMany.immediate(messages);
 
             // 更新 session 的 message_count
             const sessionCounts = new Map<string, number>();
@@ -451,6 +449,146 @@ export class SQLiteManager {
                 error
             );
         }
+    }
+
+    /**
+     * 并发安全批量插入（带重试机制）
+     * 
+     * 针对高并发场景优化：
+     * 1. 使用 EXCLUSIVE 事务模式
+     * 2. 添加重试机制处理 SQLITE_BUSY
+     * 3. 分批处理避免长事务
+     * 
+     * @param messages 消息列表
+     * @param maxRetries 最大重试次数
+     * @param batchSize 分批大小
+     */
+    async concurrentBatchInsert(
+        messages: SessionMessage[],
+        maxRetries: number = 3,
+        batchSize: number = 100
+    ): Promise<number> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        if (messages.length === 0) return 0;
+
+        let totalInserted = 0;
+        const batches = this.chunkArray(messages, batchSize);
+
+        for (let i = 0; i < batches.length; i++) {
+            const batch = batches[i];
+            let retryCount = 0;
+            let success = false;
+
+            while (!success && retryCount <= maxRetries) {
+                try {
+                    // 使用 EXCLUSIVE 事务模式，避免并发冲突
+                    const insertBatch = this.db.transaction((msgs: SessionMessage[]) => {
+                        const dbRows = SessionMessageMapper.batchToDb(msgs);
+                        const columns = getDbColumns('session_messages').filter(col => col !== 'id');
+                        const placeholders = getPlaceholders(columns);
+                        
+                        const stmt = this.db!.prepare(`
+                            INSERT INTO session_messages (${columns.join(', ')})
+                            VALUES (${placeholders})
+                        `);
+
+                        let inserted = 0;
+                        for (const row of dbRows) {
+                            const values = columns.map(col => row[col]);
+                            stmt.run(...values);
+                            inserted++;
+                        }
+                        return inserted;
+                    });
+
+                    // 使用 EXCLUSIVE 模式
+                    const inserted = insertBatch.exclusive(batch);
+                    totalInserted += inserted;
+                    success = true;
+
+                    sqliteLogger.debug(`批次 ${i + 1}/${batches.length} 插入成功: ${inserted} 条消息`);
+
+                } catch (error: any) {
+                    retryCount++;
+                    
+                    if (error.code === 'SQLITE_BUSY' && retryCount <= maxRetries) {
+                        // 数据库忙，等待后重试
+                        const delay = Math.min(100 * Math.pow(2, retryCount), 1000); // 指数退避
+                        sqliteLogger.warn(`批次 ${i + 1} 数据库忙，等待 ${delay}ms 后重试 (${retryCount}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    } else {
+                        // 其他错误或重试次数用尽
+                        sqliteLogger.error(`批次 ${i + 1} 插入失败`, error);
+                        throw new SQLiteError(
+                            `Failed to insert batch ${i + 1} after ${retryCount} retries`,
+                            'SQLITE_BATCH_INSERT_FAILED',
+                            error
+                        );
+                    }
+                }
+            }
+
+            if (!success) {
+                throw new SQLiteError(
+                    `Failed to insert batch ${i + 1} after ${maxRetries} retries`,
+                    'SQLITE_MAX_RETRIES_EXCEEDED'
+                );
+            }
+        }
+
+        // 批量更新 session 统计
+        await this.updateSessionStats(messages);
+
+        return totalInserted;
+    }
+
+    /**
+     * 更新 Session 统计信息（批量优化）
+     */
+    private async updateSessionStats(messages: SessionMessage[]): Promise<void> {
+        if (!this.db || messages.length === 0) return;
+
+        const sessionCounts = new Map<string, number>();
+        const sessionLastMessage = new Map<string, Date>();
+
+        for (const msg of messages) {
+            const count = sessionCounts.get(msg.sessionKey) || 0;
+            sessionCounts.set(msg.sessionKey, count + 1);
+
+            // 记录最新的消息时间
+            const currentLast = sessionLastMessage.get(msg.sessionKey);
+            if (!currentLast || msg.timestamp > currentLast) {
+                sessionLastMessage.set(msg.sessionKey, msg.timestamp);
+            }
+        }
+
+        const updateStmt = this.db.prepare(`
+            UPDATE sessions
+            SET message_count = message_count + ?,
+                updated_at = ?,
+                last_message_at = ?
+            WHERE session_key = ?
+        `);
+
+        const now = new Date().toISOString();
+        for (const [sessionKey, count] of sessionCounts) {
+            const lastMessageAt = sessionLastMessage.get(sessionKey);
+            updateStmt.run(count, now, lastMessageAt?.toISOString() || now, sessionKey);
+        }
+    }
+
+    /**
+     * 将数组分块
+     */
+    private chunkArray<T>(array: T[], size: number): T[][] {
+        const chunks: T[][] = [];
+        for (let i = 0; i < array.length; i += size) {
+            chunks.push(array.slice(i, i + size));
+        }
+        return chunks;
     }
 
     /**
@@ -501,18 +639,7 @@ export class SQLiteManager {
      * 数据库行转换为 SessionMessage 对象
      */
     private rowToMessage(row: SqlRow): SessionMessage {
-        return {
-            id: row.id,
-            sessionKey: row.session_key,
-            messageType: row.message_type,
-            content: row.content || undefined,
-            model: row.model || undefined,
-            tokensInput: row.tokens_input || undefined,
-            tokensOutput: row.tokens_output || undefined,
-            toolsJson: row.tools_json || undefined,
-            timestamp: new Date(row.timestamp),
-            createdAt: row.created_at ? new Date(row.created_at) : undefined,
-        };
+        return SessionMessageMapper.fromDb(row);
     }
 
     // ========== 统计和维护 ==========

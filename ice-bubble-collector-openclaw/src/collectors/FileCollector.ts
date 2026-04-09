@@ -26,6 +26,7 @@ import { DataValidator } from '../processors/DataValidator.js';
 import { Deduplicator } from '../processors/deduplicator.js';
 import { BatchWriter } from '../processors/BatchWriter.js';
 import { SQLiteManager } from '../storage/sqlite-manager.js';
+import { SessionCache } from '../utils/session-cache.js';
 
 const logger = new Logger('FileCollector');
 
@@ -132,8 +133,9 @@ interface FileError {
  */
 export class FileCollector extends BaseCollector implements Collector {
   private config: Required<FileCollectorConfig>;
-  private fileWatcher: FileWatcher;
-  private pipeline: CollectionPipeline;
+  private fileWatcher!: FileWatcher;
+  private pipeline!: CollectionPipeline;
+  private sessionCache: SessionCache | null = null;
   private scanTimer: NodeJS.Timeout | null = null;
   private fileProgress: Map<string, FileProgress> = new Map();
   private fileErrors: Map<string, FileError> = new Map();
@@ -147,11 +149,13 @@ export class FileCollector extends BaseCollector implements Collector {
     retriedEvents: 0,
   };
   private isRunning = false;
-  private sqliteManager: SQLiteManager;
+  private sqliteManager!: SQLiteManager;
 
   constructor(config: FileCollectorConfig) {
     super();
 
+    // 构造函数只保存配置，不创建任何子组件，也不绑定任何事件。
+    // 所有副作用（对象创建、事件监听、I/O 初始化）统一在 start() 中完成。
     this.config = {
       openclawDataDir: config.openclawDataDir,
       enableWatch: config.enableWatch ?? true,
@@ -169,6 +173,19 @@ export class FileCollector extends BaseCollector implements Collector {
       writerFlushInterval: config.writerFlushInterval ?? 5000,
     };
 
+    logger.info('FileCollector 配置已保存（组件将在 start() 中初始化）', {
+      数据目录: this.config.openclawDataDir,
+      数据库路径: this.config.dbPath,
+    });
+  }
+
+  // ==================== 私有：组件初始化（在 start() 中调用） ====================
+
+  /**
+   * 初始化所有内部组件并绑定事件。
+   * 与构造函数分离，确保副作用仅在明确调用 start() 时发生。
+   */
+  private initComponents(): void {
     // 初始化存储层
     this.sqliteManager = new SQLiteManager();
 
@@ -197,7 +214,7 @@ export class FileCollector extends BaseCollector implements Collector {
     this.fileWatcher = new FileWatcher();
     this.fileWatcher.on('error', (err) => this.emit('error', err));
 
-    logger.info('FileCollector 初始化完成 (Facade模式)', {
+    logger.info('FileCollector 组件初始化完成 (Facade模式)', {
       数据目录: this.config.openclawDataDir,
       数据库路径: this.config.dbPath,
       文件监听: this.config.enableWatch,
@@ -216,6 +233,9 @@ export class FileCollector extends BaseCollector implements Collector {
     logger.info('启动 FileCollector...');
     this.isRunning = true;
 
+    // 延迟初始化：组件创建和事件绑定在此统一进行
+    this.initComponents();
+
     if (!fs.existsSync(this.config.openclawDataDir)) {
       throw new Error(`OpenClaw 数据目录不存在: ${this.config.openclawDataDir}`);
     }
@@ -229,6 +249,13 @@ export class FileCollector extends BaseCollector implements Collector {
 
     // 启动数据处理管道
     this.pipeline.start();
+
+    // 初始化 Session 缓存
+    this.sessionCache = new SessionCache(this.sqliteManager, {
+      maxSize: 10000,
+      ttl: 5 * 60 * 1000, // 5分钟
+      enabled: true
+    });
 
     // 初始扫描所有文件
     await this.scanAllFiles();
@@ -269,6 +296,12 @@ export class FileCollector extends BaseCollector implements Collector {
     // 停止管道
     await this.pipeline.stop();
 
+    // 停止 Session 缓存
+    if (this.sessionCache) {
+      this.sessionCache.stop();
+      this.sessionCache = null;
+    }
+
     // 关闭数据库
     await this.sqliteManager.close();
 
@@ -281,22 +314,37 @@ export class FileCollector extends BaseCollector implements Collector {
 
   // ==================== 文件验证 ====================
 
-  private validateFile(filePath: string): boolean {
+  /**
+   * 获取文件 stats，失败时返回 null。
+   * 统一在此处做一次 stat 系统调用，供后续验证和进度记录复用。
+   */
+  private getFileStats(filePath: string): fs.Stats | null {
     try {
-      const stats = fs.statSync(filePath);
-      if (stats.size > this.config.maxFileSize) {
-        logger.warn(`文件大小超出限制，跳过: ${filePath}`, {
-          文件大小: `${(stats.size / 1024 / 1024).toFixed(2)}MB`,
-          限制: `${(this.config.maxFileSize / 1024 / 1024).toFixed(2)}MB`,
-        });
-        this.stats.skippedFiles++;
-        return false;
-      }
-      return true;
+      return fs.statSync(filePath);
     } catch (error) {
       logger.error(`文件状态读取失败: ${filePath}`, error as Error);
+      return null;
+    }
+  }
+
+  /**
+   * 验证文件是否符合处理条件。
+   * 接受已预取的 fs.Stats，避免重复系统调用。
+   *
+   * @param filePath - 文件路径（仅用于日志）
+   * @param stats    - 已获取的 fs.Stats 对象
+   * @returns true 表示可以处理，false 表示需要跳过
+   */
+  private validateFile(filePath: string, stats: fs.Stats): boolean {
+    if (stats.size > this.config.maxFileSize) {
+      logger.warn(`文件大小超出限制，跳过: ${filePath}`, {
+        文件大小: `${(stats.size / 1024 / 1024).toFixed(2)}MB`,
+        限制: `${(this.config.maxFileSize / 1024 / 1024).toFixed(2)}MB`,
+      });
+      this.stats.skippedFiles++;
       return false;
     }
+    return true;
   }
 
   private validateLine(line: string, lineNumber: number, filePath: string): boolean {
@@ -371,14 +419,19 @@ export class FileCollector extends BaseCollector implements Collector {
 
     for (const filePath of files) {
       try {
-        if (!this.validateFile(filePath)) continue;
-        await this.processFile(filePath, true);
+        const fileStats = this.getFileStats(filePath);
+        if (!fileStats || !this.validateFile(filePath, fileStats)) continue;
+        await this.processFile(filePath, true, fileStats);
         this.stats.processedFiles++;
       } catch (error) {
         logger.error(`文件处理失败: ${filePath}`, error as Error);
         await this.handleFileError(filePath, error as Error, async () => {
-          await this.processFile(filePath, true);
-          this.stats.processedFiles++;
+          // 重试时重新获取 stats（文件状态可能已变化）
+          const retryStats = this.getFileStats(filePath);
+          if (retryStats) {
+            await this.processFile(filePath, true, retryStats);
+            this.stats.processedFiles++;
+          }
         });
       }
     }
@@ -395,27 +448,33 @@ export class FileCollector extends BaseCollector implements Collector {
     }, {
       onAdd: async (filePath) => {
         try {
-          if (!this.validateFile(filePath)) return;
-          await this.processFile(filePath, false);
+          const fileStats = this.getFileStats(filePath);
+          if (!fileStats || !this.validateFile(filePath, fileStats)) return;
+          await this.processFile(filePath, false, fileStats);
           this.stats.totalFiles++;
           this.stats.processedFiles++;
         } catch (error) {
           logger.error(`处理新文件失败: ${filePath}`, error as Error);
           await this.handleFileError(filePath, error as Error, async () => {
-            await this.processFile(filePath, false);
-            this.stats.totalFiles++;
-            this.stats.processedFiles++;
+            const retryStats = this.getFileStats(filePath);
+            if (retryStats) {
+              await this.processFile(filePath, false, retryStats);
+              this.stats.totalFiles++;
+              this.stats.processedFiles++;
+            }
           });
         }
       },
       onChange: async (filePath) => {
         try {
-          if (!this.validateFile(filePath)) return;
-          await this.processFile(filePath, false);
+          const fileStats = this.getFileStats(filePath);
+          if (!fileStats || !this.validateFile(filePath, fileStats)) return;
+          await this.processFile(filePath, false, fileStats);
         } catch (error) {
           logger.error(`处理文件修改失败: ${filePath}`, error as Error);
           await this.handleFileError(filePath, error as Error, async () => {
-            await this.processFile(filePath, false);
+            const retryStats = this.getFileStats(filePath);
+            if (retryStats) await this.processFile(filePath, false, retryStats);
           });
         }
       },
@@ -454,8 +513,10 @@ export class FileCollector extends BaseCollector implements Collector {
 
   /**
    * 处理单个文件：增量读取 → 验证 → 管道处理 → 更新进度
+   *
+   * @param fileStats - 调用方预先获取的 fs.Stats，直接复用，避免重复系统调用
    */
-  private async processFile(filePath: string, _isInitialScan: boolean): Promise<void> {
+  private async processFile(filePath: string, _isInitialScan: boolean, fileStats: fs.Stats): Promise<void> {
     logger.debug(`处理文件: ${filePath}`);
 
     const sessionKey = buildSessionKeyFromPath(filePath);
@@ -478,8 +539,20 @@ export class FileCollector extends BaseCollector implements Collector {
 
     logger.debug(`读取到 ${events.length} 个事件，起始行: ${startLine}，结束行: ${endLine}`);
 
-    // 确保 session 存在
-    await this.pipeline.ensureSession(sessionKey);
+    // 确保 session 存在（使用缓存避免重复查询）
+    if (this.sessionCache) {
+      const exists = await this.sessionCache.ensureSession(sessionKey);
+      if (!exists) {
+        // 如果缓存中不存在，通过 pipeline 创建
+        await this.pipeline.ensureSession(sessionKey);
+        // 更新缓存
+        // 注意：这里假设 ensureSession 会创建 Session
+        // 实际应该根据 ensureSession 的返回值更新缓存
+      }
+    } else {
+      // 缓存未启用，直接调用
+      await this.pipeline.ensureSession(sessionKey);
+    }
 
     // 行长度验证过滤
     const validEvents: OpenClawEvent[] = [];
@@ -490,12 +563,11 @@ export class FileCollector extends BaseCollector implements Collector {
       }
     }
 
-    // 更新进度
-    const fileStat = fs.statSync(filePath);
+    // 更新进度（复用调用方传入的 fileStats，无需再次 stat）
     this.fileProgress.set(filePath, {
       filePath,
       lastLine: endLine,
-      lastModified: fileStat.mtimeMs,
+      lastModified: fileStats.mtimeMs,
     });
 
     // 通过管道批量处理

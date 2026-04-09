@@ -40,6 +40,9 @@ export interface BatchWriterStats {
     /** 当前缓冲区大小 */
     buffered: number;
 
+    /** 失败重试队列大小 */
+    failedBuffered: number;
+
     /** 总处理消息数 */
     totalProcessed: number;
 
@@ -100,12 +103,21 @@ export class BatchWriter extends EventEmitter {
     /** 消息缓冲区 */
     private buffer: SessionMessage[] = [];
 
+    /**
+     * 失败重试队列
+     *
+     * 当 flush 写入失败时，失败的消息会移入此队列，而非重新混入 buffer。
+     * 下次 flush 时优先消费此队列，保证消息时序且避免并发时重复写入。
+     */
+    private failedMessages: SessionMessage[] = [];
+
     /** 定时刷新器 */
     private flushTimer: NodeJS.Timeout | null = null;
 
     /** 统计信息 */
     private stats: BatchWriterStats = {
         buffered: 0,
+        failedBuffered: 0,
         totalProcessed: 0,
         totalBatches: 0,
         lastFlushAt: null,
@@ -198,12 +210,13 @@ export class BatchWriter extends EventEmitter {
      * - 抛出错误
      */
     async flush(): Promise<void> {
-        if (this.buffer.length === 0) {
+        if (this.buffer.length === 0 && this.failedMessages.length === 0) {
             return;
         }
 
-        // 保存当前缓冲区
-        const messages = [...this.buffer];
+        // 优先消费失败重试队列（放在本批次最前面，保证时序）
+        const messages = [...this.failedMessages, ...this.buffer];
+        this.failedMessages = [];
         this.buffer = [];
         this.stats.buffered = 0;
 
@@ -219,8 +232,8 @@ export class BatchWriter extends EventEmitter {
             // 发送事件
             this.emit('flush', { count: messages.length });
         } catch (error) {
-            // 恢复缓冲区
-            this.buffer = [...messages, ...this.buffer];
+            // 失败消息移入专用队列，不与后续新消息混合，保持顺序
+            this.failedMessages = messages;
             this.stats.buffered = this.buffer.length;
 
             // 发送错误事件
@@ -273,7 +286,11 @@ export class BatchWriter extends EventEmitter {
      * 获取统计信息
      */
     getStats(): BatchWriterStats {
-        return { ...this.stats };
+        return {
+            ...this.stats,
+            buffered: this.buffer.length,
+            failedBuffered: this.failedMessages.length,
+        };
     }
 
     // ========== 私有方法 ==========

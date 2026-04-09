@@ -117,8 +117,8 @@ export class CollectionPipeline extends EventEmitter {
 
     logger.debug(`批量处理 ${events.length} 个事件`);
 
-    // 确保 Session 存在（避免 FOREIGN KEY 约束失败）
-    await this.ensureSession(sessionKey);
+    // 注意：Session 创建已在 FileCollector.processFile() 中处理
+    // 这里不再重复调用 ensureSession，避免重复开销
 
     // 分批处理
     const batches = this.chunkArray(events, this.batchSize);
