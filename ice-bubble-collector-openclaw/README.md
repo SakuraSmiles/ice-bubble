@@ -1,12 +1,18 @@
+<div style="text-align:center;">
+
 # @ice-bubble/collector-openclaw
 
-> OpenClaw 数据采集模块 - 实时采集 Session 数据、Agent 状态、工具调用信息
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/typescript-5.3-blue)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-298%2F298-brightgreen)](https://github.com/SakuraSmiles/ice-bubble)
 [![Coverage](https://img.shields.io/badge/coverage-85%25+-green)](https://github.com/SakuraSmiles/ice-bubble)
+
+
+> OpenClaw 数据采集模块 - 实时采集 Session 数据、Agent 状态、工具调用信息
+
+</div>
 
 ---
 
