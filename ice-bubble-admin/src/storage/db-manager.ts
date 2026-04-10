@@ -203,6 +203,8 @@ export class DBManager {
           last_heartbeat TIMESTAMP,
           messages_collected INTEGER DEFAULT 0,
           errors_count INTEGER DEFAULT 0,
+          last_poll_time TEXT,
+          last_error TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (module_key) REFERENCES module_registry(module_key) ON DELETE CASCADE

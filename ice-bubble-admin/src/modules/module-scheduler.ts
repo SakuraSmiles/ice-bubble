@@ -12,6 +12,7 @@ export interface ModuleEndpointConfig {
   baseUrl: string;
   enabled: boolean;
   pollInterval?: number;
+  registeredTime?: string;
 }
 
 export interface ModuleStatus {
@@ -42,7 +43,20 @@ export class ModuleScheduler {
   private adminStartTime: Date;
 
   constructor(modules: ModuleEndpointConfig[], repository?: ModuleRepository) {
-    this.modules = modules.filter(m => m.enabled);
+    this.modules = modules.filter(m => m.enabled).map(m => {
+      // 优先使用配置中的注册时间，其次从数据库读取，最后才用当前时间
+      let registeredTime = m.registeredTime;
+      if (!registeredTime && repository) {
+        const dbTime = repository.getModuleCreatedAt(m.moduleKey);
+        if (dbTime) {
+          registeredTime = new Date(dbTime).toISOString();
+        }
+      }
+      return {
+        ...m,
+        registeredTime: registeredTime || new Date().toISOString(),
+      };
+    });
     this.repository = repository;
     this.adminStartTime = new Date();
   }
@@ -93,16 +107,53 @@ export class ModuleScheduler {
 
   /**
    * 获取所有模块列表（包含 admin 自己）
+   * admin 从数据库读取，其他模块从内存 + 数据库注册时间合并
    */
   getModules(): ModuleEndpointConfig[] {
-    const adminSelf: ModuleEndpointConfig = {
+    // admin 自己：从数据库读取注册时间（首次启动时已注册）
+    let adminConfig: ModuleEndpointConfig = {
       moduleKey: 'admin',
       name: 'Admin 管理后台',
       baseUrl: `http://localhost:${process.env.PORT || 13000}`,
       enabled: true,
-      pollInterval: 0  // admin 自己不需要轮询
+      pollInterval: 0,  // admin 自己不需要轮询
+      registeredTime: this.adminStartTime.toISOString(),
     };
-    return [adminSelf, ...this.modules];
+
+    // 尝试从数据库获取 admin 的注册时间
+    if (this.repository) {
+      const dbTime = this.repository.getModuleCreatedAt('admin');
+      if (dbTime) {
+        adminConfig.registeredTime = new Date(dbTime).toISOString();
+      }
+    }
+
+    // 对于外部模块，获取注册信息和版本
+    const modulesWithDbTime = this.modules.map(m => {
+      let registeredTime = m.registeredTime || this.adminStartTime.toISOString();
+      let version: string | null = null;
+      
+      if (this.repository) {
+        const dbTime = this.repository.getModuleCreatedAt(m.moduleKey);
+        if (dbTime) {
+          registeredTime = new Date(dbTime).toISOString();
+        }
+        // 获取 version
+        version = this.repository.getModuleVersion(m.moduleKey);
+      }
+      
+      return { ...m, registeredTime, version };
+    });
+
+    // admin 也获取 version
+    let adminVersion: string | null = '1.0.0';
+    if (this.repository) {
+      const adminReg = this.repository.getModule('admin');
+      adminVersion = adminReg?.version || '1.0.0';
+    }
+    adminConfig.version = adminVersion;
+
+    return [adminConfig, ...modulesWithDbTime];
   }
 
   /**
@@ -115,12 +166,19 @@ export class ModuleScheduler {
 
     // 如果是 admin 自己，返回自检配置
     if (moduleKey === 'admin') {
+      // admin 从数据库获取注册时间
+      let registeredTime = this.adminStartTime.toISOString();
+      if (this.repository) {
+        const dbTime = this.repository.getModuleCreatedAt('admin');
+        if (dbTime) registeredTime = new Date(dbTime).toISOString();
+      }
       return {
         moduleKey: 'admin',
         name: 'Admin 管理后台',
         baseUrl: `http://localhost:${process.env.PORT || 13000}`,
         enabled: true,
-        pollInterval: 0
+        pollInterval: 0,
+        registeredTime
       };
     }
 
@@ -131,6 +189,7 @@ export class ModuleScheduler {
    * 获取模块状态
    */
   private async pollModule(module: ModuleEndpointConfig): Promise<ModuleStatus | null> {
+    const now = new Date().toISOString();
     try {
       // 设置 NO_PROXY 避免代理问题
       const originalNoProxy = process.env.NO_PROXY;
@@ -149,14 +208,36 @@ export class ModuleScheduler {
       const data = await response.json() as unknown as ModuleStatus;
       this.logger.log(`[ModuleScheduler] 获取到 ${module.moduleKey} 状态: ${data.status || 'unknown'}`);
 
-      // 存入数据库
+      // 存入数据库（成功：status=running, lastPollTime=now, lastError=undefined）
       if (this.repository) {
-        await this.repository.saveModuleStatus(module.moduleKey, data);
+        // version 来自 collector 返回的数据
+        await this.repository.saveModuleStatus(module.moduleKey, {
+          status: 'running',
+          version: data.version || null,
+          runtime: {
+            startTime: data.runtime?.startTime || null,
+            uptimeSeconds: data.runtime?.uptimeSeconds || 0,
+            messagesCollected: data.runtime?.messagesCollected || 0,
+            errorsCount: data.runtime?.errorsCount || 0,
+          },
+          lastPollTime: now,
+        });
       }
 
       return data;
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`[ModuleScheduler] 获取 ${module.moduleKey} 失败:`, error);
+      
+      // 失败时：status=error/stopped, lastPollTime=now, lastError=错误信息
+      if (this.repository) {
+        await this.repository.saveModuleStatus(module.moduleKey, {
+          status: 'error',
+          lastPollTime: now,
+          lastError: errMsg,
+        });
+      }
+      
       return null;
     }
   }
@@ -220,9 +301,71 @@ export class ModuleScheduler {
   }
 
   /**
+   * 更新内存中的模块列表（热重载后调用）
+   */
+  reloadModules(newModules: ModuleEndpointConfig[]): void {
+    // 停掉旧定时器
+    for (const timer of this.timers.values()) {
+      clearInterval(timer);
+    }
+    this.timers.clear();
+
+    // 更新模块列表（只保留 enabled 的）
+    this.modules = newModules.filter(m => m.enabled);
+
+    // 重启定时器
+    for (const module of this.modules) {
+      this.pollModule(module);
+      const interval = module.pollInterval || 30000;
+      const timer = setInterval(() => this.pollModule(module), interval);
+      this.timers.set(module.moduleKey, timer);
+    }
+
+    this.logger.log(`[ModuleScheduler] 热重载完成，当前 ${this.modules.length} 个模块`);
+  }
+
+  /**
+   * 添加单个模块到内存（不重启其他模块）
+   */
+  addModule(module: ModuleEndpointConfig): void {
+    if (!this.modules.find(m => m.moduleKey === module.moduleKey)) {
+      this.modules.push(module);
+      if (module.enabled) {
+        this.pollModule(module);
+        const interval = module.pollInterval || 30000;
+        const timer = setInterval(() => this.pollModule(module), interval);
+        this.timers.set(module.moduleKey, timer);
+      }
+    }
+  }
+
+  /**
+   * 从内存移除模块
+   */
+  removeModule(moduleKey: string): void {
+    const timer = this.timers.get(moduleKey);
+    if (timer) {
+      clearInterval(timer);
+      this.timers.delete(moduleKey);
+    }
+    this.modules = this.modules.filter(m => m.moduleKey !== moduleKey);
+  }
+
+  /**
    * 从数据库获取模块状态（供 API 使用）
    */
-  async getStatusFromDatabase(moduleKey: string): Promise<ModuleStatus | null> {
+  async getStatusFromDatabase(moduleKey: string): Promise<{
+    status: 'running' | 'stopped' | 'error';
+    version?: string;
+    runtime?: {
+      startTime: string;
+      uptimeSeconds: number;
+      messagesCollected?: number;
+      errorsCount?: number;
+    };
+    lastPollTime?: string;
+    lastError?: string;
+  } | null> {
     if (!this.repository) {
       return null;
     }
@@ -232,16 +375,16 @@ export class ModuleScheduler {
       if (!row) return null;
 
       return {
-        moduleKey,
-        moduleType: '',
-        version: row.version || '',
         status: row.status,
+        version: row.version || '',
         runtime: row.runtime ? {
           startTime: row.runtime.startTime,
           uptimeSeconds: row.runtime.uptimeSeconds,
           messagesCollected: row.runtime.messagesCollected,
           errorsCount: row.runtime.errorsCount,
         } : undefined,
+        lastPollTime: row.lastPollTime,
+        lastError: row.lastError,
       };
     } catch (error) {
       this.logger.error(`[ModuleScheduler] 从数据库获取 ${moduleKey} 状态失败:`, error);

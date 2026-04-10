@@ -42,17 +42,20 @@ async function bootstrapModules(
 
   for (const cfg of configs) {
     try {
-      // 1. 尝试获取状态
-      const status = await scheduler.pollModuleNow(cfg.moduleKey);
+      // 1. 检查模块是否已存在，存在则不更新注册时间
+      const existingCreatedAt = await repository.getModuleCreatedAt(cfg.moduleKey);
+      if (!existingCreatedAt) {
+        await repository.registerModule({
+          moduleKey: cfg.moduleKey,
+          moduleName: cfg.name,
+          moduleType: 'collector',
+          status: 'running',
+          version: 'unknown'
+        });
+      }
 
-      // 2. 注册模块
-      await repository.registerModule({
-        moduleKey: cfg.moduleKey,
-        moduleName: cfg.name,
-        moduleType: 'collector',
-        status: status ? status.status : 'error',
-        version: status?.version || 'unknown'
-      });
+      // 2. 尝试获取状态
+      const status = await scheduler.pollModuleNow(cfg.moduleKey);
 
       // 3. 保存状态
       if (status) {
@@ -93,6 +96,19 @@ export async function startAdmin(): Promise<void> {
     await dbManager.init({ dbPath });
     const repository = new ModuleRepository(dbManager.getConnection());
     console.log('[Admin] 数据库初始化完成');
+
+    // 首次启动检查：如果数据库中没有模块，自动注册 admin 自己
+    const existingModules = await repository.getModules({ limit: 1 });
+    if (existingModules.modules.length === 0) {
+      await repository.registerModule({
+        moduleKey: 'admin',
+        moduleName: 'Admin 管理后台',
+        moduleType: 'admin',
+        status: 'running',
+        version: VERSION
+      });
+      console.log('[Admin] 首次启动，自动注册 admin 模块到数据库');
+    }
 
     // 初始化模块调度器
     const moduleConfigs = configData.modules || [];

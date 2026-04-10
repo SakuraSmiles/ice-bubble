@@ -489,13 +489,16 @@ export class ModuleRepository {
       status: 'healthy' | 'warning' | 'error';
       message?: string;
     };
+    lastPollTime?: string;
+    lastError?: string;
   }): Promise<void> {
     try {
       const stmt = this.db.prepare(`
         INSERT INTO module_runtime_status (
           module_key, is_running, start_time, uptime_seconds,
-          last_heartbeat, messages_collected, errors_count, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          last_heartbeat, messages_collected, errors_count,
+          last_poll_time, last_error, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(module_key) DO UPDATE SET
           is_running = excluded.is_running,
           start_time = excluded.start_time,
@@ -503,6 +506,8 @@ export class ModuleRepository {
           last_heartbeat = excluded.last_heartbeat,
           messages_collected = excluded.messages_collected,
           errors_count = excluded.errors_count,
+          last_poll_time = excluded.last_poll_time,
+          last_error = excluded.last_error,
           updated_at = excluded.updated_at
       `);
 
@@ -515,6 +520,8 @@ export class ModuleRepository {
         now,
         status.runtime?.messagesCollected || 0,
         status.runtime?.errorsCount || 0,
+        status.lastPollTime || now,
+        status.lastError || null,
         now
       );
 
@@ -548,13 +555,17 @@ export class ModuleRepository {
       messagesCollected?: number;
       errorsCount?: number;
     };
+    lastPollTime?: string;
+    lastError?: string;
     lastFetchedAt: string;
   } | null> {
     try {
       const stmt = this.db.prepare(`
         SELECT r.status, r.version,
                s.is_running, s.start_time, s.uptime_seconds,
-               s.messages_collected, s.errors_count, s.updated_at as last_fetched
+               s.messages_collected, s.errors_count,
+               s.last_poll_time, s.last_error,
+               s.updated_at as last_fetched
         FROM module_registry r
         LEFT JOIN module_runtime_status s ON r.module_key = s.module_key
         WHERE r.module_key = ?
@@ -572,6 +583,8 @@ export class ModuleRepository {
           messagesCollected: row.messages_collected as number || 0,
           errorsCount: row.errors_count as number || 0,
         } : undefined,
+        lastPollTime: row.last_poll_time as string | undefined,
+        lastError: row.last_error as string | undefined,
         lastFetchedAt: row.last_fetched as string,
       };
     } catch (error) {
@@ -630,17 +643,51 @@ export class ModuleRepository {
     status: string;
     version?: string;
   }): Promise<void> {
+    const now = new Date().toISOString();
     const sql = `
       INSERT OR REPLACE INTO module_registry
       (module_key, module_name, module_type, status, version, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `;
     this.db.prepare(sql).run(
       module.moduleKey,
       module.moduleName,
       module.moduleType,
       module.status,
-      module.version || 'unknown'
+      module.version || 'unknown',
+      now,
+      now
     );
+  }
+
+  /**
+   * 获取模块的首次注册时间（同步方法）
+   * 用于在 scheduler 启动时从数据库读取已有注册时间
+   */
+  getModuleCreatedAt(moduleKey: string): string | null {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT created_at FROM module_registry WHERE module_key = ?
+      `);
+      const row = stmt.get(moduleKey) as { created_at: string } | undefined;
+      return row?.created_at || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 获取模块版本号（同步方法）
+   */
+  getModuleVersion(moduleKey: string): string | null {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT version FROM module_registry WHERE module_key = ?
+      `);
+      const row = stmt.get(moduleKey) as { version: string } | undefined;
+      return row?.version || null;
+    } catch {
+      return null;
+    }
   }
 }

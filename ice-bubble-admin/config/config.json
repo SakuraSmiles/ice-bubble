@@ -5,7 +5,9 @@
   },
   "cors": {
     "enabled": true,
-    "origins": ["http://localhost:3000"]
+    "origins": [
+      "http://localhost:3000"
+    ]
   },
   "logging": {
     "level": "info",
@@ -32,7 +34,7 @@
   "modules": [
     {
       "moduleKey": "collector-openclaw",
-      "name": "OpenClaw采集器",
+      "name": "OpenClaw数据采集",
       "baseUrl": "http://localhost:13100",
       "enabled": true,
       "pollInterval": 30000
