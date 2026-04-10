@@ -1,10 +1,22 @@
-# ice-bubble-admin
+<div align="center">
 
-> ice-bubble 管理后台 API 服务
+<h1>ice-bubble-admin</h1>
+
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/typescript-5.3-blue)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+
+> @ice-bubble/admin  
+> ice-bubble 管理后台 API 服务 — 模块管理、数据同步、统一数据访问接口
+
+</div>
+
+---
 
 ## 项目简介
 
-ice-bubble-admin 是 ice-bubble 微服务系统的管理模块，负责：
+`@ice-bubble/admin` 是 ice-bubble 微服务系统的管理模块，负责：
 1. **模块管理**：注册、查询、监控各个 collector 模块
 2. **数据同步**：从 collector 增量同步 sessions、messages、agents 数据
 3. **数据 API**：提供统一的数据访问接口
@@ -27,6 +39,8 @@ ice-bubble-admin 是 ice-bubble 微服务系统的管理模块，负责：
 | 语言 | TypeScript 5.3+ | 严格模式 |
 | 数据库 | better-sqlite3 | SQLite 持久化存储 |
 | HTTP 客户端 | Node.js fetch | 与 collector 通信 |
+
+---
 
 ## 系统架构
 
@@ -62,6 +76,8 @@ ice-bubble-admin 是 ice-bubble 微服务系统的管理模块，负责：
 └─────────────────────────────────────────────────────────────┘
 ```
 
+---
+
 ## 快速开始
 
 ```bash
@@ -77,6 +93,8 @@ npm run build
 # 生产启动
 npm run start
 ```
+
+---
 
 ## 配置说明
 
@@ -111,6 +129,8 @@ npm run start
   }
 }
 ```
+
+---
 
 ## API 文档
 
@@ -167,6 +187,8 @@ npm run start
 }
 ```
 
+---
+
 ## 项目结构
 
 ```
@@ -180,17 +202,19 @@ src/
 │   └── module-scheduler.ts  # 模块调度器
 ├── data/
 │   ├── collector-client.ts  # Collector HTTP 客户端
-│   ├── data-sync.ts        # 数据同步调度器
+│   ├── data-sync.ts         # 数据同步调度器
 │   └── processor.ts         # 数据处理（溯源字段）
 ├── storage/
-│   ├── db-manager.ts       # 数据库管理器
+│   ├── db-manager.ts        # 数据库管理器
 │   ├── module-repository.ts # 模块存储仓库
 │   └── data-repository.ts   # 数据存储仓库
 ├── types/
-│   └── module.ts           # 模块类型定义
+│   └── module.ts            # 模块类型定义
 └── utils/
-    └── logger.ts           # 日志工具
+    └── logger.ts            # 日志工具
 ```
+
+---
 
 ## 数据溯源
 
@@ -202,6 +226,8 @@ admin 从 collector 同步的数据包含以下溯源字段：
 | source_id | 原始数据 ID |
 | source_created_at | 原始创建时间 |
 
+---
+
 ## 增量同步
 
 数据同步采用**时间 + 去重**策略：
@@ -209,6 +235,8 @@ admin 从 collector 同步的数据包含以下溯源字段：
 1. **基于时间**：使用 `last_sync_time` 记录同步时间
 2. **组合去重**：使用 `(session_key, source_id)` 确保不重复
 3. **同一事务**：同步时间与数据写入在同一事务，失败回滚
+
+---
 
 ## 脚本命令
 
@@ -219,6 +247,8 @@ admin 从 collector 同步的数据包含以下溯源字段：
 | npm run start | 生产启动 |
 | npm run typecheck | 类型检查 |
 
+---
+
 ## License
 
-MIT
+MIT © SakuraSmiles
