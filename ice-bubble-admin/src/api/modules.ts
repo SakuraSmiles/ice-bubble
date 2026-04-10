@@ -170,12 +170,14 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
     const config = readConfig();
     const modules = (config.modules || []) as Array<Record<string, unknown>>;
 
+    const now = new Date().toISOString();
     const newModule = {
       moduleKey,
       name,
       baseUrl,
       enabled: enabled !== false,
       pollInterval: pollInterval || 30000,
+      registeredTime: now,
     };
     modules.push(newModule);
     config.modules = modules;
@@ -226,12 +228,17 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       return;
     }
 
+    // 保留原有 registeredTime
+    const existingRegisteredTime = (modules[idx] as any).registeredTime;
+    
     const updated = {
       ...(modules[idx] as Record<string, unknown>),
       ...(name !== undefined && { name }),
       ...(baseUrl !== undefined && { baseUrl }),
       ...(enabled !== undefined && { enabled }),
       ...(pollInterval !== undefined && { pollInterval }),
+      // 保留注册时间
+      registeredTime: existingRegisteredTime || new Date().toISOString(),
     };
     modules[idx] = updated;
     config.modules = modules;

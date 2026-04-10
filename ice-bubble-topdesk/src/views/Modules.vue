@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
-import { Refresh, Plus, Delete } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { Refresh, Plus, Delete, InfoFilled } from '@element-plus/icons-vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 interface ModuleStatus {
   state: 'running' | 'stopped' | 'error' | null;
@@ -31,6 +31,8 @@ const error = ref('');
 const dialogVisible = ref(false);
 const dialogLoading = ref(false);
 const testingConnection = ref(false);
+const testPass = ref(false);
+const formRef = ref();
 const formData = ref({
   baseUrl: '',
   moduleKey: '',
@@ -39,6 +41,67 @@ const formData = ref({
   pollInterval: 30000,
 });
 const editingModule = ref<Module | null>(null);
+
+// 表单校验规则
+const rules = {
+  name: [
+    { required: true, message: '请输入模块名称', trigger: 'blur' },
+    { min: 2, max: 50, message: '名称长度为 2-50 个字符', trigger: 'blur' },
+  ],
+  baseUrl: [
+    { required: true, message: '请输入模块地址', trigger: 'blur' },
+    {
+      validator: (_rule: any, value: string, callback: any) => {
+        try {
+          const url = new URL(value);
+          if (!['http:', 'https:'].includes(url.protocol)) {
+            callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
+            return;
+          }
+          const host = url.hostname;
+          // 支持 localhost 或 4段IP
+          const isLocalhost = host === 'localhost';
+          const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(host);
+          if (!isLocalhost && !isIp) {
+            callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
+            return;
+          }
+          // IP 每段 0-255
+          if (isIp) {
+            const parts = host.split('.').map(Number);
+            if (parts.some(p => p > 255)) {
+              callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
+              return;
+            }
+          }
+          // 端口
+          const port = parseInt(url.port, 10);
+          if (!port || port < 1 || port > 65535) {
+            callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
+            return;
+          }
+          callback();
+        } catch {
+          callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
+        }
+      },
+      trigger: 'blur',
+    },
+  ],
+  pollInterval: [
+    { required: true, message: '请输入轮询间隔', trigger: 'blur' },
+    {
+      validator: (_rule: any, value: number, callback: any) => {
+        if (!Number.isInteger(value) || value <= 0) {
+          callback(new Error('轮询间隔必须为正整数'));
+        } else {
+          callback();
+        }
+      },
+      trigger: 'blur',
+    },
+  ],
+};
 
 async function fetchModules() {
   loading.value = true;
@@ -94,10 +157,10 @@ async function fetchModules() {
 function getDisplayStatus(mod: Module): { label: string; type: string } {
   // 1. 禁用状态
   if (!mod.enabled) return { label: '已停止', type: 'info' };
-  
+
   // 2. 无运行时状态或 null（首次运行前 / admin）→ 显示"运行中"
   if (!mod.status?.state) return { label: '运行中', type: 'success' };
-  
+
   // 3. 根据运行时状态
   switch (mod.status.state) {
     case 'running': return { label: '运行中', type: 'success' };
@@ -116,6 +179,11 @@ function getLastPollTime(mod: Module): string | null {
   return new Date(mod.status.lastPollTime).toLocaleString('zh-CN');
 }
 
+// 判断是否为 admin 模块
+function isAdminModule(): boolean {
+  return editingModule.value?.moduleKey === 'admin';
+}
+
 // 打开新增弹窗
 function openAddDialog() {
   editingModule.value = null;
@@ -126,6 +194,8 @@ function openAddDialog() {
     enabled: true,
     pollInterval: 30000,
   };
+  testPass.value = false;
+  formRef.value?.resetFields();
   dialogVisible.value = true;
 }
 
@@ -139,13 +209,16 @@ function openEditDialog(mod: Module) {
     enabled: mod.enabled,
     pollInterval: mod.pollInterval,
   };
+  testPass.value = false;
+  formRef.value?.resetFields();
   dialogVisible.value = true;
 }
 
 // 测试连接
 async function testConnection() {
-  if (!formData.value.baseUrl) {
-    ElMessage.warning('请输入模块地址');
+  try {
+    await formRef.value.validateField('baseUrl');
+  } catch {
     return;
   }
 
@@ -168,11 +241,13 @@ async function testConnection() {
 
     if (data.moduleKey) {
       formData.value.moduleKey = data.moduleKey;
+      testPass.value = true;
       ElMessage.success('连接成功，已自动获取模块Key');
     } else {
       ElMessage.warning('连接成功，但未获取到模块信息');
     }
   } catch (e: any) {
+    testPass.value = false;
     ElMessage.error('连接失败: ' + (e.message || '网络错误'));
   } finally {
     testingConnection.value = false;
@@ -181,8 +256,9 @@ async function testConnection() {
 
 // 保存模块
 async function saveModule() {
-  if (!formData.value.baseUrl || !formData.value.name) {
-    ElMessage.warning('请填写完整信息');
+  try {
+    await formRef.value.validate();
+  } catch {
     return;
   }
 
@@ -230,7 +306,13 @@ async function saveModule() {
 
 // 删除模块
 async function deleteModule(mod: Module) {
-  if (!confirm(`确定要删除模块「${mod.name}」吗？`)) return;
+  try {
+      await ElMessageBox.confirm(
+        `确定要删除模块「${mod.name}」吗？`,
+        '删除确认',
+        { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+      );
+    } catch { return; }
 
   try {
     const res = await fetch(`/api/modules/${mod.moduleKey}`, { method: 'DELETE' });
@@ -338,7 +420,8 @@ onUnmounted(() => {
     </el-card>
 
     <div class="copyright">
-      <span>© 2026 IceBubble · Built with OpenClaw</span>
+      <div>IceBubble © 2026 · SakuraSmiles</div>
+      <div>desktop version : 1.0.0</div>
     </div>
 
     <!-- 新增/编辑弹窗 -->
@@ -348,8 +431,8 @@ onUnmounted(() => {
       width="480px"
       :close-on-click-modal="false"
     >
-      <el-form label-width="80px">
-        <el-form-item label="地址">
+      <el-form ref="formRef" :model="formData" :rules="rules" label-width="80px" status-icon inline-message>
+        <el-form-item label="地址" prop="baseUrl">
           <el-input
             v-model="formData.baseUrl"
             placeholder="http://localhost:13100"
@@ -358,10 +441,10 @@ onUnmounted(() => {
         <el-form-item label="Key">
           <el-input v-model="formData.moduleKey" placeholder="自动获取" disabled />
         </el-form-item>
-        <el-form-item label="名字">
+        <el-form-item label="名字" prop="name">
           <el-input v-model="formData.name" placeholder="请输入模块名称" />
         </el-form-item>
-        <el-form-item label="轮询间隔">
+        <el-form-item label="轮询间隔" prop="pollInterval">
           <el-input-number
             v-model="formData.pollInterval"
             :min="5000"
@@ -371,7 +454,7 @@ onUnmounted(() => {
           <span class="form-tip">毫秒，最小 5000ms</span>
         </el-form-item>
         <el-form-item label="启用">
-          <el-switch v-model="formData.enabled" />
+          <el-switch v-model="formData.enabled" :disabled="isAdminModule()" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -380,13 +463,18 @@ onUnmounted(() => {
           测试连接
         </el-button>
         <el-button
-          type="primary"
+          :type="testPass ? 'primary' : 'default'"
           :loading="dialogLoading"
+          :disabled="!testPass"
           @click="saveModule"
         >
           保存
         </el-button>
       </template>
+      <div class="dialog-tip">
+            <el-icon><InfoFilled /></el-icon>
+            <span>保存前请先测试连接</span>
+          </div>
     </el-dialog>
   </div>
 </template>
@@ -539,6 +627,19 @@ onUnmounted(() => {
   padding: 20px 0;
   margin-top: auto;
 }
-</style>
-.form-tip { margin-left: 8px; color: var(--color-text-secondary); font-size: 12px; }
 
+.dialog-tip {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--el-color-warning-light-3);
+  font-weight: 500;
+  margin-top: -8px;
+  padding-bottom: 4px;
+}
+</style>
+<style>
+.form-tip { margin-left: 8px; color: var(--color-text-secondary); font-size: 12px; }
+</style>

@@ -328,14 +328,28 @@ export class ModuleScheduler {
    * 添加单个模块到内存（不重启其他模块）
    */
   addModule(module: ModuleEndpointConfig): void {
+    // 检查是否已存在，如果存在则保留 registeredTime
+    const existing = this.modules.find(m => m.moduleKey === module.moduleKey);
+    if (existing) {
+      // 已存在则保留原 registeredTime，更新其他字段
+      module.registeredTime = module.registeredTime || existing.registeredTime;
+    }
+    
     if (!this.modules.find(m => m.moduleKey === module.moduleKey)) {
       this.modules.push(module);
-      if (module.enabled) {
-        this.pollModule(module);
-        const interval = module.pollInterval || 30000;
-        const timer = setInterval(() => this.pollModule(module), interval);
-        this.timers.set(module.moduleKey, timer);
-      }
+    }
+    
+    // 更新轮询定时器
+    const existingTimer = this.timers.get(module.moduleKey);
+    if (existingTimer) {
+      clearInterval(existingTimer);
+    }
+    
+    if (module.enabled) {
+      this.pollModule(module);
+      const interval = module.pollInterval || 30000;
+      const timer = setInterval(() => this.pollModule(module), interval);
+      this.timers.set(module.moduleKey, timer);
     }
   }
 

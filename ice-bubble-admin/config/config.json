@@ -37,7 +37,8 @@
       "name": "OpenClaw数据采集",
       "baseUrl": "http://localhost:13100",
       "enabled": true,
-      "pollInterval": 30000
+      "pollInterval": 30000,
+      "registeredTime": "2026-04-10T16:22:15.365Z"
     }
   ],
   "dataSync": {
