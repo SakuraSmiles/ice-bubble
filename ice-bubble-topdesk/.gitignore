@@ -16,6 +16,7 @@ src-tauri/target/
 .env
 .env.local
 .env.*.local
+!.env.example
 
 # Logs
 *.log
