@@ -29,6 +29,7 @@
 |------|------|------|
 | 桌面框架 | Tauri 2.0 | Rust 后端 + Web 前端 |
 | 前端框架 | Vue 3.5 | Composition API |
+| UI 组件库 | Element Plus | GitHub 风格主题 |
 | 后端服务 | Express | API 代理 + 静态文件服务 |
 | 语言 | TypeScript 5.5 | 严格模式 |
 | 构建工具 | Vite 6.0 | 快速构建 |

@@ -28,7 +28,7 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 | 层级 | 模块 | 版本 | 说明 | 状态 |
 |------|------|------|------|------|
-| **VIEW LAYER** | **ice-bubble-topdesk** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Express），面向最终用户 | 🚧 开发中 |
+| **VIEW LAYER** | **ice-bubble-topdesk** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus + Express），面向最终用户 | 🚧 开发中 |
 | **BIZ LAYER** | **ice-bubble-admin** | `1.0.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 | ✅ 已实现 |
 | **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.0.0` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 | ✅ 已实现 |
 
