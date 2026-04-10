@@ -39,10 +39,12 @@ export class ModuleScheduler {
   private timers: Map<string, NodeJS.Timeout> = new Map();
   private logger = console;
   private repository?: ModuleRepository;
+  private adminStartTime: Date;
 
   constructor(modules: ModuleEndpointConfig[], repository?: ModuleRepository) {
     this.modules = modules.filter(m => m.enabled);
     this.repository = repository;
+    this.adminStartTime = new Date();
   }
 
   /**
@@ -90,17 +92,39 @@ export class ModuleScheduler {
   }
 
   /**
-   * 获取所有模块列表
+   * 获取所有模块列表（包含 admin 自己）
    */
   getModules(): ModuleEndpointConfig[] {
-    return this.modules;
+    const adminSelf: ModuleEndpointConfig = {
+      moduleKey: 'admin',
+      name: 'Admin 管理后台',
+      baseUrl: `http://localhost:${process.env.PORT || 13000}`,
+      enabled: true,
+      pollInterval: 0  // admin 自己不需要轮询
+    };
+    return [adminSelf, ...this.modules];
   }
 
   /**
    * 获取单个模块配置
    */
   getModule(moduleKey: string): ModuleEndpointConfig | undefined {
-    return this.modules.find(m => m.moduleKey === moduleKey);
+    // 先在 modules 中查找
+    const found = this.modules.find(m => m.moduleKey === moduleKey);
+    if (found) return found;
+
+    // 如果是 admin 自己，返回自检配置
+    if (moduleKey === 'admin') {
+      return {
+        moduleKey: 'admin',
+        name: 'Admin 管理后台',
+        baseUrl: `http://localhost:${process.env.PORT || 13000}`,
+        enabled: true,
+        pollInterval: 0
+      };
+    }
+
+    return undefined;
   }
 
   /**
@@ -135,6 +159,29 @@ export class ModuleScheduler {
       this.logger.error(`[ModuleScheduler] 获取 ${module.moduleKey} 失败:`, error);
       return null;
     }
+  }
+
+  /**
+   * 获取 admin 自检状态
+   */
+  getAdminStatus(): ModuleStatus {
+    const uptimeSeconds = Math.floor((Date.now() - this.adminStartTime.getTime()) / 1000);
+    return {
+      moduleKey: 'admin',
+      moduleType: 'admin',
+      version: '1.0.0',
+      status: 'running',
+      runtime: {
+        startTime: this.adminStartTime.toISOString(),
+        uptimeSeconds,
+        messagesCollected: 0,
+        errorsCount: 0
+      },
+      health: {
+        status: 'healthy',
+        message: 'Admin 服务运行正常'
+      }
+    };
   }
 
   /**

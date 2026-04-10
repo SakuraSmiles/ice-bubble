@@ -41,6 +41,15 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       return;
     }
 
+    // admin 自检状态
+    if (key === 'admin') {
+      res.json({
+        module,
+        status: scheduler.getAdminStatus()
+      });
+      return;
+    }
+
     // 优先从数据库读取状态，失败则尝试从 collector 获取
     let status = await scheduler.getStatusFromDatabase(key);
     if (!status) {
