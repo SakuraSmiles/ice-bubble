@@ -1,7 +1,7 @@
 {
-  "name": "@ice-bubble/topdesk",
+  "name": "@ice-bubble/desktop",
   "version": "1.0.0",
-  "description": "ice-bubble 桌面端展示应用",
+  "description": "ice-bubble \u684c\u9762\u7aef\u5c55\u793a\u5e94\u7528",
   "type": "module",
   "scripts": {
     "dev": "vite",
