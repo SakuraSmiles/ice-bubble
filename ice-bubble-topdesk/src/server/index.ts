@@ -31,8 +31,11 @@ app.use('/api', createProxyMiddleware({
 const distPath = join(__dirname, '../../dist');
 app.use(express.static(distPath));
 
-// SPA fallback
-app.get('*', (_req, res) => {
+// SPA fallback - 需要排除 API 路由
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
   res.sendFile(join(distPath, 'index.html'));
 });
 
