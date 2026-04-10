@@ -5,6 +5,7 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/typescript-5.3-blue)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-100000?style=flat-square&logo=github&logoColor=white)](https://github.com/SakuraSmiles/ice-bubble)
 [![mono repo](https://img.shields.io/badge/mono-repo-brightgreen?style=flat-square)](https://github.com/SakuraSmiles/ice-bubble)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen?style=flat-square)](https://github.com/SakuraSmiles/ice-bubble)
 [![Coverage](https://img.shields.io/badge/coverage-85%25+-green?style=flat-square)](https://github.com/SakuraSmiles/ice-bubble)
