@@ -645,6 +645,148 @@ export class SQLiteManager {
     // ========== 统计和维护 ==========
 
     /**
+     * 获取会话列表（分页）
+     */
+    async getSessions(params: {
+        limit?: number;
+        offset?: number;
+        since?: string;
+    }): Promise<{ count: number; sessions: Session[] }> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        try {
+            const limit = params.limit ?? 100;
+            const offset = params.offset ?? 0;
+
+            let countSql = `SELECT COUNT(*) as count FROM sessions`;
+            let dataSql = `SELECT * FROM sessions`;
+            const dataParams: unknown[] = [];
+
+            if (params.since) {
+                const sinceClause = ` WHERE updated_at >= ?`;
+                countSql += sinceClause;
+                dataSql += sinceClause;
+                dataParams.push(params.since);
+            }
+
+            dataSql += ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`;
+            dataParams.push(limit, offset);
+
+            const countStmt = this.db.prepare(countSql);
+            const countParams = params.since ? [params.since] : [];
+            const countResult = countStmt.get(...countParams) as SqlRow;
+
+            const stmt = this.db.prepare(dataSql);
+            const rows = stmt.all(...dataParams) as SqlRow[];
+
+            return {
+                count: countResult.count as number,
+                sessions: rows.map(row => this.rowToSession(row)),
+            };
+        } catch (error) {
+            throw new SQLiteError(
+                'Failed to get sessions',
+                'SQLITE_QUERY_FAILED',
+                error
+            );
+        }
+    }
+
+    /**
+     * 获取消息列表（分页）
+     */
+    async getMessages(params: {
+        sessionKey?: string;
+        limit?: number;
+        offset?: number;
+        since?: string;
+    }): Promise<{ count: number; messages: SessionMessage[] }> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        try {
+            const limit = params.limit ?? 100;
+            const offset = params.offset ?? 0;
+
+            const conditions: string[] = [];
+            const queryParams: unknown[] = [];
+
+            if (params.sessionKey) {
+                conditions.push(`session_key = ?`);
+                queryParams.push(params.sessionKey);
+            }
+            if (params.since) {
+                conditions.push(`timestamp >= ?`);
+                queryParams.push(params.since);
+            }
+
+            const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+
+            const countSql = `SELECT COUNT(*) as count FROM session_messages${whereClause}`;
+            const countStmt = this.db.prepare(countSql);
+            const countResult = countStmt.get(...queryParams) as SqlRow;
+
+            const dataSql = `SELECT * FROM session_messages${whereClause} ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+            const dataParams = [...queryParams, limit, offset];
+            const stmt = this.db.prepare(dataSql);
+            const rows = stmt.all(...dataParams) as SqlRow[];
+
+            return {
+                count: countResult.count as number,
+                messages: rows.map(row => this.rowToMessage(row)),
+            };
+        } catch (error) {
+            throw new SQLiteError(
+                'Failed to get messages',
+                'SQLITE_QUERY_FAILED',
+                error
+            );
+        }
+    }
+
+    /**
+     * 获取数据统计
+     */
+    async getDataStats(): Promise<{
+        sessionCount: number;
+        messageCount: number;
+        agentCount: number;
+        lastUpdated: string;
+    }> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        try {
+            const sessionStmt = this.db.prepare(`SELECT COUNT(*) as count FROM sessions`);
+            const messageStmt = this.db.prepare(`SELECT COUNT(*) as count FROM session_messages`);
+            const agentStmt = this.db.prepare(`SELECT COUNT(*) as count FROM agents`);
+            const lastUpdatedStmt = this.db.prepare(`SELECT MAX(updated_at) as last_updated FROM sessions`);
+
+            const sessionResult = sessionStmt.get() as SqlRow;
+            const messageResult = messageStmt.get() as SqlRow;
+            const agentResult = agentStmt.get() as SqlRow;
+            const lastUpdatedResult = lastUpdatedStmt.get() as SqlRow;
+
+            return {
+                sessionCount: sessionResult.count as number,
+                messageCount: messageResult.count as number,
+                agentCount: agentResult.count as number,
+                lastUpdated: (lastUpdatedResult.last_updated as string) || new Date(0).toISOString(),
+            };
+        } catch (error) {
+            throw new SQLiteError(
+                'Failed to get data stats',
+                'SQLITE_QUERY_FAILED',
+                error
+            );
+        }
+    }
+
+    /**
      * 获取统计信息
      */
     async getStats(): Promise<{

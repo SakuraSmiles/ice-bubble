@@ -603,6 +603,18 @@ export class FileCollector extends BaseCollector implements Collector {
     };
   }
 
+  async getSessions(params: { limit?: number; offset?: number; since?: string }) {
+    return this.sqliteManager.getSessions(params);
+  }
+
+  async getMessages(params: { sessionKey?: string; limit?: number; offset?: number; since?: string }) {
+    return this.sqliteManager.getMessages(params);
+  }
+
+  async getDataStats() {
+    return this.sqliteManager.getDataStats();
+  }
+
   getFileProgress(): Map<string, FileProgress> {
     return new Map(this.fileProgress);
   }

@@ -76,9 +76,18 @@ async function start() {
   
   await collector.start();
   startLogger.info('✅ 采集器启动成功\n');
+
+  // ==================== 5. 启动 HTTP API ====================
+
+  if (config.api.enabled) {
+    const { startApiServer } = await import('./api/server.js');
+    await startApiServer(config.api, collector);
+    startLogger.info('✅ HTTP API 已启动\n');
+  }
+
   startLogger.info('💡 提示: 按 Ctrl+C 停止采集器\n');
 
-  // ==================== 5. 优雅关闭 ====================
+  // ==================== 6. 优雅关闭 ====================
   
   const shutdown = async (signal: string) => {
     startLogger.info(`\n收到 ${signal} 信号，正在关闭...`);
