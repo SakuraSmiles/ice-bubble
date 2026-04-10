@@ -1,10 +1,9 @@
 use tauri::Manager;
 use std::process::Command;
-use std::fs;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 启动内置的 Node.js 代理服务
+    // 获取 exe 同目录下的 server
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
@@ -12,19 +11,24 @@ pub fn run() {
     
     let server_path = exe_dir.join("server").join("index.js");
     
-    // 如果 server/index.js 存在，启动它
+    // 尝试启动内置 server
     if server_path.exists() {
-        println!("Starting built-in server...");
-        let _server_child = Command::new("node")
-            .arg(server_path)
-            .spawn()
-            .expect("Failed to start server");
+        println!("Starting built-in server from {:?}", server_path);
+        match Command::new("node").arg(&server_path).spawn() {
+            Ok(_child) => {
+                println!("Server started successfully");
+            },
+            Err(e) => {
+                // 端口冲突或其他错误：静默跳过
+                eprintln!("Server not started: {} - using external", e);
+            }
+        }
     }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            println!("ice-bubble-desktop started!");
+            println!("IceBubble Desktop started!");
             let window = app.get_webview_window("main").unwrap();
             window.set_title("IceBubble Desktop").unwrap();
             Ok(())
