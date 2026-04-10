@@ -6,10 +6,8 @@ import http from 'http';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 14000;
-const ADMIN = 'http://localhost:13000';
 
 const server = createServer(async (req, res) => {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -20,22 +18,21 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // API proxy
   if (req.url?.startsWith('/api/')) {
-    const target = `${ADMIN}${req.url}`;
     console.log(`>>> ${req.method} ${req.url}`);
     
-    const chunks = [];
+    const chunks: string[] = [];
     for await (const chunk of req) {
-      chunks.push(chunk);
+      chunks.push(chunk.toString());
     }
-    const body = Buffer.concat(chunks);
+    const body = Buffer.concat(chunks.map(c => Buffer.from(c)));
     console.log(`>>> body: ${body.toString()}`);
     
+    const reqUrl = req.url || '/';
     const options = {
       hostname: 'localhost',
       port: 13000,
-      path: req.url,
+      path: reqUrl,
       method: req.method,
       headers: {
         'Content-Type': 'application/json',
@@ -43,16 +40,19 @@ const server = createServer(async (req, res) => {
       }
     };
     
-    const result = await new Promise((resolve) => {
+    const result = await new Promise<{status: number; data: string}>((resolve) => {
       const proxyReq = http.request(options, (proxyRes) => {
         let data = '';
-        proxyRes.on('data', chunk => data += chunk);
-        proxyRes.on('end', () => resolve({ status: proxyRes.statusCode, data }));
+        proxyRes.on('data', (chunk) => { data += chunk.toString(); });
+        proxyRes.on('end', () => { 
+          const status = proxyRes.statusCode;
+          resolve({ status: status != null ? status : 500, data }); 
+        });
       });
-      proxyReq.on('error', e => resolve({ status: 500, data: JSON.stringify({ error: e.message }) }));
+      proxyReq.on('error', (e) => resolve({ status: 500, data: JSON.stringify({ error: e.message }) }));
       if (body.length > 0) proxyReq.write(body);
       proxyReq.end();
-    }) as { status: number; data: string };
+    });
     
     console.log(`<<< ${result.status}`);
     res.statusCode = result.status;
@@ -61,9 +61,9 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // Static
   const distPath = join(__dirname, '../../dist');
-  const filePath = join(distPath, req.url === '/' ? 'index.html' : req.url.replace(/^\//, ''));
+  const reqUrl = req.url || '/';
+  const filePath = join(distPath, reqUrl === '/' ? 'index.html' : reqUrl.replace(/^\//, ''));
   
   if (existsSync(filePath)) {
     res.statusCode = 200;
@@ -74,4 +74,4 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`Topdesk: ${PORT}`));
+server.listen(PORT, () => console.log(`Desktop: ${PORT}`));

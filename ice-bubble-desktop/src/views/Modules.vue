@@ -280,7 +280,7 @@ async function saveModule() {
     };
 
     const isEdit = !!editingModule.value;
-    const url = isEdit ? '/api/modules/' + editingModule.value.moduleKey : '/api/modules';
+    const url = isEdit && editingModule.value ? '/api/modules/' + editingModule.value.moduleKey : '/api/modules';
     const method = isEdit ? 'PUT' : 'POST';
 
     const res = await fetch(url, {
