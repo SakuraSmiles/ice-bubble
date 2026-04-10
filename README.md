@@ -12,6 +12,8 @@
 
 > ice-bubble 多 Agent 团队协作管理系统 — 三层架构：数据采集 · 业务核心 · 桌面展示
 
+**当前版本：** `1.0.0` (所有模块统一版本号)
+
 </div>
 
 ---
@@ -24,11 +26,11 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 ## 核心模块
 
-| 层级 | 模块 | 说明 | 状态 |
-|------|------|------|------|
-| **VIEW LAYER** | **ice-bubble-topdesk** | 桌面端展示应用（Tauri + Vue3)，面向最终用户 | 🚧 开发中 |
-| **BIZ LAYER** | **ice-bubble-admin** | 核心业务逻辑（API 服务、状态管理、任务调度），整体内聚 | 🚧 开发中 |
-| **DATA LAYER** | **ice-bubble-collector-openclaw** | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 | ✅ 已实现 |
+| 层级 | 模块 | 版本 | 说明 | 状态 |
+|------|------|------|------|------|
+| **VIEW LAYER** | **ice-bubble-topdesk** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Express），面向最终用户 | 🚧 开发中 |
+| **BIZ LAYER** | **ice-bubble-admin** | `1.0.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 | ✅ 已实现 |
+| **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.0.0` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 | ✅ 已实现 |
 
 > DATA LAYER 设计为可插拔：未来新增数据源（如 WorkBuddy）只需实现标准接口的 Collector 即可。
 
@@ -49,8 +51,10 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 | 文档 | 说明 |
 |------|------|
-| [collector-openclaw](./ice-bubble-collector-openclaw/README.md) | 数据采集模块详细文档 |
+| [topdesk](./ice-bubble-topdesk/README.md) | 桌面端展示应用详细文档 |
 | [admin](./ice-bubble-admin/README.md) | 核心业务模块详细文档 |
+| [collector-openclaw](./ice-bubble-collector-openclaw/README.md) | 数据采集模块详细文档 |
+| [接入规范](./docs/integration.md) | 模块接入标准和规范 |
 
 ---
 
@@ -64,7 +68,8 @@ ice-bubble/
 ├── README.md
 ├── data/                              ← 运行时数据（SQLite 等）
 ├── docs/
-│   └── ice-bubble.drawio.svg         ← 系统架构图
+│   ├── ice-bubble.drawio.svg         ← 系统架构图
+│   └── integration.md                 ← 模块接入规范
 ├── ice-bubble-admin/                  ← BIZ LAYER：核心业务逻辑
 │   ├── README.md
 │   ├── config/
@@ -77,7 +82,18 @@ ice-bubble/
 │   ├── tests/
 │   └── docs/
 └── ice-bubble-topdesk/                ← VIEW LAYER：桌面端展示应用
+    ├── README.md
+    ├── src/
+    └── src-tauri/
 ```
+
+## 服务端口
+
+| 模块 | 端口 | 说明 |
+|------|------|------|
+| topdesk 后端 | 14000 | Express API 代理 |
+| admin | 13000 | 业务 API |
+| collector | 13100 | 数据采集 API |
 
 ---
 
