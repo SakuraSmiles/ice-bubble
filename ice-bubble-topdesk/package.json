@@ -20,11 +20,15 @@
   "author": "SakuraSmiles",
   "license": "MIT",
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
+    "element-plus": "^2.13.6",
     "express": "^5.2.1",
     "http-proxy-middleware": "^3.0.5",
-    "vue": "^3.5.0"
+    "lucide-vue-next": "^1.0.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@tauri-apps/api": "^2.0.0",
