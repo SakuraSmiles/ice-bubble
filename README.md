@@ -28,7 +28,7 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 | 层级 | 模块 | 版本 | 说明 | 状态 |
 |------|------|------|------|------|
-| **VIEW LAYER** | **ice-bubble-topdesk** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus + Express），面向最终用户 | 🚧 开发中 |
+| **VIEW LAYER** | **ice-bubble-desktop** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus + Express），面向最终用户 | 🚧 开发中 |
 | **BIZ LAYER** | **ice-bubble-admin** | `1.0.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 | ✅ 已实现 |
 | **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.0.0` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 | ✅ 已实现 |
 
@@ -51,7 +51,7 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 | 文档 | 说明 |
 |------|------|
-| [topdesk](./ice-bubble-topdesk/README.md) | 桌面端展示应用详细文档 |
+| [desktop](./ice-bubble-desktop/README.md) | 桌面端展示应用详细文档 |
 | [admin](./ice-bubble-admin/README.md) | 核心业务模块详细文档 |
 | [collector-openclaw](./ice-bubble-collector-openclaw/README.md) | 数据采集模块详细文档 |
 | [接入规范](./docs/integration.md) | 模块接入标准和规范 |
@@ -81,7 +81,7 @@ ice-bubble/
 │   ├── src/
 │   ├── tests/
 │   └── docs/
-└── ice-bubble-topdesk/                ← VIEW LAYER：桌面端展示应用
+└── ice-bubble-desktop/                ← VIEW LAYER：桌面端展示应用
     ├── README.md
     ├── src/
     └── src-tauri/
@@ -91,7 +91,7 @@ ice-bubble/
 
 | 模块 | 端口 | 说明 |
 |------|------|------|
-| topdesk 后端 | 14000 | Express API 代理 |
+| desktop 后端 | 14000 | Express API 代理 |
 | admin | 13000 | 业务 API |
 | collector | 13100 | 数据采集 API |
 
