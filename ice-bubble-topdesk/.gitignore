@@ -1,0 +1,39 @@
+# Node.js
+node_modules/
+dist/
+
+# Tauri
+src-tauri/target/
+
+# Build outputs
+*.deb
+*.rpm
+*.AppImage/
+*.dmg
+*.msi
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Test
+coverage/

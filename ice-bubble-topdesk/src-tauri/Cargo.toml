@@ -1,0 +1,26 @@
+[package]
+name = "ice_bubble_topdesk"
+version = "1.0.0"
+description = "ice-bubble 桌面端展示应用"
+authors = ["SakuraSmiles"]
+edition = "2021"
+
+[lib]
+name = "topdesk_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
