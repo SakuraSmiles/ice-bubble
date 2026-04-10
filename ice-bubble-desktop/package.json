@@ -1,16 +1,17 @@
 {
   "name": "@ice-bubble/desktop",
   "version": "1.0.0",
-  "description": "ice-bubble 桌面端展示应用",
+  "description": "ice-bubble \u684c\u9762\u7aef\u5c55\u793a\u5e94\u7528",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx src/server/index.ts",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vue-tsc --noEmit && vite build && npm run build:server",
     "start": "tsx src/server/index.ts",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:server": "esbuild src/server/index.ts --platform=node --format=cjs --outfile=dist-server/index.js"
   },
   "keywords": [
     "ice-bubble",
