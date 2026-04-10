@@ -11,6 +11,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { readFileSync } from 'fs';
 import { Logger } from '../../utils/logger.js';
 import { getConfig } from '../../utils/config-loader.js';
 import type { FileCollector } from '../../collectors/FileCollector.js';
@@ -34,6 +35,18 @@ let startTimeISO: string = '';
  */
 export function markStartTime(): void {
     startTimeISO = new Date().toISOString();
+}
+
+/**
+ * 动态读取 package.json 中的版本号
+ */
+function getModuleVersion(): string {
+    try {
+        const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'));
+        return packageJson.version || '1.0.0';
+    } catch {
+        return 'unknown';
+    }
 }
 
 /**
@@ -103,8 +116,7 @@ export function createMetaRouter(collector: FileCollector): Router {
             const body: ModuleStatusResponse = {
                 moduleKey: MODULE_KEY,
                 moduleType: MODULE_TYPE,
-                // 版本从 package.json 注入，此处使用常量
-                version: '1.0.0',
+                version: getModuleVersion(),
                 status: 'running',
                 runtime: buildRuntimeInfo(stats),
                 health: buildHealthInfo(stats),
@@ -129,7 +141,7 @@ export function createMetaRouter(collector: FileCollector): Router {
     router.get('/config', (_req: Request, res: Response) => {
         try {
             const config = getConfig();
-            
+
             // 返回关键配置（可以按需调整）
             const body = {
                 watchPath: config.collection.file.watchPath,
