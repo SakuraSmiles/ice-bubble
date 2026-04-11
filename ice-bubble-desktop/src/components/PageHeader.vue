@@ -7,8 +7,8 @@ defineProps<{
 
 <template>
   <header class="page-header">
-    <div class="page-title">
-      <h1>{{ title }}</h1>
+    <div class="page-title-area">
+      <h1 class="page-title">{{ title }}</h1>
       <span v-if="subtitle" class="page-subtitle">{{ subtitle }}</span>
     </div>
     <div class="page-actions">
@@ -20,28 +20,31 @@ defineProps<{
 <style scoped>
 .page-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-light);
+  justify-content: space-between;
+  padding: 20px 0;
 }
 
-.page-title h1 {
-  margin: 0;
-  font-size: 20px;
+.page-title-area {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.page-title {
+  font-size: 1.25rem;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--color-text);
+  margin: 0;
 }
 
 .page-subtitle {
-  margin-left: 8px;
   font-size: 14px;
-  color: var(--el-text-color-secondary);
+  color: var(--color-text-secondary);
 }
 
 .page-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 </style>

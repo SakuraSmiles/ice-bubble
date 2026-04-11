@@ -39,7 +39,7 @@ onMounted(() => {
   <div class="overview-page">
     <PageHeader title="系统概览" subtitle="实时监控面板" />
     
-    <main class="overview-content">
+    <main class="content-area">
       <el-row :gutter="20">
         <el-col :span="6">
           <el-card shadow="hover">
@@ -122,7 +122,7 @@ onMounted(() => {
   min-height: 100vh;
 }
 
-.overview-content {
+.content-area {
   flex: 1;
   padding: 24px;
   background: var(--el-bg-color-page);
