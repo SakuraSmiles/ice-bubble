@@ -328,6 +328,7 @@ async function toggleModule(mod: Module) {
 }
 
 async function testModuleConnection(mod: Module) {
+  testingConnection.value = true;
   try {
     const res = await fetch('/api/modules/test-connection', {
       method: 'POST',
@@ -343,6 +344,8 @@ async function testModuleConnection(mod: Module) {
     }
   } catch (e: any) {
     ElMessage.error('连接测试失败: ' + (e.message || '未知错误'));
+  } finally {
+    testingConnection.value = false;
   }
 }
 
@@ -385,7 +388,7 @@ onUnmounted(() => {
           <div class="card-header">
             <div class="module-title">
               <h2 class="module-name">{{ mod.name }}</h2>
-              <span class="module-key">{{ mod.moduleKey }}  {{ mod.version || '-' }}</span>
+              <span class="module-key">{{ mod.moduleKey }} @ {{ mod.version || '-' }}</span>
             </div>
             <div class="card-actions">
               <el-tag
@@ -433,6 +436,7 @@ onUnmounted(() => {
                 v-if="mod.moduleKey !== 'admin'"
                 type="primary"
                 class="action-btn"
+                :loading="testingConnection"
                 @click.stop="testModuleConnection(mod)"
               >
                 测试连接
@@ -443,6 +447,7 @@ onUnmounted(() => {
                 class="action-btn"
                 @click.stop="toggleModule(mod)"
               >
+                <el-icon><VideoPlay v-if="!mod.enabled" /><VideoPause v-else /></el-icon>
                 {{ mod.enabled ? '停用' : '启用' }}
               </el-button>
             </div>
