@@ -420,26 +420,27 @@ onUnmounted(() => {
           <div class="card-header">
             <div class="title-row">
               <div class="module-title">
-                <h2 class="module-name">{{ mod.name }}</h2>
+                <h2 class="module-name">
+                  {{ mod.name }}
+                  <el-button
+                    v-if="mod.moduleKey !== 'admin'"
+                    link
+                    class="inline-delete-btn"
+                    @click.stop="deleteModule(mod)"
+                    @mouseenter="$event.target.style.color = 'var(--color-accent-red)'"
+                    @mouseleave="$event.target.style.color = 'var(--color-text-secondary)'"
+                  >
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </h2>
                 <span class="module-key">{{ mod.moduleKey }} @ {{ mod.version || '-' }}</span>
               </div>
-              <div class="header-actions">
-                <el-tag
-                :type="getDisplayStatus(mod).type"
-                size="small"
-                >
-                  {{ getDisplayStatus(mod).label }}
-                </el-tag>
-                <el-button
-                  v-if="mod.moduleKey !== 'admin'"
-                  link
-                  @click.stop="deleteModule(mod)"
-                  @mouseenter="$event.target.style.color = 'var(--color-accent-red)'"
-                  @mouseleave="$event.target.style.color = 'var(--color-text-secondary)'"
-                >
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </div>
+              <el-tag
+              :type="getDisplayStatus(mod).type"
+              size="small"
+              >
+                {{ getDisplayStatus(mod).label }}
+              </el-tag>
             </div>
           </div>
           <div class="card-body">
@@ -454,7 +455,7 @@ onUnmounted(() => {
             </div>
             <div class="info-row" v-if="getLastPollTime(mod)">
               <span class="info-label">最后轮询</span>
-              <span class="info-value time-value">{{ getLastPollTime(mod) }}</span>
+              <span class="info-value time">{{ getLastPollTime(mod) || "-" }}</span>
             </div>
             <div class="info-row error-row" v-if="getLastError(mod)">
               <span class="info-label">错误</span>
@@ -642,18 +643,23 @@ onUnmounted(() => {
   color: var(--color-text);
   margin: 0;
   line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-delete-btn {
+  font-size: 14px;
+  opacity: 0.6;
+}
+
+.inline-delete-btn:hover {
+  opacity: 1;
 }
 
 .module-key {
   font-size: 12px;
   color: var(--color-text-secondary);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
 }
 
 .module-name {
