@@ -12,7 +12,6 @@ import { ModuleScheduler } from '../modules/module-scheduler.js';
 
 // config.json 路径（相对于 src/）
 function getConfigPath(): string {
-  // 从模块文件位置向上两级到项目根目录，再进入 config/
   const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
   return join(projectRoot, 'config', 'config.json');
 }
@@ -25,79 +24,107 @@ function writeConfig(config: Record<string, unknown>): void {
   writeFileSync(getConfigPath(), JSON.stringify(config, null, 2), 'utf-8');
 }
 
+/**
+ * 构建完整的模块响应对象（静态配置 + 动态状态）
+ */
+interface ModuleStatus {
+  state: 'running' | 'stopped' | 'error';
+  lastPollTime: string | null;
+  lastError: string | null;
+  runtime: {
+    startTime: string | null;
+    uptimeSeconds?: number;
+    messagesCollected?: number;
+    errorsCount?: number;
+  } | null;
+}
+
+interface ModuleResponse {
+  moduleKey: string;
+  name: string;
+  baseUrl: string;
+  enabled: boolean;
+  pollInterval: number;
+  registeredTime: string;
+  version: string;
+  status: ModuleStatus;
+}
+
+function buildModuleResponse(
+  m: { moduleKey: string; name: string; baseUrl: string; enabled: boolean; pollInterval: number; registeredTime: string },
+  version: string | null,
+  status: ModuleStatus | null
+): ModuleResponse {
+  return {
+    moduleKey: m.moduleKey,
+    name: m.name,
+    baseUrl: m.baseUrl,
+    enabled: m.enabled,
+    pollInterval: m.pollInterval,
+    registeredTime: m.registeredTime,
+    version: version || '-',
+    status: status || {
+      state: 'running',
+      lastPollTime: null,
+      lastError: null,
+      runtime: { startTime: null },
+    },
+  };
+}
+
 export function createModulesRouter(scheduler: ModuleScheduler): Router {
   const router = Router();
 
   /**
    * GET /api/modules
-   * 获取所有模块列表（包含状态）
+   * 获取所有模块列表（完整对象）
    */
   router.get('/', async (_req: Request, res: Response) => {
     const modules = scheduler.getModules();
     
-    // 获取每个模块的完整信息（包括状态）
-    const modulesWithStatus = await Promise.all(
+    const moduleList = await Promise.all(
       modules.map(async (m) => {
-        const moduleKey = m.moduleKey;
-        
         // 获取版本
         const version = (m as any).version || null;
         
-        // 获取运行时状态（始终返回对象，即使没有数据）
-        let status = {
-          state: 'stopped' as const,
-          lastPollTime: null,
-          lastError: null,
-          runtime: { startTime: null },
-        };
+        // 获取状态
+        let status: ModuleStatus | null = null;
         
-        if (moduleKey === 'admin') {
-          // admin 自检状态
+        if (m.moduleKey === 'admin') {
           const adminStatus = scheduler.getAdminStatus();
           status = {
-            state: null,
+            state: 'running',
             lastPollTime: adminStatus.runtime?.startTime || null,
             lastError: null,
             runtime: { startTime: adminStatus.runtime?.startTime || null },
           };
         } else {
-          // 从数据库获取状态
-          const dbStatus = await scheduler.getStatusFromDatabase(moduleKey);
+          const dbStatus = await scheduler.getStatusFromDatabase(m.moduleKey);
           if (dbStatus) {
             status = {
               state: dbStatus.status,
               lastPollTime: dbStatus.lastPollTime || null,
               lastError: dbStatus.lastError || null,
-              runtime: { startTime: dbStatus.runtime?.startTime || null },
+              runtime: dbStatus.runtime ? {
+                startTime: dbStatus.runtime.startTime,
+                uptimeSeconds: dbStatus.runtime.uptimeSeconds,
+                messagesCollected: dbStatus.runtime.messagesCollected,
+                errorsCount: dbStatus.runtime.errorsCount,
+              } : null,
             };
-          } else {
-            // 如果没有状态数据，默认为 running（刚注册尚未采集）
-            status.state = 'running';
           }
         }
         
-        return {
-          moduleKey,
-          name: m.name,
-          baseUrl: m.baseUrl,
-          enabled: m.enabled,
-          pollInterval: m.pollInterval,
-          registeredTime: m.registeredTime,
-          version,
-          status,
-        };
+        return buildModuleResponse(m, version, status);
       })
     );
     
-    res.json({
-      count: modulesWithStatus.length,
-      modules: modulesWithStatus
-    });
+    res.json({ count: moduleList.length, modules: moduleList });
   });
 
   /**
    * GET /api/modules/:key
-   * 获取单个模块详情
+   * 获取单个模块详情（完整对象）
    */
   router.get('/:key', async (req: Request, res: Response) => {
     const { key } = req.params;
@@ -108,56 +135,44 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       return;
     }
 
-    // admin 自检状态（state=null 表示由前端特殊处理显示为"运行中"）
+    let version: string | null = null;
+    let status: ModuleStatus | null = null;
+
     if (key === 'admin') {
+      // admin 自检
+      version = '1.0.0';
       const adminStatus = scheduler.getAdminStatus();
-      res.json({
-        moduleKey: module.moduleKey,
-        name: module.name,
-        baseUrl: module.baseUrl,
-        enabled: module.enabled,
-        pollInterval: module.pollInterval,
-        registeredTime: module.registeredTime,
-        version: '1.0.0',
-        status: {
-          state: null,
-          lastPollTime: adminStatus.runtime?.startTime || null,
-          lastError: null,
-          runtime: { startTime: adminStatus.runtime?.startTime || null },
-        }
-      });
-      return;
-    }
-
-    // 优先从数据库读取状态，失败则尝试从 collector 获取
-    let dbStatus = await scheduler.getStatusFromDatabase(key);
-    if (!dbStatus) {
-      await scheduler.pollModuleNow(key);
-      dbStatus = await scheduler.getStatusFromDatabase(key);
-    }
-
-    res.json({
-      moduleKey: module.moduleKey,
-      name: module.name,
-      baseUrl: module.baseUrl,
-      enabled: module.enabled,
-      pollInterval: module.pollInterval,
-      registeredTime: module.registeredTime,
-      version: dbStatus?.version || module.version || null,
-      status: dbStatus ? {
-        state: dbStatus.status,
-        lastPollTime: dbStatus.lastPollTime || null,
-        lastError: dbStatus.lastError || null,
-        runtime: {
-          startTime: dbStatus.runtime?.startTime || null,
-        },
-      } : {
+      status = {
         state: 'running',
-        lastPollTime: null,
+        lastPollTime: adminStatus.runtime?.startTime || null,
         lastError: null,
-        runtime: { startTime: null },
+        runtime: { startTime: adminStatus.runtime?.startTime || null },
+      };
+    } else {
+      // 从数据库获取状态
+      let dbStatus = await scheduler.getStatusFromDatabase(key);
+      if (!dbStatus) {
+        await scheduler.pollModuleNow(key);
+        dbStatus = await scheduler.getStatusFromDatabase(key);
       }
-    });
+      
+      version = dbStatus?.version || module.version || null;
+      if (dbStatus) {
+        status = {
+          state: dbStatus.status,
+          lastPollTime: dbStatus.lastPollTime || null,
+          lastError: dbStatus.lastError || null,
+          runtime: dbStatus.runtime ? {
+            startTime: dbStatus.runtime.startTime,
+            uptimeSeconds: dbStatus.runtime.uptimeSeconds,
+            messagesCollected: dbStatus.runtime.messagesCollected,
+            errorsCount: dbStatus.runtime.errorsCount,
+          } : null,
+        };
+      }
+    }
+
+    res.json(buildModuleResponse(module, version, status));
   });
 
   /**
@@ -197,7 +212,6 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       return;
     }
 
-    // 防止重复
     const existing = scheduler.getModule(moduleKey);
     if (existing) {
       res.status(409).json({ error: '模块已存在', moduleKey });
@@ -220,10 +234,8 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
     config.modules = modules;
     writeConfig(config);
 
-    // 添加到内存
     scheduler.addModule(newModule as Parameters<typeof scheduler.addModule>[0]);
 
-    // 注册到数据库
     if (scheduler['repository']) {
       await scheduler['repository'].registerModule({
         moduleKey,
@@ -243,7 +255,6 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
   router.put('/:key', async (req: Request, res: Response) => {
     const { key } = req.params;
 
-    // admin 自己不允许更新
     if (key === 'admin') {
       res.status(403).json({ error: '禁止更新 admin 模块' });
       return;
@@ -265,7 +276,6 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       return;
     }
 
-    // 保留原有 registeredTime
     const existingRegisteredTime = (modules[idx] as any).registeredTime;
     
     const updated = {
@@ -274,14 +284,12 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       ...(baseUrl !== undefined && { baseUrl }),
       ...(enabled !== undefined && { enabled }),
       ...(pollInterval !== undefined && { pollInterval }),
-      // 保留注册时间
       registeredTime: existingRegisteredTime || new Date().toISOString(),
     };
     modules[idx] = updated;
     config.modules = modules;
     writeConfig(config);
 
-    // 更新内存
     scheduler.removeModule(key);
     scheduler.addModule(updated as Parameters<typeof scheduler.addModule>[0]);
 
@@ -295,7 +303,6 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
   router.delete('/:key', async (req: Request, res: Response) => {
     const { key } = req.params;
 
-    // admin 自己不允许删除
     if (key === 'admin') {
       res.status(403).json({ error: '禁止删除 admin 模块' });
       return;
@@ -314,10 +321,8 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
     config.modules = modules;
     writeConfig(config);
 
-    // 从内存移除
     scheduler.removeModule(key);
 
-    // 从数据库删除
     if (scheduler['repository']) {
       await scheduler['repository'].deleteModule(key);
     }
@@ -361,20 +366,17 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
     }
     
     try {
-      // 检测 admin 自身（端口 13000）
       let normalizedUrl = baseUrl.trim();
       if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
         normalizedUrl = 'http://' + normalizedUrl;
       }
       const urlObj = new URL(normalizedUrl);
       
-      // 如果是 admin 自身（13000），直接返回成功（admin 无需 /api/meta/status）
       if (urlObj.port === '13000' || normalizedUrl.includes('localhost:13000')) {
         res.json({ success: true, moduleKey: 'admin', moduleType: 'admin', status: 'running', version: '1.0.0' });
         return;
       }
       
-      // 其他模块正常测试
       let url = normalizedUrl.replace(/\/$/, '') + '/api/meta/status';
       const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
       
@@ -396,7 +398,3 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
 
   return router;
 }
-/**
- * POST /api/modules/test-connection
- * 测试模块连接（统一由 admin 转发，解决跨域问题）
- */

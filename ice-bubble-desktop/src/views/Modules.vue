@@ -142,15 +142,13 @@ function getDisplayStatus(mod: Module): { label: string; type: string } {
   // 1. 禁用状态
   if (!mod.enabled) return { label: '已停止', type: 'info' };
 
-  // 2. 无运行时状态或 null（首次运行前 / admin）→ 显示"运行中"
-  if (!mod.status?.state) return { label: '运行中', type: 'success' };
-
-  // 3. 根据运行时状态
-  switch (mod.status.state) {
+  // 2. 根据运行时状态
+  const state = mod.status?.state;
+  switch (state) {
     case 'running': return { label: '运行中', type: 'success' };
     case 'error': return { label: '异常', type: 'danger' };
     case 'stopped': return { label: '已停止', type: 'warning' };
-    default: return { label: '未知', type: 'info' };
+    default: return { label: '运行中', type: 'success' }; // 默认为运行中
   }
 }
 
