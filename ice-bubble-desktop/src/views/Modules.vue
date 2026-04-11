@@ -117,6 +117,9 @@ async function fetchModules(showLoading = true) {
   if (showLoading) loading.value = true;
   error.value = '';
   try {
+    // 模拟网络延迟，确保 loading 至少显示 2 秒
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     const listRes = await fetch('/api/modules');
     if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
     const listData = await listRes.json();
@@ -318,6 +321,8 @@ async function deleteModule(mod: Module) {
 }
 
 async function toggleModule(mod: Module) {
+  if (loading.value) return;
+  loading.value = true;
   try {
     const res = await fetch(`/api/modules/${mod.moduleKey}`, {
       method: 'PUT',
@@ -332,6 +337,8 @@ async function toggleModule(mod: Module) {
     fetchModules(false);
   } catch (e: any) {
     ElMessage.error('操作失败: ' + (e.message || '未知错误'));
+  } finally {
+    loading.value = false;
   }
 }
 
