@@ -321,8 +321,9 @@ async function deleteModule(mod: Module) {
 }
 
 async function toggleModule(mod: Module) {
-  if (loading.value) return;
-  loading.value = true;
+  // 卡片级别 loading 检查
+  if (cardLoading.value[mod.moduleKey]) return;
+  cardLoading.value[mod.moduleKey] = true;
   try {
     // 立即更新本地状态，按钮立即变化
     const newEnabled = !mod.enabled;
@@ -345,7 +346,7 @@ async function toggleModule(mod: Module) {
   } catch (e: any) {
     ElMessage.error('操作失败: ' + (e.message || '未知错误'));
   } finally {
-    loading.value = false;
+    cardLoading.value[mod.moduleKey] = false;
   }
 }
 
@@ -468,7 +469,8 @@ onUnmounted(() => {
                 v-if="mod.moduleKey !== 'admin'"
                 :type="mod.enabled ? 'warning' : 'success'"
                 class="action-btn"
-                :disabled="loading"
+                :loading="cardLoading[mod.moduleKey]"
+                :disabled="cardLoading[mod.moduleKey]"
                 @click.stop="toggleModule(mod)"
               >
                 <el-icon><VideoPlay v-if="!mod.enabled" /><VideoPause v-else /></el-icon>
