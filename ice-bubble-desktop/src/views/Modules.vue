@@ -3,8 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 
 // 防抖辅助函数
 function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<T>) => {
+    return (...args: Parameters<T>) => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => fn(...args), delay);
   };
@@ -35,7 +34,7 @@ interface Module {
 const modules = ref<Module[]>([]);
 const loading = ref(false);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
-const REFRESH_INTERVAL = 30000; // 30秒刷新一次，减少界面闪烁
+const REFRESH_INTERVAL = 10000; // 30秒刷新一次，10秒刷新
 const error = ref('');
 
 // 弹窗相关
@@ -49,7 +48,7 @@ const formData = ref({
   moduleKey: '',
   name: '',
   enabled: true,
-  pollInterval: 30000,
+  pollInterval: 10000,
 });
 const editingModule = ref<Module | null>(null);
 
@@ -114,13 +113,10 @@ const rules = {
   ],
 };
 
-async function fetchModules() {
-  loading.value = true;
+async function fetchModules(showLoading = true) {
+  if (showLoading) loading.value = true;
   error.value = '';
   try {
-    // 模拟网络延迟，强化加载表现
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
     const listRes = await fetch('/api/modules');
     if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
     const listData = await listRes.json();
@@ -186,7 +182,7 @@ function openAddDialog() {
     moduleKey: '',
     name: '',
     enabled: true,
-    pollInterval: 30000,
+    pollInterval: 10000,
   };
   testPass.value = false;
   formRef.value?.resetFields();
@@ -333,13 +329,14 @@ async function toggleModule(mod: Module) {
       throw new Error(err.error || `HTTP ${res.status}`);
     }
     ElMessage.success(mod.enabled ? '模块已停用' : '模块已启用');
-    fetchModules();
+    fetchModules(false);
   } catch (e: any) {
     ElMessage.error('操作失败: ' + (e.message || '未知错误'));
   }
 }
 
 async function testModuleConnection(mod: Module) {
+  if (testingConnection.value) return;
   testingConnection.value = true;
   try {
     const res = await fetch('/api/modules/test-connection', {
@@ -361,14 +358,10 @@ async function testModuleConnection(mod: Module) {
   }
 }
 
-const debouncedRefresh = debounce(() => {
-  if (!loading.value) fetchModules();
-}, 1000);
-
 onMounted(() => {
   fetchModules();
   // 启动定时刷新
-  refreshTimer = setInterval(fetchModules, REFRESH_INTERVAL);
+  refreshTimer = setInterval(() => fetchModules(false), REFRESH_INTERVAL);
 });
 
 onUnmounted(() => {
@@ -382,7 +375,7 @@ onUnmounted(() => {
 <template>
   <div class="modules-page">
     <PageHeader title="模块管理" subtitle="配置和管理模块信息">
-      <el-button :disabled="loading" circle @click="debouncedRefresh">
+      <el-button :disabled="loading" circle @click="fetchModules(true)">
         <el-icon><Refresh /></el-icon>
       </el-button>
       <el-button type="primary" circle @click="openAddDialog">
@@ -454,7 +447,7 @@ onUnmounted(() => {
                 class="action-btn"
                 :loading="testingConnection"
                 :disabled="testingConnection"
-                @click.stop="debouncedTestConnection(mod)"
+                @click.stop="testModuleConnection(mod)"
               >
                 测试连接
               </el-button>
@@ -463,7 +456,7 @@ onUnmounted(() => {
                 :type="mod.enabled ? 'warning' : 'success'"
                 class="action-btn"
                 :disabled="loading"
-                @click.stop="debouncedToggle(mod)"
+                @click.stop="toggleModule(mod)"
               >
                 <el-icon><VideoPlay v-if="!mod.enabled" /><VideoPause v-else /></el-icon>
                 <span class="btn-text">{{ mod.enabled ? '停用' : '启用' }}</span>
@@ -560,13 +553,8 @@ onUnmounted(() => {
 .card-actions-bottom .action-btn {
   flex: 1;
   width: 0;
-  transition: all 0.2s ease;
 }
 
-.action-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 
 .card-actions-bottom .btn-text {
   margin-left: 4px;
