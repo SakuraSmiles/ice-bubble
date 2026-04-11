@@ -89,6 +89,9 @@ export class SQLiteManager {
             // 创建表结构
             this.createTables();
 
+            // 运行数据库迁移
+            this.runMigrations();
+
             this.isInitialized = true;
             sqliteLogger.info('Initialized successfully');
         } catch (error) {
@@ -130,6 +133,7 @@ export class SQLiteManager {
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS session_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id TEXT UNIQUE,
                 session_key TEXT NOT NULL,
                 message_type TEXT NOT NULL,
                 content TEXT,
@@ -202,6 +206,73 @@ export class SQLiteManager {
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+    }
+
+    /**
+     * 运行数据库迁移
+     */
+    private runMigrations(): void {
+        if (!this.db) throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+
+        // Migration 1: 添加 message_id 列到 session_messages 表
+        // 用于存储 OpenClaw 原始消息 ID，实现去重
+        // 注意: SQLite 不允许直接添加 UNIQUE 列,需要重建表
+        try {
+            const result = this.db.prepare("SELECT name FROM pragma_table_info('session_messages') WHERE name='message_id'").get();
+            if (!result) {
+                sqliteLogger.info('Running migration: 添加 message_id 列到 session_messages 表');
+
+                // 由于 SQLite 限制,需要重建表
+                this.db.exec('BEGIN TRANSACTION');
+                try {
+                    // 重命名旧表
+                    this.db.exec('ALTER TABLE session_messages RENAME TO session_messages_old');
+
+                    // 创建新表
+                    this.db.exec(`
+                        CREATE TABLE session_messages (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            message_id TEXT UNIQUE,
+                            session_key TEXT NOT NULL,
+                            message_type TEXT NOT NULL,
+                            content TEXT,
+                            model TEXT,
+                            tokens_input INTEGER,
+                            tokens_output INTEGER,
+                            tools_json TEXT,
+                            timestamp TIMESTAMP NOT NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (session_key) REFERENCES sessions(session_key) ON DELETE CASCADE
+                        )
+                    `);
+
+                    // 复制数据
+                    this.db.exec(`
+                        INSERT INTO session_messages (id, session_key, message_type, content, model, tokens_input, tokens_output, tools_json, timestamp, created_at)
+                        SELECT id, session_key, message_type, content, model, tokens_input, tokens_output, tools_json, timestamp, created_at FROM session_messages_old
+                    `);
+
+                    // 删除旧表
+                    this.db.exec('DROP TABLE session_messages_old');
+
+                    // 重建索引
+                    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_session_key ON session_messages(session_key)');
+                    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON session_messages(timestamp)');
+                    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_type ON session_messages(message_type)');
+
+                    // 记录迁移版本
+                    this.db.exec('INSERT INTO schema_version (version) VALUES (1)');
+
+                    this.db.exec('COMMIT');
+                    sqliteLogger.info('Migration 1 completed: message_id 列已添加(重建表方式)');
+                } catch (innerError) {
+                    this.db.exec('ROLLBACK');
+                    throw innerError;
+                }
+            }
+        } catch (error) {
+            sqliteLogger.warn('Migration 1 skipped or failed:', error instanceof Error ? error.message : String(error));
+        }
     }
 
     /**
@@ -363,7 +434,7 @@ export class SQLiteManager {
             const placeholders = getPlaceholders(columns);
             
             const stmt = this.db.prepare(`
-                INSERT INTO session_messages (${columns.join(', ')})
+                INSERT OR IGNORE INTO session_messages (${columns.join(', ')})
                 VALUES (${placeholders})
             `);
 
@@ -404,7 +475,7 @@ export class SQLiteManager {
                 const placeholders = getPlaceholders(columns);
                 
                 const stmt = this.db!.prepare(`
-                    INSERT INTO session_messages (${columns.join(', ')})
+                    INSERT OR IGNORE INTO session_messages (${columns.join(', ')})
                     VALUES (${placeholders})
                 `);
 
@@ -497,7 +568,7 @@ export class SQLiteManager {
                         const placeholders = getPlaceholders(columns);
                         
                         const stmt = this.db!.prepare(`
-                            INSERT INTO session_messages (${columns.join(', ')})
+                            INSERT OR IGNORE INTO session_messages (${columns.join(', ')})
                             VALUES (${placeholders})
                         `);
 

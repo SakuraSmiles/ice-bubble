@@ -30,6 +30,8 @@ export interface Session {
 
 export interface SessionMessage {
     id?: number;
+    /** OpenClaw 原始消息 ID（用于去重），格式: {sessionKey}:{timestamp}:{messageType}:{hash} */
+    messageId?: string;
     sessionKey: string;
     messageType: 'user' | 'agent' | 'tool';
     content?: string;

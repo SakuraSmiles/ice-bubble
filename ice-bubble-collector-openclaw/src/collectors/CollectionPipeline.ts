@@ -155,6 +155,7 @@ export class CollectionPipeline extends EventEmitter {
 
           // 步骤4: 转换为 SessionMessage 格式
           const sessionMessage: SessionMessage = {
+            messageId: message.id, // OpenClaw 原始消息 ID，用于去重
             sessionKey: message.sessionKey,
             messageType: message.messageType,
             content: message.content,

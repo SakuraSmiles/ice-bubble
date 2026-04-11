@@ -24,6 +24,7 @@ export class SessionMessageMapper {
    */
   static toDb(message: SessionMessage): Record<string, any> {
     return {
+      message_id: message.messageId || null,
       session_key: message.sessionKey,
       message_type: message.messageType,
       content: message.content || null,
@@ -42,6 +43,7 @@ export class SessionMessageMapper {
   static fromDb(row: any): SessionMessage {
     return {
       id: row.id,
+      messageId: row.message_id || undefined,
       sessionKey: row.session_key,
       messageType: row.message_type,
       content: row.content || undefined,
@@ -189,7 +191,7 @@ export class ToolCallMapper {
 export function getDbColumns(entity: 'session_messages' | 'sessions' | 'agents'): string[] {
   const columnMap = {
     session_messages: [
-      'id', 'session_key', 'message_type', 'content', 'model',
+      'id', 'message_id', 'session_key', 'message_type', 'content', 'model',
       'tokens_input', 'tokens_output', 'tools_json', 'timestamp', 'created_at'
     ],
     sessions: [
