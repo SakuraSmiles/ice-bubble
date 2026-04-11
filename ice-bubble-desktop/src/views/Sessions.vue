@@ -277,7 +277,6 @@ onMounted(async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
-  max-width: 280px;
 }
 
 .option-meta {
@@ -306,25 +305,34 @@ onMounted(async () => {
 .session-dropdown {
   max-height: 70vh !important;
   overflow-y: auto !important;
+  min-width: 420px !important;
+  width: auto !important;
+}
+
+.session-dropdown .el-select-dropdown__wrap {
+  max-height: 70vh !important;
+  overflow-y: auto !important;
 }
 
 .session-dropdown .el-select-dropdown__item-group {
   background-color: var(--el-fill-color-light) !important;
-  padding: 8px 16px !important;
+  padding: 10px 16px !important;
   font-weight: 600 !important;
   color: var(--el-text-color-primary) !important;
   font-size: 13px !important;
   position: sticky !important;
   top: 0 !important;
   z-index: 10 !important;
+  border-bottom: 1px solid var(--el-border-color-lighter) !important;
 }
 
 .session-dropdown .el-select-dropdown__item-group::before {
   content: "👤 ";
+  margin-right: 4px;
 }
 
 .session-dropdown .el-select-dropdown__item {
-  padding: 8px 16px !important;
+  padding: 10px 16px !important;
   height: auto !important;
   line-height: 1.5 !important;
 }
