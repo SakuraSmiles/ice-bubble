@@ -130,10 +130,10 @@ async function fetchModules(showLoading = true) {
       version: m.version || '-',
       status: m.status || { state: null, lastPollTime: null, lastError: null },
       registeredAt: m.registeredTime
-        ? new Date(m.registeredTime).toLocaleString('zh-CN')
+        ? formatTime(m.registeredTime)
         : '-',
       runtimeStartTime: m.status?.runtime?.startTime
-        ? new Date(m.status.runtime.startTime).toLocaleString('zh-CN')
+        ? formatTime(m.status.runtime.startTime)
         : '-',
     }));
   } catch (e: any) {
@@ -162,9 +162,25 @@ function getLastError(mod: Module): string | null {
   return mod.status?.lastError || null;
 }
 
+// 统一时间格式 (YYYY-MM-DD HH:MM)
+function formatTime(dateString: string | null | undefined): string {
+  if (!dateString) return '-';
+  try {
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+  } catch {
+    return '-';
+  }
+}
+
 function getLastPollTime(mod: Module): string | null {
   if (!mod.status?.lastPollTime) return null;
-  return new Date(mod.status.lastPollTime).toLocaleString('zh-CN');
+  return formatTime(mod.status.lastPollTime);
 }
 
 // 判断是否为 admin 模块
@@ -654,18 +670,20 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
   font-weight: 400;
   flex-shrink: 0;
-  width: 80px; /* Fixed width for labels */
+  width: 64px; /* Reduced width for better balance */
+  text-align: right;
 }
 
 .info-value {
   color: var(--color-text);
   font-weight: 500;
-  text-align: right;
+  text-align: left;
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding-left: 8px;
 }
 
 .info-value.url {
@@ -681,9 +699,10 @@ onUnmounted(() => {
 
 /* Time values - ensure consistent width */
 .info-value.time-value {
-  font-family: monospace;
   font-size: 12px;
   color: var(--color-text-secondary);
+  min-width: 140px;
+  text-align: left;
 }
 
 .error-row .info-value.error-text {
