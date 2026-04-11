@@ -32,7 +32,7 @@ const server = createServer(async (req, res) => {
     // 返回实际端口
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ port: server.address()?.port }));
+    res.end(JSON.stringify({ port: (server.address() as any)?.port ?? 14000 }));
     return;
   }
 
