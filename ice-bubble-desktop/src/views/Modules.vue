@@ -113,41 +113,23 @@ async function fetchModules() {
     if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
     const listData = await listRes.json();
 
-    const moduleDetails = await Promise.all(
-      listData.modules.map(async (m: any) => {
-        try {
-          const detailRes = await fetch(`/api/modules/${m.moduleKey}`);
-          if (!detailRes.ok) throw new Error(`HTTP ${detailRes.status}`);
-          const detail = await detailRes.json();
-          return {
-            moduleKey: detail.moduleKey,
-            name: detail.name,
-            baseUrl: detail.baseUrl,
-            enabled: detail.enabled,
-            pollInterval: detail.pollInterval,
-            registeredTime: detail.registeredTime,
-            status: detail.status || { state: null, lastPollTime: null, lastError: null },
-            version: detail.version || '-',
-            registeredAt: detail.registeredTime
-              ? new Date(detail.registeredTime).toLocaleString('zh-CN')
-              : '-',
-            runtimeStartTime: detail.status?.runtime?.startTime
-              ? new Date(detail.status.runtime.startTime).toLocaleString('zh-CN')
-              : '-',
-          };
-        } catch {
-          return {
-            ...m,
-            status: { state: 'error', lastPollTime: null, lastError: '连接失败' },
-            version: '-',
-            registeredAt: m.registeredTime ? new Date(m.registeredTime).toLocaleString('zh-CN') : '-',
-            runtimeStartTime: '-',
-          };
-        }
-      })
-    );
-
-    modules.value = moduleDetails;
+    // API 已返回完整数据（包括状态），直接使用
+    modules.value = listData.modules.map((m: any) => ({
+      moduleKey: m.moduleKey,
+      name: m.name,
+      baseUrl: m.baseUrl,
+      enabled: m.enabled,
+      pollInterval: m.pollInterval,
+      registeredTime: m.registeredTime,
+      version: m.version || '-',
+      status: m.status || { state: null, lastPollTime: null, lastError: null },
+      registeredAt: m.registeredTime
+        ? new Date(m.registeredTime).toLocaleString('zh-CN')
+        : '-',
+      runtimeStartTime: m.status?.runtime?.startTime
+        ? new Date(m.status.runtime.startTime).toLocaleString('zh-CN')
+        : '-',
+    }));
   } catch (e: any) {
     error.value = e.message || '获取模块列表失败';
   } finally {
