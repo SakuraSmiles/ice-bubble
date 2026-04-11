@@ -385,7 +385,7 @@ onUnmounted(() => {
           <div class="card-header">
             <div class="module-title">
               <h2 class="module-name">{{ mod.name }}</h2>
-              <span class="module-key">{{ mod.moduleKey }} - {{ mod.version || '-' }}</span>
+              <span class="module-key">{{ mod.moduleKey }}  {{ mod.version || '-' }}</span>
             </div>
             <div class="card-actions">
               <el-tag
@@ -432,7 +432,7 @@ onUnmounted(() => {
               <el-button
                 v-if="mod.moduleKey !== 'admin'"
                 type="primary"
-                size="default"
+                class="action-btn"
                 @click.stop="testModuleConnection(mod)"
               >
                 测试连接
@@ -440,7 +440,7 @@ onUnmounted(() => {
               <el-button
                 v-if="mod.moduleKey !== 'admin'"
                 :type="mod.enabled ? 'warning' : 'success'"
-                size="default"
+                class="action-btn"
                 @click.stop="toggleModule(mod)"
               >
                 {{ mod.enabled ? '停用' : '启用' }}
@@ -526,6 +526,19 @@ onUnmounted(() => {
 .header-actions {
   display: flex;
   gap: 8px;
+}
+
+.card-actions-bottom {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.card-actions-bottom .action-btn {
+  flex: 1;
+  width: 0;
 }
 
 .page-title {
