@@ -45,6 +45,8 @@ defineProps<{
 
 .page-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+  min-height: 32px;
 }
 </style>
