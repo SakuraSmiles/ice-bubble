@@ -162,17 +162,16 @@ function getLastError(mod: Module): string | null {
   return mod.status?.lastError || null;
 }
 
-// 统一时间格式 (YYYY-MM-DD HH:MM)
+// 优化时间格式 (MM-DD HH:MM 更简洁)
 function formatTime(dateString: string | null | undefined): string {
   if (!dateString) return '-';
   try {
     const date = new Date(dateString);
-    const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
+    return `${month}-${day} ${hours}:${minutes}`;
   } catch {
     return '-';
   }
@@ -419,7 +418,7 @@ onUnmounted(() => {
           class="module-card"
         >
           <div class="card-header">
-            <div class="module-title-row">
+            <div class="title-with-action">
               <div class="module-title">
                 <h2 class="module-name">{{ mod.name }}</h2>
                 <span class="module-key">{{ mod.moduleKey }} @ {{ mod.version || '-' }}</span>
@@ -427,7 +426,7 @@ onUnmounted(() => {
               <el-button
                 v-if="mod.moduleKey !== 'admin'"
                 link
-                class="delete-btn"
+                class="title-delete-btn"
                 @click.stop="deleteModule(mod)"
                 @mouseenter="$event.target.style.color = 'var(--color-accent-red)'"
                 @mouseleave="$event.target.style.color = 'var(--color-text-secondary)'"
@@ -618,22 +617,36 @@ onUnmounted(() => {
 
 .card-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 12px;
   margin-bottom: 20px;
 }
 
-.card-actions {
+.title-with-action {
   display: flex;
-  align-items: center;
-  flex-shrink: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .module-title {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1;
+  min-width: 0; /* Prevent text overflow */
+}
+
+.title-delete-btn {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .module-name {
