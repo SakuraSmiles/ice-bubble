@@ -388,7 +388,7 @@ onUnmounted(() => {
           <div class="card-header">
             <div class="module-title">
               <h2 class="module-name">{{ mod.name }}</h2>
-              <span class="module-key">{{ mod.moduleKey }} @ {{ mod.version || '-' }}</span>
+              <span class="module-key">{{ mod.moduleKey }}@{{ mod.version || '-' }}</span>
             </div>
             <div class="card-actions">
               <el-tag
@@ -434,7 +434,6 @@ onUnmounted(() => {
             <div class="card-actions-bottom">
               <el-button
                 v-if="mod.moduleKey !== 'admin'"
-                type="primary"
                 class="action-btn"
                 :loading="testingConnection"
                 @click.stop="testModuleConnection(mod)"
@@ -448,7 +447,7 @@ onUnmounted(() => {
                 @click.stop="toggleModule(mod)"
               >
                 <el-icon><VideoPlay v-if="!mod.enabled" /><VideoPause v-else /></el-icon>
-                {{ mod.enabled ? '停用' : '启用' }}
+                <span class="btn-text">{{ mod.enabled ? '停用' : '启用' }}</span>
               </el-button>
             </div>
           </div>
@@ -544,6 +543,11 @@ onUnmounted(() => {
 .card-actions-bottom .action-btn {
   flex: 1;
   width: 0;
+}
+
+.card-actions-bottom .btn-text {
+  margin-left: 4px;
+  font-weight: 500;
 }
 
 .page-title {
