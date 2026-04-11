@@ -20,33 +20,40 @@ defineProps<{
 <style scoped>
 .page-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 20px 0;
+  padding: 24px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .page-title-area {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .page-title {
-  font-size: 1.25rem;
+  font-size: 1.4rem;
   font-weight: 600;
   color: var(--color-text);
   margin: 0;
+  line-height: 1.3;
 }
 
 .page-subtitle {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-text-secondary);
+  font-family: monospace;
+  opacity: 0.8;
+  letter-spacing: 0.5px;
 }
 
 .page-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 32px;
+  gap: 12px;
+  min-height: 36px;
+  padding-top: 4px;
 }
 </style>
