@@ -36,10 +36,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="overview-page">
+  <div class="modules-page">
     <PageHeader title="系统概览" subtitle="实时监控面板" />
     
-    <main class="content-area">
+    <el-card class="content-area">
       <el-row :gutter="20">
         <el-col :span="6">
           <el-card shadow="hover">
@@ -109,7 +109,7 @@ onMounted(() => {
           </el-card>
         </el-col>
       </el-row>
-    </main>
+    </el-card>
     
     <AppFooter />
   </div>
