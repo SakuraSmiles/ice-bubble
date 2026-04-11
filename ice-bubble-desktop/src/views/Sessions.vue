@@ -62,9 +62,23 @@ const groupedSessions = computed(() => {
     groups[agentId].push(opt);
   }
   
+  // Sort sessions within each group by last_message_at desc
+  for (const sessions of Object.values(groups)) {
+    sessions.sort((a, b) => {
+      const ta = a._lastAt ? new Date(a._lastAt).getTime() : 0;
+      const tb = b._lastAt ? new Date(b._lastAt).getTime() : 0;
+      return tb - ta;
+    });
+  }
+  
+  // Convert to array and sort groups by most recent session's last_message_at desc
   return Object.entries(groups)
     .map(([agentId, sessions]) => ({ agentId, sessions }))
-    .sort((a, b) => a.agentId.localeCompare(b.agentId));
+    .sort((a, b) => {
+      const aLatest = a.sessions[0]?._lastAt ? new Date(a.sessions[0]._lastAt).getTime() : 0;
+      const bLatest = b.sessions[0]?._lastAt ? new Date(b.sessions[0]._lastAt).getTime() : 0;
+      return bLatest - aLatest;
+    });
 });
 
 function simplifySessionKey(key: string): string {
