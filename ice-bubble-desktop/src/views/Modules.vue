@@ -447,11 +447,11 @@ onUnmounted(() => {
             <div class="info-rows" @click="openEditDialog(mod)">
             <div class="info-row">
               <span class="info-label">注册时间</span>
-              <span class="info-value">{{ mod.registeredAt || '-' }}</span>
+              <span class="info-value time">{{ mod.registeredAt || '-' }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">启动时间</span>
-              <span class="info-value">{{ mod.runtimeStartTime || '-' }}</span>
+              <span class="info-value time">{{ mod.runtimeStartTime || '-' }}</span>
             </div>
             <div class="info-row" v-if="getLastPollTime(mod)">
               <span class="info-label">最后轮询</span>
