@@ -614,11 +614,11 @@ onUnmounted(() => {
 .module-title {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .module-name {
-  font-size: 1.1rem;
+  font-size: 1.2rem;
   font-weight: 600;
   color: var(--color-text);
   margin: 0;
@@ -626,40 +626,47 @@ onUnmounted(() => {
 }
 
 .module-key {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--color-text-secondary);
   font-family: monospace;
+  opacity: 0.8;
 }
 
 .card-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .info-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 .info-label {
   color: var(--color-text-secondary);
+  font-weight: 400;
 }
 
 .info-value {
   color: var(--color-text);
   font-weight: 500;
+  text-align: right;
+  max-width: 60%;
 }
 
 .info-value.url {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  max-width: 160px;
+  font-size: 13px;
+  color: var(--color-accent-blue);
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: monospace;
+  opacity: 0.9;
 }
 
 .error-row .info-value.error-text {
