@@ -99,6 +99,8 @@ const rules = {
       validator: (_rule: any, value: number, callback: any) => {
         if (!Number.isInteger(value) || value <= 0) {
           callback(new Error('轮询间隔必须为正整数'));
+        } else if (value < 5000) {
+          callback(new Error('轮询间隔最小为 5000ms'));
         } else {
           callback();
         }
@@ -656,19 +658,6 @@ onUnmounted(() => {
 
 .inline-delete-btn:hover {
   opacity: 1;
-}
-
-.module-key {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.module-name {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--color-text);
-  margin: 0;
-  line-height: 1.3;
 }
 
 .module-key {
