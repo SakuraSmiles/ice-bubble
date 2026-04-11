@@ -437,7 +437,7 @@ onUnmounted(() => {
             </div>
             <div class="info-row" v-if="getLastPollTime(mod)">
               <span class="info-label">最后轮询</span>
-              <span class="info-value">{{ getLastPollTime(mod) }}</span>
+              <span class="info-value time-value">{{ getLastPollTime(mod) }}</span>
             </div>
             <div class="info-row error-row" v-if="getLastError(mod)">
               <span class="info-label">错误</span>
@@ -618,7 +618,7 @@ onUnmounted(() => {
 }
 
 .module-name {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: var(--color-text);
   margin: 0;
@@ -642,24 +642,31 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 14px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 24px;
 }
 
 .info-label {
   color: var(--color-text-secondary);
   font-weight: 400;
+  flex-shrink: 0;
+  width: 80px; /* Fixed width for labels */
 }
 
 .info-value {
   color: var(--color-text);
   font-weight: 500;
   text-align: right;
-  max-width: 60%;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .info-value.url {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-accent-blue);
   max-width: 180px;
   overflow: hidden;
@@ -667,6 +674,13 @@ onUnmounted(() => {
   white-space: nowrap;
   font-family: monospace;
   opacity: 0.9;
+}
+
+/* Time values - ensure consistent width */
+.info-value.time-value {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 
 .error-row .info-value.error-text {
