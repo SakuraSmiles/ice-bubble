@@ -288,4 +288,23 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
+
+/* Dropdown popper styles */
+:deep(.session-dropdown) {
+  max-height: 66vh !important;
+}
+
+:deep(.el-select-dropdown__item-group) {
+  background-color: var(--el-fill-color-light);
+  padding: 8px 12px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+}
+
+:deep(.el-select-dropdown__item-group .el-select-dropdown__item) {
+  height: auto !important;
+  line-height: 1.4;
+  padding: 6px 12px;
+}
 </style>
