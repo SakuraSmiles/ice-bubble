@@ -302,19 +302,17 @@ onMounted(async () => {
 
 <style>
 /* Global dropdown popper styles - not scoped */
-.session-dropdown {
+.el-select-dropdown.session-dropdown {
   max-height: 70vh !important;
-  overflow-y: auto !important;
-  min-width: 420px !important;
-  width: auto !important;
+  overflow: hidden !important;
 }
 
-.session-dropdown .el-select-dropdown__wrap {
+.el-select-dropdown.session-dropdown .el-select-dropdown__wrap {
   max-height: 70vh !important;
   overflow-y: auto !important;
 }
 
-.session-dropdown .el-select-dropdown__item-group {
+.el-select-dropdown.session-dropdown .el-select-dropdown__item-group {
   background-color: var(--el-fill-color-light) !important;
   padding: 10px 16px !important;
   font-weight: 600 !important;
@@ -326,22 +324,23 @@ onMounted(async () => {
   border-bottom: 1px solid var(--el-border-color-lighter) !important;
 }
 
-.session-dropdown .el-select-dropdown__item-group::before {
+.el-select-dropdown.session-dropdown .el-select-dropdown__item-group::before {
   content: "👤 ";
   margin-right: 4px;
 }
 
-.session-dropdown .el-select-dropdown__item {
+.el-select-dropdown.session-dropdown .el-select-dropdown__item {
   padding: 10px 16px !important;
   height: auto !important;
+  min-height: 48px !important;
   line-height: 1.5 !important;
 }
 
-.session-dropdown .el-select-dropdown__item.is-disabled {
+.el-select-dropdown.session-dropdown .el-select-dropdown__item.is-disabled {
   display: none !important;
 }
 
-.session-dropdown .el-select-dropdown__list {
+.el-select-dropdown.session-dropdown .el-select-dropdown__list {
   padding: 4px 0 !important;
 }
 </style>
