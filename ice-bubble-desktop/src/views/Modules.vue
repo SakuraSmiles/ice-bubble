@@ -704,9 +704,9 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
   font-weight: 400;
   flex-shrink: 0;
-  width: 64px;
+  width: 80px;
   text-align: left;
-  padding-right: 16px;
+  padding-right: 12px;
 }
 
 .info-value {
