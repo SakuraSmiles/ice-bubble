@@ -8,7 +8,7 @@ function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
     timer = setTimeout(() => fn(...args), delay);
   };
 }
-import { Refresh, Plus, Delete, InfoFilled } from '@element-plus/icons-vue';
+import { Refresh, Plus, Delete, InfoFilled, VideoPlay, VideoPause } from '@element-plus/icons-vue';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
