@@ -5,6 +5,7 @@ import AppFooter from '../components/AppFooter.vue';
 
 const sessionCount = ref(0);
 const loading = ref(false);
+const selectedSession = ref('');
 
 async function fetchSessionCount() {
   loading.value = true;
@@ -26,7 +27,15 @@ onMounted(() => {
 
 <template>
   <div class="sessions-page">
-    <PageHeader title="会话管理" :subtitle="`共 ${sessionCount} 个会话`" />
+    <PageHeader title="会话管理" :subtitle="`共 ${sessionCount} 个会话`">
+      <template #actions>
+        <el-select v-model="selectedSession" placeholder="选择会话" clearable size="default">
+          <el-option label="会话 1" value="session1" />
+          <el-option label="会话 2" value="session2" />
+          <el-option label="会话 3" value="session3" />
+        </el-select>
+      </template>
+    </PageHeader>
 
     <el-card class="content-area">
       <el-empty description="暂无会话数据" />
@@ -50,5 +59,9 @@ onMounted(() => {
 .content-area {
   flex: 1;
   margin-bottom: 20px;
+}
+
+:deep(.el-select) {
+  min-width: 160px;
 }
 </style>
