@@ -43,8 +43,14 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
         // 获取版本
         const version = (m as any).version || null;
         
-        // 获取运行时状态
-        let status = null;
+        // 获取运行时状态（始终返回对象，即使没有数据）
+        let status = {
+          state: 'stopped' as const,
+          lastPollTime: null,
+          lastError: null,
+          runtime: { startTime: null },
+        };
+        
         if (moduleKey === 'admin') {
           // admin 自检状态
           const adminStatus = scheduler.getAdminStatus();
@@ -64,6 +70,9 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
               lastError: dbStatus.lastError || null,
               runtime: { startTime: dbStatus.runtime?.startTime || null },
             };
+          } else {
+            // 如果没有状态数据，默认为 running（刚注册尚未采集）
+            status.state = 'running';
           }
         }
         
