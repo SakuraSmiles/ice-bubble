@@ -383,12 +383,11 @@ onUnmounted(() => {
           v-for="mod in modules"
           :key="mod.moduleKey"
           class="module-card"
-          @click="openEditDialog(mod)"
         >
           <div class="card-header">
             <div class="module-title">
               <h2 class="module-name">{{ mod.name }}</h2>
-              <span class="module-key">{{ mod.moduleKey }}@{{ mod.version || '-' }}</span>
+              <span class="module-key">{{ mod.moduleKey }} @ {{ mod.version || '-' }}</span>
             </div>
             <div class="card-actions">
               <el-tag
@@ -408,7 +407,7 @@ onUnmounted(() => {
               </el-button>
             </div>
           </div>
-          <div class="card-body">
+          <div class="card-body" @click="openEditDialog(mod)">
             <div class="info-row">
               <span class="info-label">注册时间</span>
               <span class="info-value">{{ mod.registeredAt || '-' }}</span>
@@ -436,6 +435,7 @@ onUnmounted(() => {
                 v-if="mod.moduleKey !== 'admin'"
                 class="action-btn"
                 :loading="testingConnection"
+                :disabled="testingConnection"
                 @click.stop="testModuleConnection(mod)"
               >
                 测试连接
@@ -444,6 +444,7 @@ onUnmounted(() => {
                 v-if="mod.moduleKey !== 'admin'"
                 :type="mod.enabled ? 'warning' : 'success'"
                 class="action-btn"
+                :disabled="loading"
                 @click.stop="toggleModule(mod)"
               >
                 <el-icon><VideoPlay v-if="!mod.enabled" /><VideoPause v-else /></el-icon>
@@ -536,8 +537,6 @@ onUnmounted(() => {
   display: flex;
   gap: 12px;
   margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .card-actions-bottom .action-btn {
