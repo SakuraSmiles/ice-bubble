@@ -164,13 +164,12 @@ onMounted(async () => {
           :label="group.agentId + ' (' + group.sessions.length + ')'"
         >
           <el-option
-            v-for="(opt, idx) in group.sessions"
+            v-for="opt in group.sessions"
             :key="opt.value"
             :value="opt.value"
-            :label="simplifySessionKey(opt.label)"
+            :label="getShortKey(opt.label)"
           >
             <div class="session-option-inner">
-              <span class="option-tree">{{ idx === group.sessions.length - 1 ? '└─' : '├─' }}</span>
               <span class="option-key">{{ getShortKey(opt.label) }}</span>
               <span class="option-meta">
                 <span class="option-count">{{ opt._count }}</span>
@@ -251,20 +250,16 @@ onMounted(async () => {
   font-size: 13px;
 }
 
-/* Dropdown option styles */
+/* Dropdown option styles - with tree indent */
 .session-option-inner {
   display: flex;
   align-items: center;
   width: 100%;
-  gap: 6px;
+  gap: 8px;
   font-size: 12px;
-}
-
-.option-tree {
-  color: var(--el-text-color-secondary);
-  font-family: monospace;
-  flex-shrink: 0;
-  width: 14px;
+  padding-left: 8px;
+  border-left: 2px solid var(--el-border-color);
+  margin-left: 4px;
 }
 
 .option-key {
@@ -281,7 +276,7 @@ onMounted(async () => {
 .option-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 11px;
   color: var(--el-text-color-secondary);
   flex-shrink: 0;
@@ -290,12 +285,12 @@ onMounted(async () => {
 .option-count {
   color: var(--el-color-primary);
   font-weight: 500;
+  min-width: 20px;
 }
 
 .option-time {
-  min-width: 50px;
+  min-width: 45px;
   text-align: right;
-  color: var(--el-text-color-secondary);
 }
 </style>
 
@@ -317,7 +312,7 @@ onMounted(async () => {
 .session-dropdown .el-select-dropdown__item {
   padding: 8px 16px !important;
   height: auto !important;
-  min-height: 36px !important;
+  min-height: 34px !important;
   line-height: 1.4 !important;
 }
 
@@ -335,6 +330,11 @@ onMounted(async () => {
 .session-dropdown .el-select-dropdown__item-group::before {
   content: "👤 " !important;
   margin-right: 4px;
+}
+
+.session-dropdown .el-select-dropdown__item.is-selected {
+  background-color: var(--el-color-primary-light-9) !important;
+  font-weight: 500 !important;
 }
 
 .session-dropdown .el-select-dropdown__item.is-disabled {
