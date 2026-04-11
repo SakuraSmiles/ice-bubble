@@ -116,9 +116,14 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.overview-page {
+.modules-page {
+  width: 100%;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
+  padding: 0 32px;
+  box-sizing: border-box;
+  min-height: calc(100vh - 1px);
 }
 
 .content-area {
