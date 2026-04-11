@@ -30,31 +30,59 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
 
   /**
    * GET /api/modules
-   * 获取所有模块列表
+   * 获取所有模块列表（包含状态）
    */
   router.get('/', async (_req: Request, res: Response) => {
     const modules = scheduler.getModules();
     
-    // 获取每个模块的 version
-    const modulesWithVersion = await Promise.all(
+    // 获取每个模块的完整信息（包括状态）
+    const modulesWithStatus = await Promise.all(
       modules.map(async (m) => {
-        // version 来自 scheduler 内存（从数据库读取的）
+        const moduleKey = m.moduleKey;
+        
+        // 获取版本
         const version = (m as any).version || null;
+        
+        // 获取运行时状态
+        let status = null;
+        if (moduleKey === 'admin') {
+          // admin 自检状态
+          const adminStatus = scheduler.getAdminStatus();
+          status = {
+            state: null,
+            lastPollTime: adminStatus.runtime?.startTime || null,
+            lastError: null,
+            runtime: { startTime: adminStatus.runtime?.startTime || null },
+          };
+        } else {
+          // 从数据库获取状态
+          const dbStatus = await scheduler.getStatusFromDatabase(moduleKey);
+          if (dbStatus) {
+            status = {
+              state: dbStatus.status,
+              lastPollTime: dbStatus.lastPollTime || null,
+              lastError: dbStatus.lastError || null,
+              runtime: { startTime: dbStatus.runtime?.startTime || null },
+            };
+          }
+        }
+        
         return {
-          moduleKey: m.moduleKey,
+          moduleKey,
           name: m.name,
           baseUrl: m.baseUrl,
           enabled: m.enabled,
           pollInterval: m.pollInterval,
           registeredTime: m.registeredTime,
           version,
+          status,
         };
       })
     );
     
     res.json({
-      count: modulesWithVersion.length,
-      modules: modulesWithVersion
+      count: modulesWithStatus.length,
+      modules: modulesWithStatus
     });
   });
 
