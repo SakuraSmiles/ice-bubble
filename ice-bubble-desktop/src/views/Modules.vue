@@ -345,17 +345,14 @@ onUnmounted(() => {
 
 <template>
   <div class="modules-page">
-    <div class="page-header">
-      <h1 class="page-title">模块管理</h1>
-      <div class="header-actions">
-        <el-button :disabled="loading" circle @click="fetchModules">
-          <el-icon><Refresh /></el-icon>
-        </el-button>
-        <el-button type="primary" circle @click="openAddDialog">
-          <el-icon><Plus /></el-icon>
-        </el-button>
-      </div>
-    </div>
+    <PageHeader title="模块管理" subtitle="配置和管理采集模块">
+      <el-button :disabled="loading" circle @click="fetchModules">
+        <el-icon><Refresh /></el-icon>
+      </el-button>
+      <el-button type="primary" circle @click="openAddDialog">
+        <el-icon><Plus /></el-icon>
+      </el-button>
+    </PageHeader>
 
     <el-card class="content-area">
       <div v-if="error" class="error-msg">{{ error }}</div>
@@ -421,10 +418,7 @@ onUnmounted(() => {
       </div>
     </el-card>
 
-    <div class="copyright">
-      <div>IceBubble © 2026 · SakuraSmiles</div>
-      <div>desktop version : 1.0.0</div>
-    </div>
+    <AppFooter />
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog
