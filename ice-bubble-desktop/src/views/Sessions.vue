@@ -77,6 +77,12 @@ function simplifySessionKey(key: string): string {
   return key;
 }
 
+function getShortKey(key: string): string {
+  // Extract just the UUID part (last segment after colon)
+  const parts = key.split(':');
+  return parts[parts.length - 1].substring(0, 8) + '…';
+}
+
 function formatRelativeTime(dateString: string | null): string {
   if (!dateString) return '-';
   const now = Date.now();
@@ -158,16 +164,16 @@ onMounted(async () => {
           :label="group.agentId + ' (' + group.sessions.length + ')'"
         >
           <el-option
-            v-for="opt in group.sessions"
+            v-for="(opt, idx) in group.sessions"
             :key="opt.value"
             :value="opt.value"
             :label="simplifySessionKey(opt.label)"
           >
             <div class="session-option-inner">
-              <span class="option-key">{{ simplifySessionKey(opt.label) }}</span>
+              <span class="option-tree">{{ idx === group.sessions.length - 1 ? '└─' : '├─' }}</span>
+              <span class="option-key">{{ getShortKey(opt.label) }}</span>
               <span class="option-meta">
-                <span class="option-channel">{{ opt._channel }}</span>
-                <span class="option-count">{{ opt._count }} 条</span>
+                <span class="option-count">{{ opt._count }}</span>
                 <span class="option-time">{{ formatRelativeTime(opt._lastAt) }}</span>
               </span>
             </div>
@@ -249,41 +255,47 @@ onMounted(async () => {
 .session-option-inner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   width: 100%;
-  gap: 12px;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.option-tree {
+  color: var(--el-text-color-secondary);
+  font-family: monospace;
+  flex-shrink: 0;
+  width: 14px;
 }
 
 .option-key {
-  font-size: 13px;
+  font-size: 12px;
   font-family: monospace;
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .option-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 11px;
   color: var(--el-text-color-secondary);
   flex-shrink: 0;
 }
 
-.option-channel {
-  min-width: 40px;
-}
-
 .option-count {
-  min-width: 35px;
+  color: var(--el-color-primary);
+  font-weight: 500;
 }
 
 .option-time {
-  min-width: 55px;
+  min-width: 50px;
   text-align: right;
+  color: var(--el-text-color-secondary);
 }
 </style>
 
@@ -303,12 +315,10 @@ onMounted(async () => {
 }
 
 .session-dropdown .el-select-dropdown__item {
-  padding: 10px 16px !important;
+  padding: 8px 16px !important;
   height: auto !important;
-  min-height: 44px !important;
+  min-height: 36px !important;
   line-height: 1.4 !important;
-  display: flex !important;
-  align-items: center !important;
 }
 
 .session-dropdown .el-select-dropdown__item-group {
@@ -316,7 +326,7 @@ onMounted(async () => {
   padding: 10px 16px !important;
   font-weight: 600 !important;
   color: var(--el-text-color-primary) !important;
-  font-size: 13px !important;
+  font-size: 12px !important;
   position: sticky !important;
   top: 0 !important;
   z-index: 10 !important;
@@ -324,6 +334,7 @@ onMounted(async () => {
 
 .session-dropdown .el-select-dropdown__item-group::before {
   content: "👤 " !important;
+  margin-right: 4px;
 }
 
 .session-dropdown .el-select-dropdown__item.is-disabled {
