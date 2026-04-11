@@ -23,7 +23,6 @@ defineProps<{
   align-items: flex-start;
   justify-content: space-between;
   padding: 24px 0 16px;
-  margin-bottom: 8px;
 }
 
 .page-title-area {
