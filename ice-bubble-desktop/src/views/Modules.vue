@@ -309,6 +309,43 @@ async function deleteModule(mod: Module) {
   }
 }
 
+async function toggleModule(mod: Module) {
+  try {
+    const res = await fetch(`/api/modules/${mod.moduleKey}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !mod.enabled })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    ElMessage.success(mod.enabled ? '模块已停用' : '模块已启用');
+    fetchModules();
+  } catch (e: any) {
+    ElMessage.error('操作失败: ' + (e.message || '未知错误'));
+  }
+}
+
+async function testModuleConnection(mod: Module) {
+  try {
+    const res = await fetch('/api/modules/test-connection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseUrl: mod.baseUrl })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      ElMessage.success('连接成功');
+    } else {
+      ElMessage.error(data.error || '连接失败');
+    }
+  } catch (e: any) {
+    ElMessage.error('连接测试失败: ' + (e.message || '未知错误'));
+  }
+}
+
 onMounted(() => {
   fetchModules();
   // 启动定时刷新
@@ -394,18 +431,19 @@ onUnmounted(() => {
             <div class="card-actions-bottom">
               <el-button
                 v-if="mod.moduleKey !== 'admin'"
-                :type="mod.enabled ? 'warning' : 'success'"
-                size="small"
-                @click.stop="toggleModule(mod)"
-              >
-                {{ mod.enabled ? '停用' : '启用' }}
-              </el-button>
-              <el-button
-                v-if="mod.moduleKey !== 'admin'"
-                size="small"
+                type="primary"
+                size="default"
                 @click.stop="testModuleConnection(mod)"
               >
                 测试连接
+              </el-button>
+              <el-button
+                v-if="mod.moduleKey !== 'admin'"
+                :type="mod.enabled ? 'warning' : 'success'"
+                size="default"
+                @click.stop="toggleModule(mod)"
+              >
+                {{ mod.enabled ? '停用' : '启用' }}
               </el-button>
             </div>
           </div>
