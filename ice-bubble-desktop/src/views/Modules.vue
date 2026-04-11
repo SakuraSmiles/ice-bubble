@@ -26,6 +26,8 @@ interface Module {
 
 const modules = ref<Module[]>([]);
 const loading = ref(false);
+// 卡片级别的 loading 状态
+const cardLoading = ref<Record<string, boolean>>({});
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 const REFRESH_INTERVAL = 10000; // 30秒刷新一次，10秒刷新
 const error = ref('');
