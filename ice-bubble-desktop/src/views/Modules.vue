@@ -560,6 +560,12 @@ onUnmounted(() => {
 .card-actions-bottom .action-btn {
   flex: 1;
   width: 0;
+  transition: all 0.2s ease;
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .card-actions-bottom .btn-text {
