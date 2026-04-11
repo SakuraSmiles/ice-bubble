@@ -112,8 +112,8 @@ async function fetchModules(showLoading = true) {
   if (showLoading) loading.value = true;
   error.value = '';
   try {
-    // 模拟网络延迟，确保 loading 至少显示 2 秒
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // 模拟网络延迟，确保 loading 至少显示 0.8 秒
+    await new Promise(resolve => setTimeout(resolve, 800));
     
     const listRes = await fetch('/api/modules');
     if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
