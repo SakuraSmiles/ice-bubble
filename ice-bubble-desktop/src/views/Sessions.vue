@@ -46,7 +46,7 @@ const sessionOptions = computed(() => {
     session: s,
     _agentId: s.agent_id,
     _channel: s.channel,
-    _lastAt: s.last_message_at,
+    _lastAt: s.updated_at,
     _count: s.message_count,
   }));
 });
@@ -62,7 +62,7 @@ const groupedSessions = computed(() => {
     groups[agentId].push(opt);
   }
   
-  // Sort sessions within each group by last_message_at desc
+  // Sort sessions within each group by updated_at desc
   for (const sessions of Object.values(groups)) {
     sessions.sort((a, b) => {
       const ta = a._lastAt ? new Date(a._lastAt).getTime() : 0;
