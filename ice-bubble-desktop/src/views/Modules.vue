@@ -35,7 +35,7 @@ const error = ref('');
 // 弹窗相关
 const dialogVisible = ref(false);
 const dialogLoading = ref(false);
-const testingConnection = ref(false);
+const dialogTestingConnection = ref(false);
 const testPass = ref(false);
 const formRef = ref();
 const formData = ref({
@@ -128,7 +128,6 @@ async function fetchModules(showLoading = true) {
       baseUrl: m.baseUrl,
       enabled: m.enabled,
       pollInterval: m.pollInterval,
-      registeredTime: m.registeredTime,
       version: m.version || '-',
       status: m.status || { state: null, lastPollTime: null, lastError: null },
       registeredAt: m.registeredTime
@@ -185,11 +184,6 @@ function getLastPollTime(mod: Module): string | null {
   return formatTime(mod.status.lastPollTime);
 }
 
-// 判断是否为 admin 模块
-function isAdminModule(): boolean {
-  return editingModule.value?.moduleKey === 'admin';
-}
-
 // 打开新增弹窗
 function openAddDialog() {
   editingModule.value = null;
@@ -228,7 +222,7 @@ async function testConnection() {
     return;
   }
 
-  testingConnection.value = true;
+  dialogTestingConnection.value = true;
   try {
     // 通过 admin API 测试连接（统一处理跨域）
     const res = await fetch('/api/modules/test-connection', {
@@ -256,7 +250,7 @@ async function testConnection() {
     testPass.value = false;
     ElMessage.error('连接失败: ' + (e.message || '网络错误'));
   } finally {
-    testingConnection.value = false;
+    dialogTestingConnection.value = false;
   }
 }
 
@@ -340,7 +334,10 @@ async function toggleModule(mod: Module) {
   try {
     // 立即更新本地状态，按钮立即变化
     const newEnabled = !mod.enabled;
+    // 乐观更新 status 字段，使其与 enabled 保持一致
     mod.enabled = newEnabled;
+    mod.status = mod.status || {};
+    mod.status.state = newEnabled ? 'running' : 'stopped';
     
     const res = await fetch(`/api/modules/${mod.moduleKey}`, {
       method: 'PUT',
@@ -364,8 +361,8 @@ async function toggleModule(mod: Module) {
 }
 
 async function testModuleConnection(mod: Module) {
-  if (testingConnection.value) return;
-  testingConnection.value = true;
+  if (cardLoading.value[mod.moduleKey]) return;
+  cardLoading.value[mod.moduleKey] = true;
   try {
     const res = await fetch('/api/modules/test-connection', {
       method: 'POST',
@@ -382,7 +379,7 @@ async function testModuleConnection(mod: Module) {
   } catch (e: any) {
     ElMessage.error('连接测试失败: ' + (e.message || '未知错误'));
   } finally {
-    testingConnection.value = false;
+    cardLoading.value[mod.moduleKey] = false;
   }
 }
 
@@ -462,7 +459,7 @@ onUnmounted(() => {
             </div>
             <div class="info-row error-row" v-if="getLastError(mod)">
               <span class="info-label">错误</span>
-              <span class="info-value error-text">{{ getLastError(mod) }}</span>
+              <span class="info-value error-text" :title="getLastError(mod) || undefined">{{ getLastError(mod) }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">地址</span>
@@ -475,8 +472,8 @@ onUnmounted(() => {
               <el-button
                 v-if="mod.moduleKey !== 'admin'"
                 class="action-btn"
-                :loading="testingConnection"
-                :disabled="testingConnection"
+                :loading="cardLoading[mod.moduleKey]"
+                :disabled="cardLoading[mod.moduleKey]"
                 @click.stop="testModuleConnection(mod)"
               >
                 测试连接
@@ -532,7 +529,7 @@ onUnmounted(() => {
         </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button :loading="testingConnection" @click="testConnection">
+        <el-button :loading="dialogTestingConnection" @click="testConnection">
           测试连接
         </el-button>
         <el-button
