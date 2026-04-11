@@ -28,13 +28,11 @@ onMounted(() => {
 <template>
   <div class="sessions-page">
     <PageHeader title="会话管理" :subtitle="`共 ${sessionCount} 个会话`">
-      <template #actions>
-        <el-select v-model="selectedSession" placeholder="选择会话" clearable size="default">
-          <el-option label="会话 1" value="session1" />
-          <el-option label="会话 2" value="session2" />
-          <el-option label="会话 3" value="session3" />
-        </el-select>
-      </template>
+      <el-select v-model="selectedSession" placeholder="选择会话" clearable size="default">
+        <el-option label="会话 1" value="session1" />
+        <el-option label="会话 2" value="session2" />
+        <el-option label="会话 3" value="session3" />
+      </el-select>
     </PageHeader>
 
     <el-card class="content-area">
