@@ -397,11 +397,10 @@ onUnmounted(() => {
       </el-button>
     </PageHeader>
 
-    <el-card class="content-area">
+    <el-card class="content-area" v-loading="loading">
       <div v-if="error" class="error-msg">{{ error }}</div>
-      <div v-if="loading && modules.length === 0" class="loading-msg" style="text-align: center; padding: 40px;">加载中...</div>
-      <div v-else-if="modules.length === 0" class="empty-msg">暂无模块</div>
-      <div v-else class="cards-grid">
+      <div v-if="!loading && modules.length === 0" class="empty-msg">暂无模块</div>
+      <div v-if="!loading && modules.length > 0" class="cards-grid">
         <el-card
           v-for="mod in modules"
           :key="mod.moduleKey"
