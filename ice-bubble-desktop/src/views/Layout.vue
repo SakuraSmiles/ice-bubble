@@ -4,7 +4,7 @@ import { RouterLink, useRoute } from 'vue-router';
 const route = useRoute();
 
 const menuItems = [
-  { path: '/', label: '概览' },
+  { path: '/', label: '工作台' },
   { path: '/modules', label: '模块管理' },
 ];
 </script>

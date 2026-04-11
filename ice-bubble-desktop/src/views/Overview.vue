@@ -37,7 +37,7 @@ onMounted(() => {
 
 <template>
   <div class="modules-page">
-    <PageHeader title="系统概览" subtitle="实时监控面板" />
+    <PageHeader title="工作台" subtitle="系统概览" />
     
     <el-card class="content-area">
       <el-row :gutter="20">

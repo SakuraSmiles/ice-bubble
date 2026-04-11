@@ -325,7 +325,7 @@ onUnmounted(() => {
 
 <template>
   <div class="modules-page">
-    <PageHeader title="模块管理" subtitle="配置和管理采集模块">
+    <PageHeader title="模块管理" subtitle="配置和管理模块信息">
       <el-button :disabled="loading" circle @click="fetchModules">
         <el-icon><Refresh /></el-icon>
       </el-button>
