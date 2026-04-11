@@ -1,13 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 
-// 防抖辅助函数
-function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
-    return (...args: Parameters<T>) => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
-  };
-}
 import { Refresh, Plus, Delete, InfoFilled, VideoPlay, VideoPause } from '@element-plus/icons-vue';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
