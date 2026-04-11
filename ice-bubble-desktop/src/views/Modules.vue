@@ -680,7 +680,7 @@ onUnmounted(() => {
 .card-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .info-row {
@@ -688,14 +688,21 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   font-size: 13px;
-  line-height: 1.6;
-  min-height: 24px;
+  line-height: 1.5;
+  margin: 0 -8px;
+  padding: 2px 8px;
+}
+
+.info-row:hover {
+  background-color: var(--el-fill-color-lighter);
+  border-radius: 4px;
 }
 
 .info-label {
   color: var(--color-text-secondary);
   font-weight: 400;
   flex-shrink: 0;
+  text-align: left;
   width: 64px; /* Reduced width for better balance */
   text-align: right;
 }
