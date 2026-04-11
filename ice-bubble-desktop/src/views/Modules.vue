@@ -403,9 +403,21 @@ onUnmounted(() => {
           class="module-card"
         >
           <div class="card-header">
-            <div class="module-title">
-              <h2 class="module-name">{{ mod.name }}</h2>
-              <span class="module-key">{{ mod.moduleKey }} @ {{ mod.version || '-' }}</span>
+            <div class="module-title-row">
+              <div class="module-title">
+                <h2 class="module-name">{{ mod.name }}</h2>
+                <span class="module-key">{{ mod.moduleKey }} @ {{ mod.version || '-' }}</span>
+              </div>
+              <el-button
+                v-if="mod.moduleKey !== 'admin'"
+                link
+                class="delete-btn"
+                @click.stop="deleteModule(mod)"
+                @mouseenter="$event.target.style.color = 'var(--color-accent-red)'"
+                @mouseleave="$event.target.style.color = 'var(--color-text-secondary)'"
+              >
+                <el-icon><Delete /></el-icon>
+              </el-button>
             </div>
             <div class="card-actions">
               <el-tag
@@ -414,15 +426,6 @@ onUnmounted(() => {
             >
               {{ getDisplayStatus(mod).label }}
             </el-tag>
-              <el-button
-                v-if="mod.moduleKey !== 'admin'"
-                link
-                @click.stop="deleteModule(mod)"
-                @mouseenter="$event.target.style.color = 'var(--color-accent-red)'"
-                @mouseleave="$event.target.style.color = 'var(--color-text-secondary)'"
-              >
-                <el-icon><Delete /></el-icon>
-              </el-button>
             </div>
           </div>
           <div class="card-body">
