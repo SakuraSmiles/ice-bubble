@@ -149,6 +149,8 @@ onMounted(async () => {
         class="session-selector"
         no-data-text="无匹配会话"
         placeholder-text="选择会话"
+        :visible-item-count="12"
+        popper-class="session-dropdown"
       >
         <template #empty>
           <div class="dropdown-empty">无匹配会话</div>
@@ -289,5 +291,38 @@ onMounted(async () => {
 .option-time {
   font-size: 11px;
   color: var(--color-text-secondary);
+}
+
+
+/deep/ .session-dropdown {
+  max-height: 66vh !important;
+}
+
+/deep/ .session-dropdown .el-select-dropdown__item {
+  padding: 0 12px !important;
+}
+
+/deep/ .session-dropdown .el-select-dropdown__item-group {
+  background-color: var(--el-fill-color-light);
+  padding: 8px 12px !important;
+  font-weight: 600;
+  color: var(--color-text);
+  font-size: 13px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/deep/ .session-dropdown .el-select-dropdown__item-group::before {
+  content: "👤 ";
+}
+
+/deep/ .session-dropdown .el-select-dropdown__item.is-disabled {
+  display: none;
+}
+
+/deep/ .session-dropdown .el-select-dropdown__item {
+  height: auto !important;
+  line-height: 1.4 !important;
 }
 </style>
