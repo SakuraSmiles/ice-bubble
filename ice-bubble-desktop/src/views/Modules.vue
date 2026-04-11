@@ -1,5 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
+
+// 防抖辅助函数
+function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return (...args: Parameters<T>) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+}
 import { Refresh, Plus, Delete, InfoFilled } from '@element-plus/icons-vue';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
@@ -26,7 +35,7 @@ interface Module {
 const modules = ref<Module[]>([]);
 const loading = ref(false);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
-const REFRESH_INTERVAL = 10000; // 10秒刷新一次
+const REFRESH_INTERVAL = 30000; // 30秒刷新一次，减少界面闪烁
 const error = ref('');
 
 // 弹窗相关
@@ -109,6 +118,9 @@ async function fetchModules() {
   loading.value = true;
   error.value = '';
   try {
+    // 模拟网络延迟，强化加载表现
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     const listRes = await fetch('/api/modules');
     if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
     const listData = await listRes.json();
@@ -349,6 +361,10 @@ async function testModuleConnection(mod: Module) {
   }
 }
 
+const debouncedRefresh = debounce(() => {
+  if (!loading.value) fetchModules();
+}, 1000);
+
 onMounted(() => {
   fetchModules();
   // 启动定时刷新
@@ -366,7 +382,7 @@ onUnmounted(() => {
 <template>
   <div class="modules-page">
     <PageHeader title="模块管理" subtitle="配置和管理模块信息">
-      <el-button :disabled="loading" circle @click="fetchModules">
+      <el-button :disabled="loading" circle @click="debouncedRefresh">
         <el-icon><Refresh /></el-icon>
       </el-button>
       <el-button type="primary" circle @click="openAddDialog">
@@ -407,7 +423,8 @@ onUnmounted(() => {
               </el-button>
             </div>
           </div>
-          <div class="card-body" @click="openEditDialog(mod)">
+          <div class="card-body">
+            <div class="info-rows" @click="openEditDialog(mod)">
             <div class="info-row">
               <span class="info-label">注册时间</span>
               <span class="info-value">{{ mod.registeredAt || '-' }}</span>
@@ -428,6 +445,7 @@ onUnmounted(() => {
               <span class="info-label">地址</span>
               <span class="info-value url">{{ mod.baseUrl }}</span>
             </div>
+            </div>
             
             <!-- 卡片底部操作按钮 -->
             <div class="card-actions-bottom">
@@ -436,7 +454,7 @@ onUnmounted(() => {
                 class="action-btn"
                 :loading="testingConnection"
                 :disabled="testingConnection"
-                @click.stop="testModuleConnection(mod)"
+                @click.stop="debouncedTestConnection(mod)"
               >
                 测试连接
               </el-button>
@@ -445,7 +463,7 @@ onUnmounted(() => {
                 :type="mod.enabled ? 'warning' : 'success'"
                 class="action-btn"
                 :disabled="loading"
-                @click.stop="toggleModule(mod)"
+                @click.stop="debouncedToggle(mod)"
               >
                 <el-icon><VideoPlay v-if="!mod.enabled" /><VideoPause v-else /></el-icon>
                 <span class="btn-text">{{ mod.enabled ? '停用' : '启用' }}</span>
