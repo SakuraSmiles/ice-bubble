@@ -22,11 +22,9 @@ const subtitle = computed(() =>
   `共 ${totalSessions.value} 个会话，分布在 ${totalAgents.value} 个 Agent`
 );
 
-// Session dropdown options: sorted by last_message_at desc
 const sessionOptions = computed(() => {
   let list = [...allSessions.value];
 
-  // Filter by search query
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.toLowerCase();
     list = list.filter(s =>
@@ -36,7 +34,6 @@ const sessionOptions = computed(() => {
     );
   }
 
-  // Sort by last_message_at desc
   list.sort((a, b) => {
     const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
     const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
@@ -54,7 +51,6 @@ const sessionOptions = computed(() => {
   }));
 });
 
-// Group sessions by agent_id
 const groupedSessions = computed(() => {
   const groups: Record<string, typeof sessionOptions.value> = {};
   
@@ -66,7 +62,6 @@ const groupedSessions = computed(() => {
     groups[agentId].push(opt);
   }
   
-  // Convert to array and sort by agentId
   return Object.entries(groups)
     .map(([agentId, sessions]) => ({ agentId, sessions }))
     .sort((a, b) => a.agentId.localeCompare(b.agentId));
@@ -167,17 +162,14 @@ onMounted(async () => {
             :key="opt.value"
             :value="opt.value"
             :label="simplifySessionKey(opt.label)"
-            class="session-option"
           >
             <div class="session-option-inner">
-              <div class="option-top">
-                <span class="option-key">{{ simplifySessionKey(opt.label) }}</span>
-              </div>
-              <div class="option-meta">
+              <span class="option-key">{{ simplifySessionKey(opt.label) }}</span>
+              <span class="option-meta">
                 <span class="option-channel">{{ opt._channel }}</span>
                 <span class="option-count">{{ opt._count }} 条</span>
                 <span class="option-time">{{ formatRelativeTime(opt._lastAt) }}</span>
-              </div>
+              </span>
             </div>
           </el-option>
         </el-option-group>
@@ -193,7 +185,7 @@ onMounted(async () => {
 
       <div v-else class="empty-state">
         <div class="empty-icon">💬</div>
-        <div class="empty-text">\u8bf7\u4ece\u53f3\u4e0a\u65b9选择会话</div>
+        <div class="empty-text">请从右上角选择会话</div>
       </div>
     </div>
 
@@ -213,8 +205,7 @@ onMounted(async () => {
 }
 
 .session-selector {
-  min-width: 400px;
-  max-width: 500px;
+  width: 420px;
 }
 
 .content-area {
@@ -257,16 +248,10 @@ onMounted(async () => {
 /* Dropdown option styles */
 .session-option-inner {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  padding: 4px 0;
-}
-
-.option-top {
-  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
 }
 
 .option-key {
@@ -276,43 +261,57 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+  flex-shrink: 0;
 }
 
 .option-meta {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  flex-shrink: 0;
 }
 
 .option-channel {
-  min-width: 50px;
-}
-
-.option-count {
   min-width: 40px;
 }
 
+.option-count {
+  min-width: 35px;
+}
+
 .option-time {
-  min-width: 60px;
+  min-width: 55px;
+  text-align: right;
 }
 </style>
 
 <style>
-/* Global dropdown popper styles - not scoped */
-.el-select-dropdown.session-dropdown {
+/* Global dropdown popper styles */
+.session-dropdown.el-select__dropdown {
   max-height: 70vh !important;
-  overflow: hidden !important;
 }
 
-.el-select-dropdown.session-dropdown .el-select-dropdown__wrap {
+.session-dropdown .el-select-dropdown__wrap {
   max-height: 70vh !important;
   overflow-y: auto !important;
 }
 
-.el-select-dropdown.session-dropdown .el-select-dropdown__item-group {
+.session-dropdown .el-select-dropdown__list {
+  padding: 0 !important;
+}
+
+.session-dropdown .el-select-dropdown__item {
+  padding: 10px 16px !important;
+  height: auto !important;
+  min-height: 44px !important;
+  line-height: 1.4 !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.session-dropdown .el-select-dropdown__item-group {
   background-color: var(--el-fill-color-light) !important;
   padding: 10px 16px !important;
   font-weight: 600 !important;
@@ -321,26 +320,13 @@ onMounted(async () => {
   position: sticky !important;
   top: 0 !important;
   z-index: 10 !important;
-  border-bottom: 1px solid var(--el-border-color-lighter) !important;
 }
 
-.el-select-dropdown.session-dropdown .el-select-dropdown__item-group::before {
-  content: "👤 ";
-  margin-right: 4px;
+.session-dropdown .el-select-dropdown__item-group::before {
+  content: "👤 " !important;
 }
 
-.el-select-dropdown.session-dropdown .el-select-dropdown__item {
-  padding: 10px 16px !important;
-  height: auto !important;
-  min-height: 48px !important;
-  line-height: 1.5 !important;
-}
-
-.el-select-dropdown.session-dropdown .el-select-dropdown__item.is-disabled {
+.session-dropdown .el-select-dropdown__item.is-disabled {
   display: none !important;
-}
-
-.el-select-dropdown.session-dropdown .el-select-dropdown__list {
-  padding: 4px 0 !important;
 }
 </style>
