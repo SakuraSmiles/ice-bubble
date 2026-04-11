@@ -151,6 +151,7 @@ onMounted(async () => {
         placeholder-text="选择会话"
         :visible-item-count="12"
         popper-class="session-dropdown"
+        placement="bottom-end"
       >
         <template #empty>
           <div class="dropdown-empty">无匹配会话</div>
@@ -192,7 +193,7 @@ onMounted(async () => {
 
       <div v-else class="empty-state">
         <div class="empty-icon">💬</div>
-        <div class="empty-text">请从右上角选择会话</div>
+        <div class="empty-text">\u8bf7\u4ece\u53f3\u4e0a\u65b9选择会话</div>
       </div>
     </div>
 
@@ -212,7 +213,7 @@ onMounted(async () => {
 }
 
 .session-selector {
-  min-width: 380px;
+  min-width: 400px;
   max-width: 500px;
 }
 
@@ -253,17 +254,19 @@ onMounted(async () => {
   font-size: 13px;
 }
 
-/* Dropdown option custom styles */
+/* Dropdown option styles */
 .session-option-inner {
-  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   width: 100%;
+  padding: 4px 0;
 }
 
 .option-top {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
 }
 
 .option-key {
@@ -273,38 +276,64 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  max-width: 280px;
 }
 
 .option-meta {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-left: 4px;
-}
-
-.option-channel,
-.option-count,
-.option-time {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 
-/* Dropdown popper styles */
-:deep(.session-dropdown) {
-  max-height: 66vh !important;
+.option-channel {
+  min-width: 50px;
 }
 
-:deep(.el-select-dropdown__item-group) {
-  background-color: var(--el-fill-color-light);
-  padding: 8px 12px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  font-size: 13px;
+.option-count {
+  min-width: 40px;
 }
 
-:deep(.el-select-dropdown__item-group .el-select-dropdown__item) {
+.option-time {
+  min-width: 60px;
+}
+</style>
+
+<style>
+/* Global dropdown popper styles - not scoped */
+.session-dropdown {
+  max-height: 70vh !important;
+  overflow-y: auto !important;
+}
+
+.session-dropdown .el-select-dropdown__item-group {
+  background-color: var(--el-fill-color-light) !important;
+  padding: 8px 16px !important;
+  font-weight: 600 !important;
+  color: var(--el-text-color-primary) !important;
+  font-size: 13px !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 10 !important;
+}
+
+.session-dropdown .el-select-dropdown__item-group::before {
+  content: "👤 ";
+}
+
+.session-dropdown .el-select-dropdown__item {
+  padding: 8px 16px !important;
   height: auto !important;
-  line-height: 1.4;
-  padding: 6px 12px;
+  line-height: 1.5 !important;
+}
+
+.session-dropdown .el-select-dropdown__item.is-disabled {
+  display: none !important;
+}
+
+.session-dropdown .el-select-dropdown__list {
+  padding: 4px 0 !important;
 }
 </style>
