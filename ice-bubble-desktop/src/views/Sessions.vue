@@ -54,6 +54,24 @@ const sessionOptions = computed(() => {
   }));
 });
 
+// Group sessions by agent_id
+const groupedSessions = computed(() => {
+  const groups: Record<string, typeof sessionOptions.value> = {};
+  
+  for (const opt of sessionOptions.value) {
+    const agentId = opt._agentId;
+    if (!groups[agentId]) {
+      groups[agentId] = [];
+    }
+    groups[agentId].push(opt);
+  }
+  
+  // Convert to array and sort by agentId
+  return Object.entries(groups)
+    .map(([agentId, sessions]) => ({ agentId, sessions }))
+    .sort((a, b) => a.agentId.localeCompare(b.agentId));
+});
+
 function simplifySessionKey(key: string): string {
   const parts = key.split(':');
   if (parts.length >= 2) {
@@ -136,25 +154,30 @@ onMounted(async () => {
           <div class="dropdown-empty">无匹配会话</div>
         </template>
 
-        <el-option
-          v-for="opt in sessionOptions"
-          :key="opt.value"
-          :value="opt.value"
-          :label="simplifySessionKey(opt.label)"
-          class="session-option"
+        <el-option-group
+          v-for="group in groupedSessions"
+          :key="group.agentId"
+          :label="group.agentId + ' (' + group.sessions.length + ')'"
         >
-          <div class="session-option-inner">
-            <div class="option-top">
-              <el-tag size="small" type="info" class="agent-tag">{{ opt._agentId }}</el-tag>
-              <span class="option-key">{{ simplifySessionKey(opt.label) }}</span>
+          <el-option
+            v-for="opt in group.sessions"
+            :key="opt.value"
+            :value="opt.value"
+            :label="simplifySessionKey(opt.label)"
+            class="session-option"
+          >
+            <div class="session-option-inner">
+              <div class="option-top">
+                <span class="option-key">{{ simplifySessionKey(opt.label) }}</span>
+              </div>
+              <div class="option-meta">
+                <span class="option-channel">{{ opt._channel }}</span>
+                <span class="option-count">{{ opt._count }} 条</span>
+                <span class="option-time">{{ formatRelativeTime(opt._lastAt) }}</span>
+              </div>
             </div>
-            <div class="option-meta">
-              <span class="option-channel">{{ opt._channel }}</span>
-              <span class="option-count">{{ opt._count }} 条</span>
-              <span class="option-time">{{ formatRelativeTime(opt._lastAt) }}</span>
-            </div>
-          </div>
-        </el-option>
+          </el-option>
+        </el-option-group>
       </el-select>
     </PageHeader>
 
