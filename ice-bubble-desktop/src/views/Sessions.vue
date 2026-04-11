@@ -251,7 +251,7 @@ onMounted(async () => {
   text-align: center;
   color: var(--color-text-secondary);
   font-size: 13px;
-}
+})
 
 /* Dropdown option custom styles */
 .session-option-inner {
@@ -294,15 +294,15 @@ onMounted(async () => {
 }
 
 
-/deep/ .session-dropdown {
+:deep(.session-dropdown {
   max-height: 66vh !important;
 }
 
-/deep/ .session-dropdown .el-select-dropdown__item {
+:deep(.session-dropdown .el-select-dropdown__item {
   padding: 0 12px !important;
 }
 
-/deep/ .session-dropdown .el-select-dropdown__item-group {
+:deep(.session-dropdown .el-select-dropdown__item-group {
   background-color: var(--el-fill-color-light);
   padding: 8px 12px !important;
   font-weight: 600;
@@ -313,16 +313,16 @@ onMounted(async () => {
   z-index: 1;
 }
 
-/deep/ .session-dropdown .el-select-dropdown__item-group::before {
+:deep(.session-dropdown .el-select-dropdown__item-group::before {
   content: "👤 ";
 }
 
-/deep/ .session-dropdown .el-select-dropdown__item.is-disabled {
+:deep(.session-dropdown .el-select-dropdown__item.is-disabled {
   display: none;
 }
 
-/deep/ .session-dropdown .el-select-dropdown__item {
+:deep(.session-dropdown .el-select-dropdown__item {
   height: auto !important;
   line-height: 1.4 !important;
-}
+})
 </style>
