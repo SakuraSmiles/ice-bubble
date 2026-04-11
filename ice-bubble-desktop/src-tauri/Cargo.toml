@@ -1,12 +1,12 @@
 [package]
-name = "ice_bubble_topdesk"
+name = "ice_bubble_desktop"
 version = "1.0.0"
 description = "ice-bubble 桌面端展示应用"
 authors = ["SakuraSmiles"]
 edition = "2021"
 
 [lib]
-name = "topdesk_lib"
+name = "desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
