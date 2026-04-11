@@ -418,29 +418,28 @@ onUnmounted(() => {
           class="module-card"
         >
           <div class="card-header">
-            <div class="title-with-action">
+            <div class="title-row">
               <div class="module-title">
                 <h2 class="module-name">{{ mod.name }}</h2>
                 <span class="module-key">{{ mod.moduleKey }} @ {{ mod.version || '-' }}</span>
               </div>
-              <el-button
-                v-if="mod.moduleKey !== 'admin'"
-                link
-                class="title-delete-btn"
-                @click.stop="deleteModule(mod)"
-                @mouseenter="$event.target.style.color = 'var(--color-accent-red)'"
-                @mouseleave="$event.target.style.color = 'var(--color-text-secondary)'"
-              >
-                <el-icon><Delete /></el-icon>
-              </el-button>
-            </div>
-            <div class="card-actions">
-              <el-tag
-              :type="getDisplayStatus(mod).type"
-              size="small"
-            >
-              {{ getDisplayStatus(mod).label }}
-            </el-tag>
+              <div class="header-actions">
+                <el-tag
+                :type="getDisplayStatus(mod).type"
+                size="small"
+                >
+                  {{ getDisplayStatus(mod).label }}
+                </el-tag>
+                <el-button
+                  v-if="mod.moduleKey !== 'admin'"
+                  link
+                  @click.stop="deleteModule(mod)"
+                  @mouseenter="$event.target.style.color = 'var(--color-accent-red)'"
+                  @mouseleave="$event.target.style.color = 'var(--color-text-secondary)'"
+                >
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
             </div>
           </div>
           <div class="card-body">
@@ -619,30 +618,38 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
-.title-with-action {
+.title-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
 }
 
 .module-title {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   flex: 1;
-  min-width: 0; /* Prevent text overflow */
+  min-width: 0;
 }
 
-.title-delete-btn {
-  flex-shrink: 0;
-  margin-top: 2px;
+.module-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+  line-height: 1.3;
 }
 
-.card-actions {
+.module-key {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
