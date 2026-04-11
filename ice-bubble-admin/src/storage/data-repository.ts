@@ -136,7 +136,7 @@ export class DataRepository {
 
     const rows = this.db.prepare(`
       SELECT * FROM admin_sessions ${whereClause}
-      ORDER BY updated_at DESC
+      ORDER BY last_message_at DESC NULLS LAST
       LIMIT ? OFFSET ?
     `).all(...values, limit, offset) as AdminSession[];
 

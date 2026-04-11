@@ -92,13 +92,7 @@ function formatTime(dateString: string | null): string {
 }
 
 function simplifySessionKey(key: string): string {
-  // agent:main:local:default:direct:UUID -> main:direct:UUID (last segment)
-  const parts = key.split(':');
-  if (parts.length >= 2) {
-    const uuid = parts[parts.length - 1];
-    const shortUuid = uuid.length > 8 ? uuid.substring(0, 8) + '...' : uuid;
-    return `${parts[1]}:${shortUuid}`;
-  }
+  // 不截断，完整展示，缩略交给组件 CSS 处理
   return key;
 }
 

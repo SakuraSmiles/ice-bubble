@@ -82,19 +82,19 @@ const groupedSessions = computed(() => {
 });
 
 function simplifySessionKey(key: string): string {
-  const parts = key.split(':');
-  if (parts.length >= 2) {
-    const uuid = parts[parts.length - 1];
-    const shortUuid = uuid.length > 8 ? uuid.substring(0, 8) + '…' : uuid;
-    return `${parts[1]}:${shortUuid}`;
-  }
+  // 不截断，完整展示，缩略交给组件 CSS 处理
   return key;
 }
 
 function getShortKey(key: string): string {
-  // Extract just the UUID part (last segment after colon)
+  // 格式化: agent:main:local:default:direct:UUID -> local:direct:UUID
   const parts = key.split(':');
-  return parts[parts.length - 1].substring(0, 8) + '…';
+  // 找到 'local' 的位置，从那里开始保留
+  const localIdx = parts.indexOf('local');
+  if (localIdx >= 0) {
+    return parts.slice(localIdx).join(':');
+  }
+  return key;
 }
 
 function formatRelativeTime(dateString: string | null): string {
@@ -143,6 +143,8 @@ async function handleRefresh() {
 
 onMounted(async () => {
   await fetchAllSessions();
+  // 每 30 秒自动刷新会话列表
+  setInterval(fetchAllSessions, 30000);
 });
 </script>
 
@@ -271,9 +273,6 @@ onMounted(async () => {
   width: 100%;
   gap: 8px;
   font-size: 12px;
-  padding-left: 8px;
-  border-left: 2px solid var(--el-border-color);
-  margin-left: 4px;
 }
 
 .option-key {
@@ -285,6 +284,7 @@ onMounted(async () => {
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+  max-width: 300px;
 }
 
 .option-meta {
@@ -299,7 +299,8 @@ onMounted(async () => {
 .option-count {
   color: var(--el-color-primary);
   font-weight: 500;
-  min-width: 20px;
+  min-width: 35px;
+  text-align: right;
 }
 
 .option-time {
@@ -312,6 +313,7 @@ onMounted(async () => {
 /* Global dropdown popper styles */
 .session-dropdown.el-select__dropdown {
   max-height: 70vh !important;
+  width: 420px !important;
 }
 
 .session-dropdown .el-select-dropdown__wrap {
@@ -324,15 +326,17 @@ onMounted(async () => {
 }
 
 .session-dropdown .el-select-dropdown__item {
-  padding: 8px 16px !important;
+  margin-left: 30px !important;
+  padding: 6px 16px !important;
   height: auto !important;
-  min-height: 34px !important;
+  min-height: 28px !important;
   line-height: 1.4 !important;
+  border-left: 2px solid var(--el-border-color);
 }
 
 .session-dropdown .el-select-dropdown__item-group {
   background-color: var(--el-fill-color-light) !important;
-  padding: 10px 16px !important;
+  padding: 8px 16px !important;
   font-weight: 600 !important;
   color: var(--el-text-color-primary) !important;
   font-size: 12px !important;
