@@ -84,7 +84,7 @@ function formatRelativeTime(dateString: string | null): string {
 async function fetchAllSessions() {
   loading.value = true;
   try {
-    const res = await fetch('http://localhost:13000/api/data/sessions');
+    const res = await fetch('/api/data/sessions');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     allSessions.value = data.sessions || [];

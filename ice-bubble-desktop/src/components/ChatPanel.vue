@@ -50,7 +50,7 @@ async function fetchMessages(reset = false) {
   error.value = '';
 
   try {
-    const url = `http://localhost:13000/api/data/sessions/${encodeURIComponent(props.session.session_key)}/messages`;
+    const url = `/api/data/sessions/${encodeURIComponent(props.session.session_key)}/messages`;
     const res = await fetch(url);
     if (!res.ok) {
       // If 404, messages endpoint may not exist - gracefully handle
