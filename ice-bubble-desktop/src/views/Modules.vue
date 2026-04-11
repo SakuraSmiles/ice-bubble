@@ -684,7 +684,15 @@ onUnmounted(() => {
   gap: 10px;
   padding: 0;
   margin: 0 -12px; /* Extend to card edges */
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
 }
+
+.card-body:hover {
+  background-color: var(--el-fill-color-lighter);
+}
+
+
 
 .info-row {
   display: flex;
@@ -694,11 +702,6 @@ onUnmounted(() => {
   line-height: 1.5;
   margin: 0;
   padding: 2px 0;
-}
-
-.info-row:hover {
-  background-color: var(--el-fill-color-lighter);
-  border-radius: 4px;
 }
 
 .info-label {
