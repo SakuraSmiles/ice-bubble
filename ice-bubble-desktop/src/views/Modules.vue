@@ -684,12 +684,6 @@ onUnmounted(() => {
   gap: 10px;
   padding: 0;
   margin: 0 -12px; /* Extend to card edges */
-  border-radius: 4px;
-  transition: background-color 0.2s ease;
-}
-
-.card-body:hover {
-  background-color: var(--el-fill-color-lighter);
 }
 
 
