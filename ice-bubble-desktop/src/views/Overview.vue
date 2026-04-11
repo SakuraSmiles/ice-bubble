@@ -119,13 +119,11 @@ onMounted(() => {
 .overview-page {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
 }
 
 .content-area {
   flex: 1;
-  padding: 24px;
-  background: var(--el-bg-color-page);
+  margin-bottom: 20px;
 }
 
 .stat-card {
