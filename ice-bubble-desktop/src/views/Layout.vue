@@ -6,6 +6,7 @@ const route = useRoute();
 const menuItems = [
   { path: '/', label: '工作台' },
   { path: '/modules', label: '模块管理' },
+  { path: '/sessions', label: '会话管理' },
 ];
 </script>
 

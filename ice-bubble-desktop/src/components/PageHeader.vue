@@ -24,7 +24,6 @@ defineProps<{
   justify-content: space-between;
   padding: 24px 0 16px;
   margin-bottom: 8px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .page-title-area {
