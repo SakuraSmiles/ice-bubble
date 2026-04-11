@@ -421,13 +421,19 @@ export class SQLiteManager {
             // 使用 IMMEDIATE 事务模式，避免并发冲突
             const insertedCount = insertMany.immediate(messages);
 
-            // 更新 session 的 message_count
-            const sessionCounts = new Map<string, number>();
+            // 计算每个 session 的最新消息时间和消息数量
+            const sessionStats = new Map<string, { count: number; lastMessageAt: Date }>();
             for (const msg of messages) {
-                const count = sessionCounts.get(msg.sessionKey) || 0;
-                sessionCounts.set(msg.sessionKey, count + 1);
+                const stats = sessionStats.get(msg.sessionKey) || { count: 0, lastMessageAt: new Date(0) };
+                stats.count++;
+                // 找到最新消息时间
+                if (msg.timestamp > stats.lastMessageAt) {
+                    stats.lastMessageAt = msg.timestamp;
+                }
+                sessionStats.set(msg.sessionKey, stats);
             }
 
+            // 更新 session 的 message_count 和 last_message_at
             const updateSession = this.db.prepare(`
                 UPDATE sessions
                 SET message_count = message_count + ?,
@@ -437,8 +443,8 @@ export class SQLiteManager {
             `);
 
             const now = new Date().toISOString();
-            for (const [sessionKey, count] of sessionCounts) {
-                updateSession.run(count, now, now, sessionKey);
+            for (const [sessionKey, stats] of sessionStats) {
+                updateSession.run(stats.count, now, stats.lastMessageAt.toISOString(), sessionKey);
             }
 
             return insertedCount;
