@@ -1,11 +1,10 @@
 import { createServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ADMIN = 'http://localhost:13000';
 const START_PORT = 14000;
 const MAX_PORT = 14010;
 
@@ -96,7 +95,7 @@ async function tryListen(port: number): Promise<number | null> {
       console.log(`Desktop: ${port}`);
       resolve(port);
     });
-    server.on('error', (err: any) => {
+    server.on('error', () => {
       if (port < MAX_PORT) {
         console.log(`Port ${port} in use, trying ${port + 1}...`);
         server.close();

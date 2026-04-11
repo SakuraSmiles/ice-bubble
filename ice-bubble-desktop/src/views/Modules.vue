@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { Refresh, Plus, Delete, InfoFilled } from '@element-plus/icons-vue';
+import PageHeader from '../components/PageHeader';
+import AppFooter from '../components/AppFooter';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 interface ModuleStatus {
