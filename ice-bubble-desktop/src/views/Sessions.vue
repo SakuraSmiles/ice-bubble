@@ -212,8 +212,8 @@ onMounted(async () => {
 }
 
 .session-selector {
-  min-width: 300px;
-  max-width: 400px;
+  min-width: 380px;
+  max-width: 500px;
 }
 
 .content-area {
@@ -229,10 +229,10 @@ onMounted(async () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius);
+  border: 1px dashed var(--el-border-color);
+  border-radius: 8px;
   min-height: 400px;
-  background: var(--color-bg);
+  background: var(--el-bg-color);
 }
 
 .empty-icon {
@@ -243,37 +243,33 @@ onMounted(async () => {
 
 .empty-text {
   font-size: 14px;
-  color: var(--color-text-secondary);
+  color: var(--el-text-color-secondary);
 }
 
 .dropdown-empty {
   padding: 12px;
   text-align: center;
-  color: var(--color-text-secondary);
+  color: var(--el-text-color-secondary);
   font-size: 13px;
-})
+}
 
 /* Dropdown option custom styles */
 .session-option-inner {
-  padding: 4px 0;
+  padding: 6px 0;
   width: 100%;
 }
 
 .option-top {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 3px;
-}
-
-.agent-tag {
-  flex-shrink: 0;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 
 .option-key {
-  font-size: 12px;
+  font-size: 13px;
   font-family: monospace;
-  color: var(--color-text);
+  color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -282,47 +278,14 @@ onMounted(async () => {
 .option-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-left: 2px;
+  gap: 12px;
+  padding-left: 4px;
 }
 
 .option-channel,
 .option-count,
 .option-time {
-  font-size: 11px;
-  color: var(--color-text-secondary);
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
-
-
-:deep(.session-dropdown {
-  max-height: 66vh !important;
-}
-
-:deep(.session-dropdown .el-select-dropdown__item {
-  padding: 0 12px !important;
-}
-
-:deep(.session-dropdown .el-select-dropdown__item-group {
-  background-color: var(--el-fill-color-light);
-  padding: 8px 12px !important;
-  font-weight: 600;
-  color: var(--color-text);
-  font-size: 13px;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-
-:deep(.session-dropdown .el-select-dropdown__item-group::before {
-  content: "👤 ";
-}
-
-:deep(.session-dropdown .el-select-dropdown__item.is-disabled {
-  display: none;
-}
-
-:deep(.session-dropdown .el-select-dropdown__item {
-  height: auto !important;
-  line-height: 1.4 !important;
-})
 </style>
