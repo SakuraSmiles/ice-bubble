@@ -324,16 +324,23 @@ async function toggleModule(mod: Module) {
   if (loading.value) return;
   loading.value = true;
   try {
+    // 立即更新本地状态，按钮立即变化
+    const newEnabled = !mod.enabled;
+    mod.enabled = newEnabled;
+    
     const res = await fetch(`/api/modules/${mod.moduleKey}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: !mod.enabled })
+      body: JSON.stringify({ enabled: newEnabled })
     });
     if (!res.ok) {
+      // 回滚状态
+      mod.enabled = !newEnabled;
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
       throw new Error(err.error || `HTTP ${res.status}`);
     }
-    ElMessage.success(mod.enabled ? '模块已停用' : '模块已启用');
+    ElMessage.success(newEnabled ? '模块已启用' : '模块已停用');
+    // 后台静默刷新，不显示 loading
     fetchModules(false);
   } catch (e: any) {
     ElMessage.error('操作失败: ' + (e.message || '未知错误'));
@@ -392,7 +399,7 @@ onUnmounted(() => {
 
     <el-card class="content-area">
       <div v-if="error" class="error-msg">{{ error }}</div>
-      <div v-if="loading && modules.length === 0" class="loading-msg">加载中...</div>
+      <div v-if="loading && modules.length === 0" class="loading-msg" style="text-align: center; padding: 40px;">加载中...</div>
       <div v-else-if="modules.length === 0" class="empty-msg">暂无模块</div>
       <div v-else class="cards-grid">
         <el-card
