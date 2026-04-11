@@ -3,7 +3,7 @@
 > 项目路径：`/mnt/d/workspace/ice-bubble/ice-bubble-desktop`
 > 测试范围：`src/views/Modules.vue`
 > 创建时间：2026-04-11
-> 状态：等待 dev 修复采集器问题后执行实际测试
+> 状态：✅ 测试完成，所有问题已修复
 
 ---
 
