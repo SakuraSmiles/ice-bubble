@@ -26,11 +26,11 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 ## 核心模块
 
-| 层级 | 模块 | 版本 | 说明 | 状态 |
-|------|------|------|------|------|
-| **VIEW LAYER** | **ice-bubble-desktop** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus + Express），面向最终用户 | 🚧 开发中 |
-| **BIZ LAYER** | **ice-bubble-admin** | `1.0.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 | ✅ 已实现 |
-| **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.0.0` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 | ✅ 已实现 |
+| 层级 | 模块 | 版本 | 说明 |
+|------|------|------|------|
+| **VIEW LAYER** | **ice-bubble-desktop** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus + Express），面向最终用户 |
+| **BIZ LAYER** | **ice-bubble-admin** | `1.0.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
+| **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.0.0` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 |
 
 > DATA LAYER 设计为可插拔：未来新增数据源（如 WorkBuddy）只需实现标准接口的 Collector 即可。
 
