@@ -22,7 +22,7 @@ defineProps<{
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 24px 0;
+  padding: 24px 0 16px;
   margin-bottom: 8px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
@@ -30,23 +30,24 @@ defineProps<{
 .page-title-area {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .page-title {
-  font-size: 1.4rem;
+  font-size: 1.5rem;
   font-weight: 600;
   color: var(--color-text);
   margin: 0;
-  line-height: 1.3;
+  line-height: 1.2;
+  letter-spacing: -0.3px;
 }
 
 .page-subtitle {
   font-size: 13px;
-  color: var(--color-text-secondary);
-  font-family: monospace;
-  opacity: 0.8;
-  letter-spacing: 0.5px;
+  color: var(--color-text-light);
+  font-weight: 400;
+  letter-spacing: 0;
+  opacity: 0.7;
 }
 
 .page-actions {
@@ -54,6 +55,6 @@ defineProps<{
   align-items: center;
   gap: 12px;
   min-height: 36px;
-  padding-top: 4px;
+  padding-top: 6px;
 }
 </style>
