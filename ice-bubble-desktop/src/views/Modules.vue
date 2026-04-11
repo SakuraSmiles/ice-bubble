@@ -680,7 +680,9 @@ onUnmounted(() => {
 .card-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  padding: 0;
+  margin: 0 -12px; /* Extend to card edges */
 }
 
 .info-row {
@@ -689,8 +691,8 @@ onUnmounted(() => {
   align-items: center;
   font-size: 13px;
   line-height: 1.5;
-  margin: 0 -8px;
-  padding: 2px 8px;
+  margin: 0;
+  padding: 2px 0;
 }
 
 .info-row:hover {
@@ -702,40 +704,32 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
   font-weight: 400;
   flex-shrink: 0;
+  width: 64px;
   text-align: left;
-  width: 64px; /* Reduced width for better balance */
-  text-align: right;
+  padding-right: 16px;
 }
 
 .info-value {
   color: var(--color-text);
-  font-weight: 500;
-  text-align: left;
+  font-weight: 400;
+  text-align: right;
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-left: 8px;
 }
 
 .info-value.url {
+  font-family: monospace;
   font-size: 12px;
   color: var(--color-accent-blue);
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: monospace;
-  opacity: 0.9;
 }
 
-/* Time values - ensure consistent width */
-.info-value.time-value {
+.info-value.time {
+  font-family: monospace;
   font-size: 12px;
   color: var(--color-text-secondary);
-  min-width: 140px;
-  text-align: left;
 }
 
 .error-row .info-value.error-text {
