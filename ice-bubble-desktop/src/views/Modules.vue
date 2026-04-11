@@ -348,7 +348,7 @@ onUnmounted(() => {
           <div class="card-header">
             <div class="module-title">
               <h2 class="module-name">{{ mod.name }}</h2>
-              <span class="module-key">{{ mod.moduleKey }}</span>
+              <span class="module-key">{{ mod.moduleKey }} - {{ mod.version || '-' }}</span>
             </div>
             <div class="card-actions">
               <el-tag
@@ -370,10 +370,6 @@ onUnmounted(() => {
           </div>
           <div class="card-body">
             <div class="info-row">
-              <span class="info-label">版本</span>
-              <span class="info-value">{{ mod.version || '-' }}</span>
-            </div>
-            <div class="info-row">
               <span class="info-label">注册时间</span>
               <span class="info-value">{{ mod.registeredAt || '-' }}</span>
             </div>
@@ -392,6 +388,25 @@ onUnmounted(() => {
             <div class="info-row">
               <span class="info-label">地址</span>
               <span class="info-value url">{{ mod.baseUrl }}</span>
+            </div>
+            
+            <!-- 卡片底部操作按钮 -->
+            <div class="card-actions-bottom">
+              <el-button
+                v-if="mod.moduleKey !== 'admin'"
+                :type="mod.enabled ? 'warning' : 'success'"
+                size="small"
+                @click.stop="toggleModule(mod)"
+              >
+                {{ mod.enabled ? '停用' : '启用' }}
+              </el-button>
+              <el-button
+                v-if="mod.moduleKey !== 'admin'"
+                size="small"
+                @click.stop="testModuleConnection(mod)"
+              >
+                测试连接
+              </el-button>
             </div>
           </div>
         </el-card>
@@ -429,10 +444,7 @@ onUnmounted(() => {
           />
           <span class="form-tip">毫秒，最小 5000ms</span>
         </el-form-item>
-        <el-form-item label="启用">
-          <el-switch v-model="formData.enabled" :disabled="isAdminModule()" />
-        </el-form-item>
-      </el-form>
+        </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button :loading="testingConnection" @click="testConnection">
