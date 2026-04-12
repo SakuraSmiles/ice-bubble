@@ -88,10 +88,6 @@ const groupedSessions = computed(() => {
     });
 });
 
-function simplifySessionKey(key: string): string {
-  // 不截断，完整展示，缩略交给组件 CSS 处理
-  return key;
-}
 
 function getShortKey(key: string): string {
   // 格式化: agent:main:local:default:direct:UUID -> local:direct:UUID

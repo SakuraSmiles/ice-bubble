@@ -1,0 +1,10 @@
+{
+  "modules": [
+    {
+      "key": "admin",
+      "name": "Admin 管理后台",
+      "url": "http://localhost:13000",
+      "enabled": true
+    }
+  ]
+}
