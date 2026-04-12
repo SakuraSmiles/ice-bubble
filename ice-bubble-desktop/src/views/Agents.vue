@@ -104,27 +104,51 @@ function getHeatmapGrid(agentId: string, days: number = 90): ActivityDay[] {
 }
 
 /**
- * 将一维日期数组转换为周视图网格（7行，按周分组）
+ * 将一维日期数组转换为周视图网格（4行×7列，右对齐，今天在右侧）
  */
 function toWeekGrid(dates: ActivityDay[]): ActivityDay[][] {
-  // 补齐到周一开始
-  const first = new Date(dates[0]?.date ?? new Date());
-  const dayOfWeek = first.getDay(); // 0=周日
-  const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  // 只使用最近28天（或传入的所有天数，如果不足28天）
+  const data = dates.slice(-28);
 
-  const padded: ActivityDay[] = [];
-  for (let i = 0; i < mondayOffset; i++) {
-    const d = new Date(first);
-    d.setDate(d.getDate() - mondayOffset + i);
-    padded.push({ date: d.toISOString().split('T')[0], count: -1 }); // 空白
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0=周日, 6=周六
+
+  // 构建日期到count的映射
+  const activityMap = new Map(data.map(d => [d.date, d.count]));
+
+  const result: ActivityDay[][] = [];
+
+  // Row 0: 今天所在的那一周，右对齐
+  // 空格子数 = 6 - dayOfWeek（左侧空白）
+  // 日期数 = dayOfWeek + 1（周日到今天）
+  const row0: ActivityDay[] = [];
+  for (let i = 0; i < 6 - dayOfWeek; i++) {
+    row0.push({ date: '', count: -1 });
+  }
+  for (let i = dayOfWeek; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    row0.push({ date: dateStr, count: activityMap.get(dateStr) ?? 0 });
+  }
+  result.push(row0);
+
+  // Rows 1-3: 之前的3个完整周
+  for (let i = 1; i <= 3; i++) {
+    const row: ActivityDay[] = [];
+    // row_i_start = today - dayOfWeek - 7 * i（该周周日的日期）
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - dayOfWeek - 7 * i);
+    for (let j = 0; j < 7; j++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + j);
+      const dateStr = d.toISOString().split('T')[0];
+      row.push({ date: dateStr, count: activityMap.get(dateStr) ?? 0 });
+    }
+    result.push(row);
   }
 
-  const all = [...padded, ...dates];
-  const weeks: ActivityDay[][] = [];
-  for (let i = 0; i < all.length; i += 7) {
-    weeks.push(all.slice(i, i + 7));
-  }
-  return weeks;
+  return result;
 }
 
 function formatTime(dateString: string | null): string {
