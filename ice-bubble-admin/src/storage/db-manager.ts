@@ -546,6 +546,18 @@ export class DBManager {
         logger.info('Migration v2: added model column to admin_agents');
         break;
       // 可以添加更多版本的迁移逻辑
+      case 5:
+        // 迁移：创建 agent_activity_daily 表（活动热力图预聚合表）
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS agent_activity_daily (
+            agent_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            message_count INTEGER DEFAULT 0,
+            PRIMARY KEY (agent_id, date)
+          );
+        `);
+        logger.info('Migration v5: created agent_activity_daily table');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

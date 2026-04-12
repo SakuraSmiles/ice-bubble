@@ -6,6 +6,10 @@ export default defineConfig({
   server: {
     port: 1420,
     proxy: {
+      '/api/resources': {
+        target: 'http://localhost:13000',
+        changeOrigin: true
+      },
       '/api': {
         target: 'http://localhost:14000',
         changeOrigin: true

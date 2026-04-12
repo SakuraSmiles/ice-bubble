@@ -466,6 +466,80 @@ export class DataRepository {
     stmt.run(tableName);
   }
 
+  // ========== Agent Activity (Heatmap) ==========
+
+  /**
+   * 更新单日 agent 活动计数（增量）
+   */
+  updateAgentActivity(agentId: string, date: string, delta: number = 1): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO agent_activity_daily (agent_id, date, message_count)
+      VALUES (?, ?, ?)
+      ON CONFLICT(agent_id, date) DO UPDATE SET
+        message_count = message_count + excluded.message_count
+    `);
+    stmt.run(agentId, date, delta);
+  }
+
+  /**
+   * 批量获取 session_key → agent_id 映射
+   */
+  getSessionAgentIds(sessionKeys: string[]): Map<string, string> {
+    if (sessionKeys.length === 0) return new Map();
+
+    const placeholders = sessionKeys.map(() => '?').join(',');
+    const rows = this.db.prepare(`
+      SELECT session_key, agent_id
+      FROM admin_sessions
+      WHERE session_key IN (${placeholders})
+        AND agent_id IS NOT NULL
+    `).all(...sessionKeys) as { session_key: string; agent_id: string }[];
+
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      map.set(row.session_key, row.agent_id);
+    }
+    return map;
+  }
+
+  /**
+   * 批量更新 agent 活动计数（用于批量同步）
+   */
+  upsertAgentActivityBatch(records: { agentId: string; date: string; count: number }[]): void {
+    if (records.length === 0) return;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO agent_activity_daily (agent_id, date, message_count)
+      VALUES (?, ?, ?)
+      ON CONFLICT(agent_id, date) DO UPDATE SET
+        message_count = excluded.message_count
+    `);
+
+    const upsertMany = this.db.transaction((rows: typeof records) => {
+      for (const row of rows) {
+        stmt.run(row.agentId, row.date, row.count);
+      }
+    });
+
+    upsertMany(records);
+    console.log(`[DataRepository] Upserted ${records.length} activity records`);
+  }
+
+  /**
+   * 获取指定 agent 的活动数据（最近 N 天）
+   */
+  getAgentActivity(agentId: string, days: number = 90): { date: string; count: number }[] {
+    const rows = this.db.prepare(`
+      SELECT date, message_count as count
+      FROM agent_activity_daily
+      WHERE agent_id = ?
+        AND date >= date('now', ?)
+      ORDER BY date ASC
+    `).all(agentId, `-${days} days`) as { date: string; count: number }[];
+
+    return rows;
+  }
+
   // ========== Stats ==========
 
   /**

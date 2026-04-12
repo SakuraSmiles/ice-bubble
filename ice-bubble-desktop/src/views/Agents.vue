@@ -7,12 +7,19 @@ import PageHeader from '../components/PageHeader.vue';
 
 interface Agent {
   agent_id: string;
-  agent_name: string;
+  agent_name: string | null;
   session_count: number;
   message_count: number;
   first_active_at: string | null;
   last_active_at: string | null;
   updated_at: string;
+  avatar: string | null;
+  model: string | null;
+}
+
+interface ActivityDay {
+  date: string;
+  count: number;
 }
 
 const agents = ref<Agent[]>([]);
@@ -20,6 +27,8 @@ const loading = ref(false);
 const totalAgents = ref(0);
 const totalSessions = ref(0);
 const totalMessages = ref(0);
+// agentId → ActivityDay[]
+const activityMap = ref<Record<string, ActivityDay[]>>({});
 
 async function fetchAgents() {
   loading.value = true;
@@ -31,11 +40,91 @@ async function fetchAgents() {
     totalAgents.value = data.count || 0;
     totalSessions.value = agents.value.reduce((sum, a) => sum + (a.session_count || 0), 0);
     totalMessages.value = agents.value.reduce((sum, a) => sum + (a.message_count || 0), 0);
+
+    // 并行获取所有 agent 的活动热力图数据
+    const activityResults = await Promise.allSettled(
+      agents.value.map(a =>
+        fetch(`/api/agents/${encodeURIComponent(a.agent_id)}/activity?days=90`)
+          .then(r => r.json())
+          .then(d => ({ agentId: a.agent_id, activity: d.activity || [] }))
+          .catch(() => ({ agentId: a.agent_id, activity: [] as ActivityDay[] }))
+      )
+    );
+
+    const newMap: typeof activityMap.value = {};
+    for (const result of activityResults) {
+      if (result.status === 'fulfilled') {
+        newMap[result.value.agentId] = result.value.activity;
+      }
+    }
+    activityMap.value = newMap;
   } catch (e: any) {
     ElMessage.error('获取成员列表失败: ' + (e.message || e));
   } finally {
     loading.value = false;
   }
+}
+
+/**
+ * 生成最近 N 天的完整日期网格（周一开始，7行×N/7列）
+ */
+function generateDateGrid(days: number = 90): string[] {
+  const dates: string[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0]);
+  }
+  return dates;
+}
+
+/**
+ * 根据消息数量返回热力图等级 (0-4)
+ */
+function getActivityLevel(count: number): number {
+  if (count === 0) return 0;
+  if (count <= 2) return 1;
+  if (count <= 5) return 2;
+  if (count <= 10) return 3;
+  return 4;
+}
+
+/**
+ * 获取某 agent 的活动热力图网格（补充缺失日期，count=0）
+ */
+function getHeatmapGrid(agentId: string, days: number = 90): ActivityDay[] {
+  const activity = activityMap.value[agentId] || [];
+  const activityByDate = new Map(activity.map(a => [a.date, a.count]));
+  return generateDateGrid(days).map(date => ({
+    date,
+    count: activityByDate.get(date) ?? 0,
+  }));
+}
+
+/**
+ * 将一维日期数组转换为周视图网格（7行，按周分组）
+ */
+function toWeekGrid(dates: ActivityDay[]): ActivityDay[][] {
+  // 补齐到周一开始
+  const first = new Date(dates[0]?.date ?? new Date());
+  const dayOfWeek = first.getDay(); // 0=周日
+  const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+  const padded: ActivityDay[] = [];
+  for (let i = 0; i < mondayOffset; i++) {
+    const d = new Date(first);
+    d.setDate(d.getDate() - mondayOffset + i);
+    padded.push({ date: d.toISOString().split('T')[0], count: -1 }); // 空白
+  }
+
+  const all = [...padded, ...dates];
+  const weeks: ActivityDay[][] = [];
+  for (let i = 0; i < all.length; i += 7) {
+    weeks.push(all.slice(i, i + 7));
+  }
+  return weeks;
 }
 
 function formatTime(dateString: string | null): string {
@@ -44,11 +133,9 @@ function formatTime(dateString: string | null): string {
   return `${d.getMonth() + 1}-${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
 
-const ADMIN_API = 'http://localhost:13000';
-
 function getAvatarUrl(avatar: string | null): string | null {
   if (!avatar) return null;
-  return `${ADMIN_API}/api/resources/avatars/${avatar}`;
+  return `/api/resources/avatars/${avatar}`;
 }
 
 function formatRelativeTime(dateString: string | null): string {
@@ -106,8 +193,9 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
     <el-card class="content-area">
       <div v-if="agents.length === 0 && !loading" class="empty-msg">暂无成员</div>
       <div v-if="agents.length === 0 && loading" class="empty-msg">加载中...</div>
-      <div v-if="agents.length > 0" class="agents-list">
-        <div v-for="agent in agents" :key="agent.agent_id" class="agent-card">
+      <div v-if="agents.length > 0" class="cards-grid">
+        <el-card v-for="agent in agents" :key="agent.agent_id" class="agent-card">
+          <div class="card-content">
           <!-- 左侧信息 -->
           <div class="agent-left">
             <div class="agent-avatar">
@@ -134,9 +222,8 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
             </div>
           </div>
 
-          <!-- 分隔线 -->
-          <div class="agent-divider"></div>
-
+          <!-- 中间统计 + 热力图 整体 -->
+          <div class="agent-middle">
           <!-- 中间统计 -->
           <div class="agent-stats">
             <div class="agent-status-top">
@@ -171,6 +258,24 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
             </div>
           </div>
 
+          <!-- 活动热力图 -->
+          <div class="agent-heatmap">
+            <div class="heatmap-grid">
+              <div
+                v-for="(week, wi) in toWeekGrid(getHeatmapGrid(agent.agent_id, 90))"
+                :key="wi"
+                class="heatmap-week"
+              >
+                <div
+                  v-for="(day, di) in week"
+                  :key="di"
+                  :class="['heatmap-cell', 'level-' + (day.count < 0 ? -1 : getActivityLevel(day.count))]"
+                ></div>
+              </div>
+            </div>
+          </div>
+          </div>
+
           <!-- 分隔线 -->
           <div class="agent-divider"></div>
 
@@ -185,7 +290,8 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
               <span class="time-value">{{ formatTime(agent.updated_at) }}</span>
             </div>
           </div>
-        </div>
+          </div>
+        </el-card>
       </div>
     </el-card>
 
@@ -215,20 +321,33 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   color: var(--color-text-secondary);
 }
 
-.agents-list {
+.cards-grid {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
 .agent-card {
+  width: 100%;
+}
+
+.agent-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.card-content {
   display: flex;
   align-items: center;
   padding: 16px 20px;
-  background: var(--color-bg-subtle);
-  border-radius: var(--radius);
   gap: 24px;
   min-height: 120px;
+  box-sizing: border-box;
+}
+
+:deep(.el-card__body) {
+  padding: 0;
 }
 
 .agent-left {
@@ -237,6 +356,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   align-items: center;
   gap: 4px;
   min-width: 110px;
+  flex-shrink: 0;
 }
 
 .agent-avatar {
@@ -273,6 +393,14 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   font-size: 11px;
   color: var(--color-accent-blue);
   font-family: monospace;
+}
+
+.agent-middle {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
 }
 
 .agent-divider {
@@ -335,6 +463,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   flex-direction: column;
   gap: 8px;
   min-width: 120px;
+  flex-shrink: 0;
 }
 
 .time-item {
@@ -358,4 +487,37 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   color: var(--color-accent-blue);
   font-weight: 500;
 }
+
+/* ===== 活动热力图 ===== */
+.agent-heatmap {
+  flex: 1;
+}
+
+.heatmap-grid {
+  display: flex;
+  gap: 3px;
+}
+
+.heatmap-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.heatmap-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.heatmap-cell.level--1 {
+  background: transparent;
+}
+
+.heatmap-cell.level-0 { background: #ebedf0; }
+.heatmap-cell.level-1 { background: #9be9a7; }
+.heatmap-cell.level-2 { background: #40c463; }
+.heatmap-cell.level-3 { background: #30a14e; }
+.heatmap-cell.level-4 { background: #216e39; }
 </style>

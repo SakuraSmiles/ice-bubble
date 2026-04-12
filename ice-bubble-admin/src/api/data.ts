@@ -122,5 +122,16 @@ export function createDataRouter(repository: DataRepository): Router {
     res.json({ success: true });
   });
 
+  /**
+   * GET /api/data/agents/:id/activity
+   * 获取指定 agent 的活动热力图数据
+   */
+  router.get('/agents/:id/activity', (req: Request, res: Response) => {
+    const id = req.params.id;
+    const days = Math.min(Math.max(parseInt(String(req.query.days ?? '90')), 1), 365);
+    const activity = repository.getAgentActivity(id, days);
+    res.json({ agent_id: id, activity });
+  });
+
   return router;
 }
