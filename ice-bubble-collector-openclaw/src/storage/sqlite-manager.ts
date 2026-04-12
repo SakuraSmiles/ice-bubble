@@ -542,8 +542,8 @@ export class SQLiteManager {
                 for (let i = 0; i < messages.length; i++) {
                     const msg = messages[i];
                     const dbRow = dbRows[i];
-                    // 跳过已存在的（重复）消息
-                    if (existingMessageIds.has(dbRow.message_id as string)) {
+                    // 跳过不存在的（重复）消息
+                    if (!existingMessageIds.has(dbRow.message_id as string)) {
                         continue;
                     }
                     const stats = sessionStats.get(msg.sessionKey) || { count: 0, lastMessageAt: new Date(0) };
