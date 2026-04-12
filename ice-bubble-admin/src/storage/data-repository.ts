@@ -47,6 +47,7 @@ export interface AdminAgent {
   first_active_at: string | null;
   last_active_at: string | null;
   model: string | null;
+  avatar: string | null;
   updated_at: string;
 }
 
@@ -61,9 +62,47 @@ export interface SyncProgress {
 
 export class DataRepository {
   private db: Database;
+  private avatarsDir: string;
 
-  constructor(db: Database) {
+  constructor(db: Database, avatarsDir: string) {
     this.db = db;
+    this.avatarsDir = avatarsDir;
+  }
+
+  // ========== Avatar Files ==========
+
+
+  /**
+   * 获取头像文件
+   * @param filename 头像文件名
+   * @returns 文件数据 { buffer, contentType } 或 null
+   */
+  getAvatar(filename: string): { buffer: Buffer; contentType: string } | null {
+    if (!filename || filename.includes('..') || filename.includes('/')) {
+      return null; // 防止路径遍历攻击
+    }
+    
+    const filePath = path.join(this.avatarsDir, filename);
+    
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    
+    const ext = path.extname(filename).toLowerCase().slice(1);
+    const contentType = {
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+    }[ext] || 'application/octet-stream';
+    
+    try {
+      const buffer = fs.readFileSync(filePath);
+      return { buffer, contentType };
+    } catch {
+      return null;
+    }
   }
 
   // ========== Sessions ==========
@@ -365,6 +404,25 @@ export class DataRepository {
    */
   getAgents(): AdminAgent[] {
     return this.db.prepare('SELECT * FROM admin_agents ORDER BY last_active_at DESC').all() as AdminAgent[];
+  }
+
+  /**
+   * 获取指定 agent 的头像
+   */
+  getAgentAvatar(agentId: string): string | null {
+    const row = this.db.prepare(
+      'SELECT avatar FROM admin_agents WHERE agent_id = ?'
+    ).get(agentId) as { avatar: string | null } | undefined;
+    return row?.avatar ?? null;
+  }
+
+  /**
+   * 更新指定 agent 的头像
+   */
+  updateAgentAvatar(agentId: string, avatar: string | null): void {
+    this.db.prepare(
+      'UPDATE admin_agents SET avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE agent_id = ?'
+    ).run(avatar, agentId);
   }
 
   /**

@@ -6,7 +6,7 @@
 
 import express from 'express';
 import { config } from 'dotenv';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { ModuleScheduler } from './modules/module-scheduler.js';
 import { createModulesRouter } from './api/modules.js';
@@ -14,6 +14,7 @@ import { createDataRouter } from './api/data.js';
 import { DBManager } from './storage/db-manager.js';
 import { ModuleRepository } from './storage/module-repository.js';
 import { DataRepository } from './storage/data-repository.js';
+import { createResourcesRouter } from './api/resources.js';
 import { DataSync } from './data/data-sync.js';
 
 // 加载环境变量
@@ -94,7 +95,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(2);  // 执行数据库迁移（添加 model 字段）
+    await dbManager.migrate(3);  // 执行数据库迁移（添加 avatar 字段）
     const repository = new ModuleRepository(dbManager.getConnection());
     console.log('[Admin] 数据库初始化完成');
 
@@ -119,7 +120,13 @@ export async function startAdmin(): Promise<void> {
     console.log(`[Admin] 已配置 ${moduleConfigs.length} 个模块`);
 
     // 初始化数据仓库和同步调度器
-    const dataRepository = new DataRepository(dbManager.getConnection());
+    const avatarsDir = join(__dirname, '..', '..', 'data', 'avatars');
+    // 确保头像目录存在
+    if (!existsSync(avatarsDir)) {
+      mkdirSync(avatarsDir, { recursive: true });
+      console.log('[Admin] 头像目录已创建:', avatarsDir);
+    }
+    const dataRepository = new DataRepository(dbManager.getConnection(), avatarsDir);
     const dataSyncConfig = configData.dataSync || {};
     const dataSync = new DataSync(
       {
@@ -135,6 +142,7 @@ export async function startAdmin(): Promise<void> {
     // 注册 API 路由
     app.use('/api/modules', createModulesRouter(scheduler));
     app.use('/api/data', createDataRouter(dataRepository));
+    app.use('/api/resources', createResourcesRouter(dataRepository));
     
     // 健康检查
     app.get('/health', (_req, res) => {

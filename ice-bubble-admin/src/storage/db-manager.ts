@@ -524,6 +524,13 @@ export class DBManager {
       case 1:
         // 初始版本，表已创建
         break;
+      case 3:
+        // 迁移：给 admin_agents 表添加 avatar 字段
+        this.db.exec(`
+          ALTER TABLE admin_agents ADD COLUMN avatar TEXT;
+        `);
+        logger.info('Migration v3: added avatar column to admin_agents');
+        break;
       case 2:
         // 迁移：给 admin_agents 表添加 model 字段
         this.db.exec(`

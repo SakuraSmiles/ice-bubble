@@ -44,6 +44,13 @@ function formatTime(dateString: string | null): string {
   return `${d.getMonth() + 1}-${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
 
+const ADMIN_API = 'http://localhost:13000';
+
+function getAvatarUrl(avatar: string | null): string | null {
+  if (!avatar) return null;
+  return `${ADMIN_API}/api/resources/avatars/${avatar}`;
+}
+
 function formatRelativeTime(dateString: string | null): string {
   if (!dateString) return '-';
   const now = Date.now();
@@ -96,14 +103,26 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
       </el-button>
     </PageHeader>
 
-    <el-card class="content-area" v-loading="loading">
-      <div v-if="!loading && agents.length === 0" class="empty-msg">暂无成员</div>
-      <div v-if="!loading && agents.length > 0" class="agents-list">
+    <el-card class="content-area">
+      <div v-if="agents.length === 0 && !loading" class="empty-msg">暂无成员</div>
+      <div v-if="agents.length === 0 && loading" class="empty-msg">加载中...</div>
+      <div v-if="agents.length > 0" class="agents-list">
         <div v-for="agent in agents" :key="agent.agent_id" class="agent-card">
           <!-- 左侧信息 -->
           <div class="agent-left">
             <div class="agent-avatar">
-              <el-avatar :size="80" style="background: var(--color-accent-blue-subtle); color: var(--color-accent-blue); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+              <el-avatar v-if="getAvatarUrl(agent.avatar)"
+                :size="88"
+                :src="getAvatarUrl(agent.avatar)!"
+                fit="cover"
+                style="background: #fff; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
+              >
+              </el-avatar>
+              <el-avatar v-else
+                :size="88"
+                fit="cover"
+                style="background: #fff; color: var(--color-accent-blue); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
+              >
                 {{ agent.agent_id.substring(0, 1).toUpperCase() }}
               </el-avatar>
             </div>
@@ -217,11 +236,13 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  min-width: 100px;
+  min-width: 110px;
 }
 
 .agent-avatar {
   margin-bottom: 2px;
+  background: #fff;
+  border-radius: 50%;
 }
 
 .agent-name {

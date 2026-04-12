@@ -103,5 +103,24 @@ export function createDataRouter(repository: DataRepository): Router {
     });
   });
 
+  /**
+   * GET /api/data/agents/:id/avatar
+   * 获取指定 agent 的头像
+   */
+  router.get('/agents/:id/avatar', (req: Request, res: Response) => {
+    const avatar = repository.getAgentAvatar(req.params.id);
+    res.json({ agent_id: req.params.id, avatar });
+  });
+
+  /**
+   * PUT /api/data/agents/:id/avatar
+   * 更新指定 agent 的头像
+   */
+  router.put('/agents/:id/avatar', (req: Request, res: Response) => {
+    const avatar = req.body.avatar ?? null;
+    repository.updateAgentAvatar(req.params.id, avatar);
+    res.json({ success: true });
+  });
+
   return router;
 }
