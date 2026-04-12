@@ -106,46 +106,36 @@ function getHeatmapGrid(agentId: string, days: number = 90): ActivityDay[] {
 /**
  * 将一维日期数组转换为周视图网格（4行×7列，右对齐，今天在右侧）
  */
-function toWeekGrid(dates: ActivityDay[]): ActivityDay[][] {
-  // 只使用最近28天（或传入的所有天数，如果不足28天）
-  const data = dates.slice(-28);
-
+function toWeekGrid(activity: ActivityDay[]): ActivityDay[][] {
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0=周日, 6=周六
 
   // 构建日期到count的映射
-  const activityMap = new Map(data.map(d => [d.date, d.count]));
+  const activityMap = new Map(activity.map(d => [d.date, d.count]));
 
   const result: ActivityDay[][] = [];
 
-  // Row 0: 今天所在的那一周，右对齐
-  // 空格子数 = 6 - dayOfWeek（左侧空白）
-  // 日期数 = dayOfWeek + 1（周日到今天）
-  const row0: ActivityDay[] = [];
-  for (let i = 0; i < 6 - dayOfWeek; i++) {
-    row0.push({ date: '', count: -1 });
-  }
-  for (let i = dayOfWeek; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-    row0.push({ date: dateStr, count: activityMap.get(dateStr) ?? 0 });
-  }
-  result.push(row0);
-
-  // Rows 1-3: 之前的3个完整周
-  for (let i = 1; i <= 3; i++) {
-    const row: ActivityDay[] = [];
-    // row_i_start = today - dayOfWeek - 7 * i（该周周日的日期）
-    const startDate = new Date(today);
-    startDate.setDate(startDate.getDate() - dayOfWeek - 7 * i);
-    for (let j = 0; j < 7; j++) {
-      const d = new Date(startDate);
-      d.setDate(d.getDate() + j);
-      const dateStr = d.toISOString().split('T')[0];
-      row.push({ date: dateStr, count: activityMap.get(dateStr) ?? 0 });
+  // 生成4行数据
+  // 列头：周日到周一（从左到右）
+  // 日(0) 六(1) 五(2) 四(3) 三(4) 二(5) 一(6)
+  // 第一行从今天开始，往右排（日期递增）
+  for (let row = 0; row < 4; row++) {
+    const week: ActivityDay[] = [];
+    for (let col = 0; col < 7; col++) {
+      // col=0 是周日(最左), col=6 是一(最右)
+      // daysAgo 越小日期越新
+      // formula: daysAgo = row * 7 + (6 - col)
+      const daysAgo = row * 7 + (6 - col);
+      
+      if (daysAgo < 0) {
+        week.push({ date: '', count: -1 });
+      } else {
+        const d = new Date(today);
+        d.setDate(d.getDate() - daysAgo);
+        const dateStr = d.toISOString().split('T')[0];
+        week.push({ date: dateStr, count: activityMap.get(dateStr) ?? 0 });
+      }
     }
-    result.push(row);
+    result.push(week);
   }
 
   return result;
@@ -519,12 +509,12 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 
 .heatmap-grid {
   display: flex;
+  flex-direction: column;
   gap: 3px;
 }
 
 .heatmap-week {
   display: flex;
-  flex-direction: column;
   gap: 3px;
 }
 
