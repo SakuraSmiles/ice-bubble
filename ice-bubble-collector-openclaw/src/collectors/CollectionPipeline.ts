@@ -26,6 +26,8 @@ const logger = new Logger('CollectionPipeline');
 export interface PipelineConfig {
   /** 批量处理大小 */
   batchSize: number;
+  /** 从 openclaw.json 配置的 agent_id 集合，用于过滤幽灵 agent */
+  configuredAgentIds?: Set<string>;
 }
 
 // ==================== 管道统计 ====================
@@ -77,11 +79,12 @@ export class CollectionPipeline extends EventEmitter {
     config?: Partial<PipelineConfig>
   ) {
     super();
-    const pipelineConfig: Required<PipelineConfig> = {
+    const pipelineConfig = {
       batchSize: 100,
       ...config,
-    };
+    } as Required<PipelineConfig>;
     this.batchSize = pipelineConfig.batchSize;
+    this.configuredAgentIds = pipelineConfig.configuredAgentIds;
 
     // 监听 BatchWriter 事件，向上转发
     this.batchWriter.on('flush', ({ count }) => {
@@ -96,6 +99,7 @@ export class CollectionPipeline extends EventEmitter {
   }
 
   private batchSize: number;
+  private configuredAgentIds: Set<string> | undefined;
 
   // ========== 核心：处理事件管道 ==========
 
@@ -201,6 +205,12 @@ export class CollectionPipeline extends EventEmitter {
     }
 
     const [, agentId, channel, accountId, sessionType, peerId] = parts;
+
+    // 检查 agent 是否在 openclaw.json 配置中，跳过幽灵 agent 的 session
+    if (this.configuredAgentIds && !this.configuredAgentIds.has(agentId)) {
+      logger.debug(`Agent [${agentId}] 不在配置中，跳过 Session 创建: ${sessionKey}`);
+      return;
+    }
 
     // 检查是否已存在
     const existingSession = await this.sqliteManager.getSession(sessionKey);

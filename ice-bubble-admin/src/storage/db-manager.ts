@@ -391,6 +391,8 @@ export class DBManager {
         CREATE TABLE IF NOT EXISTS admin_agents (
           agent_id TEXT PRIMARY KEY,
           agent_name TEXT,
+          workspace TEXT,
+          source TEXT DEFAULT 'openclaw',
           session_count INTEGER DEFAULT 0,
           message_count INTEGER DEFAULT 0,
           first_active_at TIMESTAMP,
@@ -524,29 +526,32 @@ export class DBManager {
       case 1:
         // 初始版本，表已创建
         break;
-      case 4:
+      case 5:
         // 迁移：给 admin_agents 表添加 source 字段
         this.db.exec(`
-          ALTER TABLE admin_agents ADD COLUMN source TEXT DEFAULT 'collector';
+          ALTER TABLE admin_agents ADD COLUMN source TEXT DEFAULT 'openclaw';
         `);
-        logger.info('Migration v4: added source column to admin_agents');
+        logger.info('Migration v5: added source column to admin_agents');
         break;
-      case 3:
+      case 4:
         // 迁移：给 admin_agents 表添加 avatar 字段
         this.db.exec(`
           ALTER TABLE admin_agents ADD COLUMN avatar TEXT;
         `);
-        logger.info('Migration v3: added avatar column to admin_agents');
+        logger.info('Migration v4: added avatar column to admin_agents');
         break;
-      case 2:
+      case 3:
         // 迁移：给 admin_agents 表添加 model 字段
         this.db.exec(`
           ALTER TABLE admin_agents ADD COLUMN model TEXT;
         `);
-        logger.info('Migration v2: added model column to admin_agents');
+        logger.info('Migration v3: added model column to admin_agents');
+        break;
+      case 2:
+        // 迁移 v2（保留位置兼容性）
         break;
       // 可以添加更多版本的迁移逻辑
-      case 5:
+      case 6:
         // 迁移：创建 agent_activity_daily 表（活动热力图预聚合表）
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS agent_activity_daily (
@@ -556,7 +561,14 @@ export class DBManager {
             PRIMARY KEY (agent_id, date)
           );
         `);
-        logger.info('Migration v5: created agent_activity_daily table');
+        logger.info('Migration v6: created agent_activity_daily table');
+        break;
+      case 7:
+        // 迁移：给 admin_agents 表添加 workspace 字段
+        this.db.exec(`
+          ALTER TABLE admin_agents ADD COLUMN workspace TEXT;
+        `);
+        logger.info('Migration v7: added workspace column to admin_agents');
         break;
       default:
         logger.warn(`No migration defined for version ${version}`);

@@ -18,7 +18,7 @@ import { BaseCollector } from './base.js';
 import { FileWatcher } from './FileWatcher.js';
 import { CollectionPipeline } from './CollectionPipeline.js';
 import { readJsonlFileIncremental } from '../utils/file-reader.js';
-import { buildSessionKeyFromPath } from '../utils/session-key-builder.js';
+import { buildSessionKeyFromPath, extractAgentId } from '../utils/session-key-builder.js';
 import { Collector } from '../types/index.js';
 import { OpenClawEvent } from '../types/openclaw.js';
 import { Logger } from '../utils/logger.js';
@@ -139,6 +139,10 @@ export class FileCollector extends BaseCollector implements Collector {
   private scanTimer: NodeJS.Timeout | null = null;
   private fileProgress: Map<string, FileProgress> = new Map();
   private fileErrors: Map<string, FileError> = new Map();
+  /** 从 openclaw.json 配置的 agent_id 集合，用于过滤幽灵 agent */
+  private configuredAgentIds: Set<string> = new Set();
+  /** syncAgentsFromConfig 失败时的降级内存列表 */
+  private fallbackAgentIds: string[] = [];
   private stats: CollectorStats = {
     totalFiles: 0,
     processedFiles: 0,
@@ -197,10 +201,10 @@ export class FileCollector extends BaseCollector implements Collector {
       flushInterval: this.config.writerFlushInterval,
     });
 
-    // 初始化数据管道
+    // 初始化数据管道（传入配置的 agent ID 集合）
     this.pipeline = new CollectionPipeline(
       this.sqliteManager, validator, deduplicator, batchWriter,
-      { batchSize: this.config.batchSize }
+      { batchSize: this.config.batchSize, configuredAgentIds: this.configuredAgentIds }
     );
 
     // 转发 Pipeline 事件到外部
@@ -247,11 +251,11 @@ export class FileCollector extends BaseCollector implements Collector {
       foreignKeys: true,
     });
 
-    // 启动数据处理管道
-    this.pipeline.start();
-
-    // 同步 agents 配置到 SQLite
+    // 同步 agents 配置到 SQLite 并缓存配置的 agent_id 列表（在管道启动前完成，确保过滤生效）
     await this.syncAgentsFromConfig();
+
+    // 启动数据处理管道（传入配置的 agent ID 集合）
+    this.pipeline.start();
 
     // 初始化 Session 缓存
     this.sessionCache = new SessionCache(this.sqliteManager, {
@@ -523,6 +527,15 @@ export class FileCollector extends BaseCollector implements Collector {
     logger.debug(`处理文件: ${filePath}`);
 
     const sessionKey = buildSessionKeyFromPath(filePath);
+
+    // 检查 agent 是否在 openclaw.json 配置中，跳过幽灵 agent 的文件
+    const agentId = extractAgentId(sessionKey);
+    if (!this.isAgentConfigured(agentId)) {
+      logger.debug(`Agent [${agentId}] 不在 openclaw.json 配置中，跳过文件: ${filePath}`);
+      this.stats.skippedFiles++;
+      return;
+    }
+
     const progress = this.fileProgress.get(filePath);
     const startLine = progress ? progress.lastLine : 0;
 
@@ -619,7 +632,15 @@ export class FileCollector extends BaseCollector implements Collector {
   }
 
   /**
+   * 检查 agent_id 是否在 openclaw.json 配置中
+   */
+  isAgentConfigured(agentId: string): boolean {
+    return this.configuredAgentIds.has(agentId);
+  }
+
+  /**
    * Sync agents from openclaw.json config into SQLite
+   * 并缓存配置的 agent_id 列表到 configuredAgentIds Set
    */
   async syncAgentsFromConfig(): Promise<void> {
     const configPath = path.join(this.config.openclawDataDir, 'openclaw.json');
@@ -630,25 +651,37 @@ export class FileCollector extends BaseCollector implements Collector {
         return;
       }
 
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      const agentsList = config.agents?.list || [];
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { agents?: { list?: Array<{ id: string; name?: string; workspace?: string }> } };
+      const agentsList = config.agents?.list ?? [];
 
       logger.info(`Syncing ${agentsList.length} agents from openclaw.json`);
 
+      // 清空并重建配置的 agent_id 集合
+      this.configuredAgentIds.clear();
+
       for (const agent of agentsList) {
+        this.configuredAgentIds.add(agent.id);
+
         await this.sqliteManager.upsertAgent({
           agent_id: agent.id,
           agent_name: agent.name || agent.id,
+          workspace: agent.workspace || null,
+          source: 'openclaw',
           config_json: JSON.stringify(agent),
           status: 'configured',
           last_seen_at: new Date().toISOString(),
         });
       }
 
-      logger.info(`Synced ${agentsList.length} agents`);
+      // 保存降级用的内存列表
+      this.fallbackAgentIds = agentsList.map(a => a.id);
+
+      logger.info(`Synced ${agentsList.length} agents, configuredAgentIds: ${this.configuredAgentIds.size} agents`);
     } catch (error) {
-      logger.error('Failed to sync agents from config', error as Error);
-      throw error;
+      logger.error('Failed to sync agents from config, using fallback memory list', error as Error);
+      // 降级：使用内存中的 agent 列表（如果之前有同步过）
+      this.configuredAgentIds = new Set(this.fallbackAgentIds);
+      logger.warn(`Fallback to ${this.fallbackAgentIds.length} agents from memory`);
     }
   }
 
@@ -659,6 +692,7 @@ export class FileCollector extends BaseCollector implements Collector {
     agents: Array<{
       agent_id: string;
       agent_name: string;
+      workspace: string | null;
       config_json: string;
       status: string;
       last_seen_at: string;

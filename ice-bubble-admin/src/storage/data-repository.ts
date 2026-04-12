@@ -42,13 +42,14 @@ export interface AdminMessage {
 export interface AdminAgent {
   agent_id: string;
   agent_name: string | null;
+  workspace: string | null;
   session_count: number;
   message_count: number;
   first_active_at: string | null;
   last_active_at: string | null;
   model: string | null;
   avatar: string | null;
-  source: string; // 'config' = 真实配置（来自 openclaw.json）, 'collector' = 仅出现在消息中的幽灵 agent
+  source: string; // 采集器/平台来源，如 'openclaw'
   updated_at: string;
 }
 
@@ -271,11 +272,19 @@ export class DataRepository {
   // ========== Agents ==========
 
   /**
-   * 更新 agents 表（从 Collector 获取配置 + sessions 聚合数据）
+   * 更新 agents 表（仅同步 openclaw.json 中定义的 agent）
+   * - 只同步 collectorAgents 中存在的 agent（来自 openclaw.json）
+   * - 幽灵 agent（仅出现在消息中但不在配置中）会被忽略
+   * - sessions 聚合数据仅用于补充配置的 agent 的统计信息
    *
    * @param collectorAgents - 从 Collector API 获取的 agent 配置列表（来自 openclaw.json）
    */
   refreshAgents(collectorAgents: CollectorAgent[]): void {
+    if (collectorAgents.length === 0) {
+      console.log('[DataRepository] No collector agents to refresh');
+      return;
+    }
+
     // 1. 构建 collector agent 映射 (agent_id -> CollectorAgent)
     const collectorAgentMap = new Map<string, CollectorAgent>();
     for (const agent of collectorAgents) {
@@ -285,18 +294,21 @@ export class DataRepository {
     // 2. 获取每个 agent 的 model（从最新一条 agent 消息）
     const agentModels = this.loadAgentModelsFromMessages();
 
-    // 3. 从 sessions 聚合数据
+    // 3. 从 sessions 聚合数据（仅针对配置的 agent）
+    const configuredAgentIds = collectorAgents.map(a => a.agent_id);
+    const placeholders = configuredAgentIds.map(() => '?').join(',');
+
     const rows = this.db.prepare(`
       SELECT
-        COALESCE(agent_id, 'unknown') as agent_id,
+        agent_id,
         COUNT(DISTINCT session_key) as session_count,
         SUM(message_count) as message_count,
         MIN(first_message_at) as first_active_at,
         MAX(last_message_at) as last_active_at
       FROM admin_sessions
-      WHERE agent_id IS NOT NULL
+      WHERE agent_id IN (${placeholders})
       GROUP BY agent_id
-    `).all() as Array<{
+    `).all(...configuredAgentIds) as Array<{
       agent_id: string;
       session_count: number;
       message_count: number;
@@ -304,12 +316,24 @@ export class DataRepository {
       last_active_at: string | null;
     }>;
 
-    // 4. Upsert 每个 agent
+    // 构建 session 统计映射
+    const sessionStatsMap = new Map<string, {
+      session_count: number;
+      message_count: number;
+      first_active_at: string | null;
+      last_active_at: string | null;
+    }>();
+    for (const row of rows) {
+      sessionStatsMap.set(row.agent_id, row);
+    }
+
+    // 4. Upsert 每个配置的 agent
     const upsert = this.db.prepare(`
-      INSERT INTO admin_agents (agent_id, agent_name, session_count, message_count, first_active_at, last_active_at, model, source, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO admin_agents (agent_id, agent_name, workspace, session_count, message_count, first_active_at, last_active_at, model, source, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(agent_id) DO UPDATE SET
         agent_name = excluded.agent_name,
+        workspace = excluded.workspace,
         session_count = excluded.session_count,
         message_count = excluded.message_count,
         first_active_at = excluded.first_active_at,
@@ -319,28 +343,32 @@ export class DataRepository {
         updated_at = excluded.updated_at
     `);
 
-    const upsertAll = this.db.transaction(() => {
-      for (const row of rows) {
-        const collectorAgent = collectorAgentMap.get(row.agent_id);
-        const agentName = collectorAgent?.agent_name ?? row.agent_id;
-        const model = agentModels.get(row.agent_id) ?? null;
-        // source = 'config' 表示来自 openclaw.json 的真实配置，'collector' 表示仅出现在消息中的幽灵 agent
-        const source = collectorAgent ? 'config' : 'collector';
+    try {
+      const upsertAll = this.db.transaction(() => {
+        for (const agent of collectorAgents) {
+          const stats = sessionStatsMap.get(agent.agent_id);
+          const model = agentModels.get(agent.agent_id) ?? null;
 
-        upsert.run(
-          row.agent_id,
-          agentName,
-          row.session_count,
-          row.message_count,
-          row.first_active_at,
-          row.last_active_at,
-          model,
-          source
-        );
-      }
-    });
+          upsert.run(
+            agent.agent_id,
+            agent.agent_name || agent.agent_id,
+            agent.workspace ?? null,
+            stats?.session_count ?? 0,
+            stats?.message_count ?? 0,
+            stats?.first_active_at ?? null,
+            stats?.last_active_at ?? null,
+            model,
+            agent.source ?? 'openclaw' // source 为采集器标识，如 'openclaw'
+          );
+        }
+      });
 
-    upsertAll();
+      upsertAll();
+      console.log(`[DataRepository] Refreshed ${collectorAgents.length} configured agents`);
+    } catch (error) {
+      console.error('[DataRepository] Failed to refresh agents:', error);
+      throw error;
+    }
   }
 
   /**
@@ -385,7 +413,7 @@ export class DataRepository {
    */
   getAgents(): AdminAgent[] {
     return this.db.prepare(
-      "SELECT * FROM admin_agents WHERE source = 'config' ORDER BY last_active_at DESC"
+      "SELECT * FROM admin_agents WHERE source = 'openclaw' ORDER BY last_active_at DESC"
     ).all() as AdminAgent[];
   }
 

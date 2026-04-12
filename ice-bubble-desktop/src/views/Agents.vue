@@ -8,6 +8,7 @@ import PageHeader from '../components/PageHeader.vue';
 interface Agent {
   agent_id: string;
   agent_name: string | null;
+  workspace: string | null;
   session_count: number;
   message_count: number;
   first_active_at: string | null;
@@ -15,6 +16,7 @@ interface Agent {
   updated_at: string;
   avatar: string | null;
   model: string | null;
+  source: string;
 }
 
 interface ActivityDay {
@@ -32,12 +34,9 @@ const activityMap = ref<Record<string, ActivityDay[]>>({});
 
 /**
  * 计算动态热力图阈值（基于百分位数）
- * 返回 [t1, t2, t3, t4]，将数据分为5个等级
- * t1: 0-25% -> level-0
- * t2: 25-50% -> level-1
- * t3: 50-75% -> level-2
- * t4: 75-90% -> level-3
- * >t4: -> level-4
+ * 返回 [t1-t5]，将数据分为6个等级
+ * level-0: count = 0
+ * level-1 ~ level-5: 基于 P16, P33, P50, P66, P83 划分
  */
 function getDynamicThresholds(activity: ActivityDay[]): number[] {
   // 只统计有活动的日期（count > 0）
@@ -45,42 +44,37 @@ function getDynamicThresholds(activity: ActivityDay[]): number[] {
     .map(d => d.count)
     .filter(c => c > 0);
   
-  if (counts.length < 5) {
-    // 数据太少，使用固定阈值
-    return [0, 3, 6, 11];
+  if (counts.length < 6) {
+    // 数据太少，使用固定阈值（6档等分）
+    const max = Math.max(...counts, 1);
+    const step = max / 6;
+    return [1, 2, 3, 4, 5].map(i => Math.floor(step * i));
   }
   
   // 排序
   const sorted = [...counts].sort((a, b) => a - b);
   const n = sorted.length;
   
-  // 计算百分位数
-  const p0 = sorted[0];                          // 最小值
-  const p25 = sorted[Math.floor(n * 0.25)];       // 25%
-  const p50 = sorted[Math.floor(n * 0.5)];       // 50%
-  const p75 = sorted[Math.floor(n * 0.75)];      // 75%
-  const p90 = sorted[Math.floor(n * 0.9)];       // 90%
+  // 计算百分位数：P16, P33, P50, P66, P83
+  const p16 = sorted[Math.floor(n * 0.166)];
+  const p33 = sorted[Math.floor(n * 0.333)];
+  const p50 = sorted[Math.floor(n * 0.5)];
+  const p66 = sorted[Math.floor(n * 0.666)];
+  const p83 = sorted[Math.floor(n * 0.833)];
   
-  // 返回阈值：[level-1上限, level-2上限, level-3上限, level-4上限]
-  return [
-    Math.max(p0, 2),        // level-1: >0 且 <= 这个值
-    Math.max(p25, 3),       // level-2
-    Math.max(p50, 6),       // level-3
-    Math.max(p75, 11)       // level-4
-  ];
+  // 返回阈值：[level-1上限, level-2上限, ..., level-5上限]
+  return [p16, p33, p50, p66, p83];
 }
 
 /**
- * 根据动态阈值获取热力图等级
+ * 根据动态阈值获取热力图等级 (0-5)
  */
 function getActivityLevel(count: number, thresholds: number[]): number {
   if (count === 0) return 0;
-  const [t1, t2, t3, t4] = thresholds;
-  if (count <= t1) return 1;
-  if (count <= t2) return 2;
-  if (count <= t3) return 3;
-  if (count <= t4) return 4;
-  return 4;
+  for (let i = 0; i < thresholds.length; i++) {
+    if (count <= thresholds[i]) return i + 1;
+  }
+  return 5;
 }
 
 // 计算属性：所有 agent 的热力图阈值（动态百分位）
@@ -211,15 +205,22 @@ function formatRelativeTime(dateString: string | null): string {
 }
 
 function getActivityStatus(lastActiveAt: string | null): { label: string; type: string } {
-  if (!lastActiveAt) return { label: '未知', type: 'info' };
+  if (!lastActiveAt) return { label: '失联', type: 'danger' };
   const now = Date.now();
   const date = new Date(lastActiveAt).getTime();
   const diff = now - date;
   const hours = diff / 3600000;
-  if (hours < 1) return { label: '活跃', type: 'success' };
   if (hours < 24) return { label: '活跃', type: 'success' };
-  if (hours < 72) return { label: '较久未活跃', type: 'warning' };
-  return { label: '长时间未活跃', type: 'info' };
+  if (hours < 72) return { label: '休假', type: 'warning' };
+  return { label: '离线', type: 'info' };
+}
+
+function truncatePath(path: string | null): string {
+  if (!path) return '-';
+  if (path.length <= 35) return path;
+  const parts = path.split('/');
+  if (parts.length <= 3) return path;
+  return parts.slice(0, 2).join('/') + '/.../' + parts.slice(-2).join('/');
 }
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -255,21 +256,27 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
           <div class="card-content">
           <!-- 左侧信息 -->
           <div class="agent-left">
-            <div class="agent-avatar">
-              <el-avatar v-if="getAvatarUrl(agent.avatar)"
-                :size="88"
-                :src="getAvatarUrl(agent.avatar)!"
-                fit="cover"
-                style="background: #fff; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
-              >
-              </el-avatar>
-              <el-avatar v-else
-                :size="88"
-                fit="cover"
-                style="background: #fff; color: var(--color-accent-blue); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
-              >
-                {{ agent.agent_id.substring(0, 1).toUpperCase() }}
-              </el-avatar>
+            <div class="agent-avatar-wrapper">
+              <div class="agent-avatar">
+                <el-avatar v-if="getAvatarUrl(agent.avatar)"
+                  :size="88"
+                  :src="getAvatarUrl(agent.avatar)!"
+                  fit="cover"
+                  style="background: #fff; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
+                >
+                </el-avatar>
+                <el-avatar v-else
+                  :size="88"
+                  fit="cover"
+                  style="background: #fff; color: var(--color-accent-blue); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
+                >
+                  {{ agent.agent_id.substring(0, 1).toUpperCase() }}
+                </el-avatar>
+              </div>
+              <!-- GitHub 风格状态指示器 -->
+              <el-tag :type="getActivityStatus(agent.last_active_at).type" size="small" effect="plain" class="avatar-status">
+                {{ getActivityStatus(agent.last_active_at).label }}
+              </el-tag>
             </div>
             <div class="agent-name">
               <span class="name-text">{{ agent.agent_name || agent.agent_id }}</span>
@@ -283,10 +290,12 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
           <div class="agent-middle">
           <!-- 中间统计 -->
           <div class="agent-stats">
-            <div class="agent-status-top">
-              <el-tag :type="getActivityStatus(agent.last_active_at).type" size="small">
-                {{ getActivityStatus(agent.last_active_at).label }}
-              </el-tag>
+            <div class="agent-source">
+              <span class="source-label">来源</span>
+              <span class="source-value">{{ agent.source === 'config' ? 'OpenClaw' : agent.source }}</span>
+            </div>
+            <div class="agent-workspace">
+              <span class="workspace-value">{{ truncatePath(agent.workspace) }}</span>
             </div>
             <div class="stat-row">
               <div class="stat-item">
@@ -326,7 +335,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
                 <div
                   v-for="(day, di) in week"
                   :key="di"
-                  :class="['heatmap-cell', 'level-' + (day.count < 0 ? -1 : getActivityLevel(day.count, heatmapThresholdsMap[agent.agent_id] || [0,3,6,11]))]"
+                  :class="['heatmap-cell', 'level-' + (day.count < 0 ? -1 : getActivityLevel(day.count, heatmapThresholdsMap[agent.agent_id] || [0,2,5,10,20]))]"
                   @mouseenter="showTooltip($event, day, agent.agent_id)"
                   @mouseleave="hideTooltip"
                   :data-count="day.count"
@@ -425,7 +434,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  min-width: 110px;
+  min-width: 160px;
   flex-shrink: 0;
 }
 
@@ -433,6 +442,17 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   margin-bottom: 2px;
   background: #fff;
   border-radius: 50%;
+}
+
+.agent-avatar-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.avatar-status {
+  position: absolute;
+  bottom: 2px;
+  right: -4px;
 }
 
 .agent-name {
@@ -448,9 +468,10 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .agent-model {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
   margin-top: 2px;
+  width: 100%;
 }
 
 .model-label {
@@ -460,9 +481,15 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 }
 
 .model-value {
-  font-size: 11px;
-  color: var(--color-accent-blue);
+  font-size: 12px;
+  color: #4a9340;
   font-family: monospace;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  text-align: center;
 }
 
 .agent-middle {
@@ -490,6 +517,39 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .agent-status-top {
   display: flex;
   align-items: center;
+}
+
+.agent-workspace {
+  margin-top: 6px;
+}
+
+.workspace-value {
+  font-size: 16px;
+  font-family: monospace;
+  color: #4a9340;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.agent-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.source-label {
+  font-size: 12px;
+  color: var(--color-text-secondary, #888);
+}
+
+.source-value {
+  font-size: 12px;
+  color: var(--color-accent-blue);
+  font-family: monospace;
 }
 
 .stat-row {
@@ -558,6 +618,17 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   font-weight: 500;
 }
 
+.workspace-path {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: bottom;
+  font-size: 11px;
+  color: var(--color-text-secondary, #888);
+}
+
 /* ===== 活动热力图 ===== */
 .agent-heatmap {
   flex: 1;
@@ -587,10 +658,11 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 }
 
 .heatmap-cell.level-0 { background: #ebedf0; }
-.heatmap-cell.level-1 { background: #9be9a7; }
-.heatmap-cell.level-2 { background: #40c463; }
-.heatmap-cell.level-3 { background: #30a14e; }
-.heatmap-cell.level-4 { background: #216e39; }
+.heatmap-cell.level-1 { background: #c6e48b; }
+.heatmap-cell.level-2 { background: #7bc06e; }
+.heatmap-cell.level-3 { background: #4a9340; }
+.heatmap-cell.level-4 { background: #2d6827; }
+.heatmap-cell.level-5 { background: #216e39; }
 
 /* 热力图 Tooltip */
 .heatmap-tooltip {

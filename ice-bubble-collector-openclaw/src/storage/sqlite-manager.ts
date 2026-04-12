@@ -156,6 +156,7 @@ export class SQLiteManager {
             CREATE TABLE IF NOT EXISTS agents (
                 agent_id TEXT PRIMARY KEY,
                 agent_name TEXT,
+                workspace TEXT,
                 config_json TEXT,
                 status TEXT,
                 last_seen_at TIMESTAMP,
@@ -166,6 +167,25 @@ export class SQLiteManager {
             CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
             CREATE INDEX IF NOT EXISTS idx_agents_last_seen ON agents(last_seen_at);
         `);
+
+        // 迁移：检查并添加 workspace 列
+        try {
+            const columns = this.db.prepare("PRAGMA table_info(agents)").all() as any[];
+            const hasWorkspace = columns.some(col => col.name === 'workspace');
+            if (!hasWorkspace) {
+                this.db.exec('ALTER TABLE agents ADD COLUMN workspace TEXT');
+                logger.info('[Migration] Added workspace column to agents table');
+            }
+
+            // 迁移：检查并添加 source 列
+            const hasSource = columns.some(col => col.name === 'source');
+            if (!hasSource) {
+                this.db.exec('ALTER TABLE agents ADD COLUMN source TEXT DEFAULT "openclaw"');
+                logger.info('[Migration] Added source column to agents table');
+            }
+        } catch (e) {
+            // 忽略错误（表可能不存在或列已存在）
+        }
 
         // 4. tools 表
         this.db.exec(`
@@ -727,6 +747,8 @@ export class SQLiteManager {
     async upsertAgent(agent: {
         agent_id: string;
         agent_name: string;
+        workspace?: string | null;
+        source: string;
         config_json: string;
         status: string;
         last_seen_at: string;
@@ -737,16 +759,26 @@ export class SQLiteManager {
 
         try {
             const stmt = this.db.prepare(`
-                INSERT INTO agents (agent_id, agent_name, config_json, status, last_seen_at, updated_at)
-                VALUES (@agent_id, @agent_name, @config_json, @status, @last_seen_at, CURRENT_TIMESTAMP)
+                INSERT INTO agents (agent_id, agent_name, workspace, source, config_json, status, last_seen_at, updated_at)
+                VALUES (@agent_id, @agent_name, @workspace, @source, @config_json, @status, @last_seen_at, CURRENT_TIMESTAMP)
                 ON CONFLICT(agent_id) DO UPDATE SET
                     agent_name = excluded.agent_name,
+                    workspace = excluded.workspace,
+                    source = excluded.source,
                     config_json = excluded.config_json,
                     status = excluded.status,
                     last_seen_at = excluded.last_seen_at,
                     updated_at = CURRENT_TIMESTAMP
             `);
-            stmt.run(agent);
+            stmt.run({
+                agent_id: agent.agent_id,
+                agent_name: agent.agent_name,
+                workspace: agent.workspace ?? null,
+                source: agent.source,
+                config_json: agent.config_json,
+                status: agent.status,
+                last_seen_at: agent.last_seen_at
+            });
         } catch (error) {
             throw new SQLiteError(
                 'Failed to upsert agent',
@@ -763,6 +795,8 @@ export class SQLiteManager {
         agents: Array<{
             agent_id: string;
             agent_name: string;
+            workspace: string | null;
+            source: string;
             config_json: string;
             status: string;
             last_seen_at: string;
@@ -776,8 +810,9 @@ export class SQLiteManager {
 
         try {
             const stmt = this.db.prepare(`
-                SELECT agent_id, agent_name, config_json, status, last_seen_at, created_at, updated_at
+                SELECT agent_id, agent_name, workspace, source, config_json, status, last_seen_at, created_at, updated_at
                 FROM agents
+                WHERE status = 'configured'
                 ORDER BY last_seen_at DESC
             `);
             const rows = stmt.all() as SqlRow[];
@@ -785,6 +820,8 @@ export class SQLiteManager {
                 agents: rows.map(row => ({
                     agent_id: row.agent_id as string,
                     agent_name: row.agent_name as string,
+                    workspace: (row.workspace as string | null) ?? null,
+                    source: (row.source as string) || 'openclaw',
                     config_json: row.config_json as string,
                     status: row.status as string,
                     last_seen_at: row.last_seen_at as string,
