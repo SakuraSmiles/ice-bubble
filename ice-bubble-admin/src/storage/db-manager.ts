@@ -524,6 +524,13 @@ export class DBManager {
       case 1:
         // 初始版本，表已创建
         break;
+      case 4:
+        // 迁移：给 admin_agents 表添加 source 字段
+        this.db.exec(`
+          ALTER TABLE admin_agents ADD COLUMN source TEXT DEFAULT 'collector';
+        `);
+        logger.info('Migration v4: added source column to admin_agents');
+        break;
       case 3:
         // 迁移：给 admin_agents 表添加 avatar 字段
         this.db.exec(`

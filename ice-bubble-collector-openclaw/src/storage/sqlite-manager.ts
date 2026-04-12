@@ -719,6 +719,88 @@ export class SQLiteManager {
         return SessionMessageMapper.fromDb(row);
     }
 
+    // ========== Agent 操作 ==========
+
+    /**
+     * Upsert agent
+     */
+    async upsertAgent(agent: {
+        agent_id: string;
+        agent_name: string;
+        config_json: string;
+        status: string;
+        last_seen_at: string;
+    }): Promise<void> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        try {
+            const stmt = this.db.prepare(`
+                INSERT INTO agents (agent_id, agent_name, config_json, status, last_seen_at, updated_at)
+                VALUES (@agent_id, @agent_name, @config_json, @status, @last_seen_at, CURRENT_TIMESTAMP)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    agent_name = excluded.agent_name,
+                    config_json = excluded.config_json,
+                    status = excluded.status,
+                    last_seen_at = excluded.last_seen_at,
+                    updated_at = CURRENT_TIMESTAMP
+            `);
+            stmt.run(agent);
+        } catch (error) {
+            throw new SQLiteError(
+                'Failed to upsert agent',
+                'SQLITE_QUERY_FAILED',
+                error
+            );
+        }
+    }
+
+    /**
+     * Get all agents
+     */
+    async getAgents(): Promise<{
+        agents: Array<{
+            agent_id: string;
+            agent_name: string;
+            config_json: string;
+            status: string;
+            last_seen_at: string;
+            created_at: string;
+            updated_at: string;
+        }>;
+    }> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        try {
+            const stmt = this.db.prepare(`
+                SELECT agent_id, agent_name, config_json, status, last_seen_at, created_at, updated_at
+                FROM agents
+                ORDER BY last_seen_at DESC
+            `);
+            const rows = stmt.all() as SqlRow[];
+            return {
+                agents: rows.map(row => ({
+                    agent_id: row.agent_id as string,
+                    agent_name: row.agent_name as string,
+                    config_json: row.config_json as string,
+                    status: row.status as string,
+                    last_seen_at: row.last_seen_at as string,
+                    created_at: row.created_at as string,
+                    updated_at: row.updated_at as string,
+                })),
+            };
+        } catch (error) {
+            throw new SQLiteError(
+                'Failed to get agents',
+                'SQLITE_QUERY_FAILED',
+                error
+            );
+        }
+    }
+
     // ========== 统计和维护 ==========
 
     /**

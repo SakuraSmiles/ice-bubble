@@ -7,7 +7,7 @@
 import type { Database } from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
+import type { CollectorAgent } from '../data/collector-client.js';
 
 // ========== 类型定义 ==========
 
@@ -48,6 +48,7 @@ export interface AdminAgent {
   last_active_at: string | null;
   model: string | null;
   avatar: string | null;
+  source: string; // 'config' = 真实配置（来自 openclaw.json）, 'collector' = 仅出现在消息中的幽灵 agent
   updated_at: string;
 }
 
@@ -270,11 +271,16 @@ export class DataRepository {
   // ========== Agents ==========
 
   /**
-   * 更新 agents 表（从 sessions 聚合）
+   * 更新 agents 表（从 Collector 获取配置 + sessions 聚合数据）
+   *
+   * @param collectorAgents - 从 Collector API 获取的 agent 配置列表（来自 openclaw.json）
    */
-  refreshAgents(): void {
-    // 1. 读取 openclaw.json 获取 agent 昵称
-    const agentNames = this.loadAgentNamesFromConfig();
+  refreshAgents(collectorAgents: CollectorAgent[]): void {
+    // 1. 构建 collector agent 映射 (agent_id -> CollectorAgent)
+    const collectorAgentMap = new Map<string, CollectorAgent>();
+    for (const agent of collectorAgents) {
+      collectorAgentMap.set(agent.agent_id, agent);
+    }
 
     // 2. 获取每个 agent 的 model（从最新一条 agent 消息）
     const agentModels = this.loadAgentModelsFromMessages();
@@ -300,8 +306,8 @@ export class DataRepository {
 
     // 4. Upsert 每个 agent
     const upsert = this.db.prepare(`
-      INSERT INTO admin_agents (agent_id, agent_name, session_count, message_count, first_active_at, last_active_at, model, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO admin_agents (agent_id, agent_name, session_count, message_count, first_active_at, last_active_at, model, source, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(agent_id) DO UPDATE SET
         agent_name = excluded.agent_name,
         session_count = excluded.session_count,
@@ -309,13 +315,18 @@ export class DataRepository {
         first_active_at = excluded.first_active_at,
         last_active_at = excluded.last_active_at,
         model = excluded.model,
+        source = excluded.source,
         updated_at = excluded.updated_at
     `);
 
     const upsertAll = this.db.transaction(() => {
       for (const row of rows) {
-        const agentName = agentNames.get(row.agent_id) ?? row.agent_id;
+        const collectorAgent = collectorAgentMap.get(row.agent_id);
+        const agentName = collectorAgent?.agent_name ?? row.agent_id;
         const model = agentModels.get(row.agent_id) ?? null;
+        // source = 'config' 表示来自 openclaw.json 的真实配置，'collector' 表示仅出现在消息中的幽灵 agent
+        const source = collectorAgent ? 'config' : 'collector';
+
         upsert.run(
           row.agent_id,
           agentName,
@@ -323,43 +334,13 @@ export class DataRepository {
           row.message_count,
           row.first_active_at,
           row.last_active_at,
-          model
+          model,
+          source
         );
       }
     });
 
     upsertAll();
-  }
-
-  /**
-   * 从 openclaw.json 读取 agent 昵称映射
-   */
-  private loadAgentNamesFromConfig(): Map<string, string> {
-    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-    const map = new Map<string, string>();
-
-    try {
-      if (!fs.existsSync(configPath)) {
-        console.log('[DataRepository] openclaw.json not found, using empty agent names');
-        return map;
-      }
-
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-
-      if (config.agents?.list) {
-        for (const agent of config.agents.list) {
-          if (agent.id && agent.name) {
-            map.set(agent.id, agent.name);
-          }
-        }
-      }
-
-      console.log(`[DataRepository] Loaded ${map.size} agent names from openclaw.json`);
-    } catch (error) {
-      console.warn('[DataRepository] Failed to load agent names from openclaw.json:', error);
-    }
-
-    return map;
   }
 
   /**
@@ -403,7 +384,9 @@ export class DataRepository {
    * 获取 agents 列表
    */
   getAgents(): AdminAgent[] {
-    return this.db.prepare('SELECT * FROM admin_agents ORDER BY last_active_at DESC').all() as AdminAgent[];
+    return this.db.prepare(
+      "SELECT * FROM admin_agents WHERE source = 'config' ORDER BY last_active_at DESC"
+    ).all() as AdminAgent[];
   }
 
   /**

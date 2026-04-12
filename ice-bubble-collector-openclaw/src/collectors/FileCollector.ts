@@ -250,6 +250,9 @@ export class FileCollector extends BaseCollector implements Collector {
     // 启动数据处理管道
     this.pipeline.start();
 
+    // 同步 agents 配置到 SQLite
+    await this.syncAgentsFromConfig();
+
     // 初始化 Session 缓存
     this.sessionCache = new SessionCache(this.sqliteManager, {
       maxSize: 10000,
@@ -613,6 +616,57 @@ export class FileCollector extends BaseCollector implements Collector {
 
   async getDataStats() {
     return this.sqliteManager.getDataStats();
+  }
+
+  /**
+   * Sync agents from openclaw.json config into SQLite
+   */
+  async syncAgentsFromConfig(): Promise<void> {
+    const configPath = path.join(this.config.openclawDataDir, 'openclaw.json');
+
+    try {
+      if (!fs.existsSync(configPath)) {
+        logger.warn(`openclaw.json not found at ${configPath}`);
+        return;
+      }
+
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const agentsList = config.agents?.list || [];
+
+      logger.info(`Syncing ${agentsList.length} agents from openclaw.json`);
+
+      for (const agent of agentsList) {
+        await this.sqliteManager.upsertAgent({
+          agent_id: agent.id,
+          agent_name: agent.name || agent.id,
+          config_json: JSON.stringify(agent),
+          status: 'configured',
+          last_seen_at: new Date().toISOString(),
+        });
+      }
+
+      logger.info(`Synced ${agentsList.length} agents`);
+    } catch (error) {
+      logger.error('Failed to sync agents from config', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all agents from SQLite
+   */
+  async getAgents(): Promise<{
+    agents: Array<{
+      agent_id: string;
+      agent_name: string;
+      config_json: string;
+      status: string;
+      last_seen_at: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+  }> {
+    return this.sqliteManager.getAgents();
   }
 
   getFileProgress(): Map<string, FileProgress> {

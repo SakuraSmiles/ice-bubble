@@ -101,6 +101,29 @@ export function createDataRouter(collector: FileCollector): Router {
     });
 
     /**
+     * GET /api/data/agents
+     *
+     * Response:
+     *   { count: number, agents: AgentInfo[] }
+     */
+    router.get('/agents', async (_req: Request, res: Response) => {
+        try {
+            const result = await collector.getAgents();
+            res.json({
+                count: result.agents.length,
+                agents: result.agents,
+            });
+            dataLogger.debug(`返回 ${result.agents.length} 条 agents`);
+        } catch (error) {
+            dataLogger.error('获取 agents 失败', error as Error);
+            res.status(500).json({
+                error: '获取 agents 失败',
+                code: 'AGENTS_FETCH_FAILED',
+            });
+        }
+    });
+
+    /**
      * GET /api/data/stats
      *
      * Response:
