@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { api } from '../api/client.ts';
 
 export interface Session {
   session_key: string;
@@ -100,9 +101,7 @@ async function fetchSessions() {
   loading.value = true;
   error.value = '';
   try {
-    const res = await fetch('/api/sessions');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await api.getSessions();
     sessions.value = data.sessions || [];
   } catch (e: any) {
     error.value = e.message || '获取会话列表失败';

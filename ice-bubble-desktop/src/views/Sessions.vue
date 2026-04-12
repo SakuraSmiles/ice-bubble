@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { api } from '../api/client.ts';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import ChatPanel from '../components/ChatPanel.vue';
@@ -120,9 +121,7 @@ function formatRelativeTime(dateString: string | null): string {
 async function fetchAllSessions() {
   loading.value = true;
   try {
-    const res = await fetch('/api/sessions?limit=50');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await api.getSessions({ limit: 50 });
     allSessions.value = data.sessions || [];
     // 自动选中第一条会话
     if (allSessions.value.length > 0 && !selectedSessionKey.value) {

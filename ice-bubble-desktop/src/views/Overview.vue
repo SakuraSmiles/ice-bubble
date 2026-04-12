@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { api } from '../api/client.ts';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 
@@ -7,7 +8,7 @@ const stats = ref({
   sessionCount: 0,
   messageCount: 0,
   moduleCount: 0,
-  collectorStatus: 'unknown'
+  collectorStatus: 'unknown' as 'running' | 'stopped' | 'unknown'
 });
 
 const loading = ref(false);
@@ -15,8 +16,7 @@ const loading = ref(false);
 async function fetchStats() {
   loading.value = true;
   try {
-    const res = await fetch('/api/stats');
-    const data = await res.json();
+    const data = await api.getStats();
     stats.value = {
       sessionCount: data.sessionCount || 0,
       messageCount: data.messageCount || 0,

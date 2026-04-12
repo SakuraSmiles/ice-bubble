@@ -5,7 +5,7 @@
 
 import http from 'http';
 import { Request, Response } from 'express';
-import { findModuleByPath } from '../config/index.js';
+import { findModuleByPath } from '../config.server.js';
 
 /**
  * 创建代理中间件

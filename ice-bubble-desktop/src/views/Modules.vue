@@ -5,6 +5,7 @@ import { Refresh, Plus, Delete, InfoFilled, VideoPlay, VideoPause } from '@eleme
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { api } from '../api/client.ts';
 
 interface ModuleStatus {
   state: 'running' | 'stopped' | 'error' | null;
@@ -117,9 +118,7 @@ async function fetchModules(showLoading = true) {
     // 模拟网络延迟，确保 loading 至少显示 0.8 秒
     await new Promise(resolve => setTimeout(resolve, 800));
     
-    const listRes = await fetch('/api/modules');
-    if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
-    const listData = await listRes.json();
+    const listData = await api.getModules();
 
     // API 已返回完整数据（包括状态），直接使用
     modules.value = listData.modules.map((m: any) => ({
@@ -233,11 +232,7 @@ async function testConnection() {
   dialogTestingConnection.value = true;
   try {
     // 通过 admin API 测试连接（统一处理跨域）
-    const res = await fetch('/api/modules/test-connection', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ baseUrl: formData.value.baseUrl })
-    });
+    const data = await api.testModuleConnection(formData.value.baseUrl);
     if (!res.ok) {
       if (res.status === 404) {
         throw new Error(`该地址未提供 /api/meta/status 接口，可能是非 Collector 模块或地址错误`);
@@ -303,15 +298,10 @@ async function saveModule() {
     const url = isEdit && editingModule.value ? '/api/modules/' + editingModule.value.moduleKey : '/api/modules';
     const method = isEdit ? 'PUT' : 'POST';
 
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const res = await api.saveModule(body, method, isEdit && editingModule.value ? editingModule.value.moduleKey : undefined);
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(err.error || `HTTP ${res.status}`);
+    if (res.error) {
+      throw new Error(res.error);
     }
 
     ElMessage.success(isEdit ? '模块更新成功' : '模块添加成功');
@@ -335,10 +325,9 @@ async function deleteModule(mod: Module) {
     } catch { return; }
 
   try {
-    const res = await fetch(`/api/modules/${mod.moduleKey}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(err.error || `HTTP ${res.status}`);
+    const res = await api.deleteModule(mod.moduleKey);
+    if (res.error) {
+      throw new Error(res.error);
     }
     ElMessage.success('模块已删除');
     fetchModules();
@@ -359,16 +348,11 @@ async function toggleModule(mod: Module) {
     mod.status = mod.status || {};
     mod.status.state = newEnabled ? 'running' : 'stopped';
     
-    const res = await fetch(`/api/modules/${mod.moduleKey}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: newEnabled })
-    });
-    if (!res.ok) {
+    const res = await api.toggleModule(mod.moduleKey, newEnabled);
+    if (res.error) {
       // 回滚状态
       mod.enabled = !newEnabled;
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(err.error || `HTTP ${res.status}`);
+      throw new Error(res.error);
     }
     ElMessage.success(newEnabled ? '模块已启用' : '模块已停用');
     // 后台静默刷新，不显示 loading
@@ -384,13 +368,8 @@ async function testModuleConnection(mod: Module) {
   if (cardLoading.value[mod.moduleKey]) return;
   cardLoading.value[mod.moduleKey] = true;
   try {
-    const res = await fetch('/api/modules/test-connection', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ baseUrl: mod.baseUrl })
-    });
-    const data = await res.json();
-    
+    const data = await api.testModuleConnection(mod.baseUrl);
+
     if (data.success) {
       ElMessage.success('连接成功');
     } else {

@@ -8,7 +8,7 @@ import { writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import express, { Request, Response } from 'express';
-import { enableHotReload, disableHotReload, reloadConfig } from '../config/index.js';
+import { enableHotReload, disableHotReload, reloadConfig } from '../config.server.js';
 import { createProxyMiddleware } from '../middleware/proxy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { api } from '../api/client.ts';
 import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
 
@@ -152,9 +153,7 @@ function hideTooltip() {
  */
 async function fetchAgentsBasic() {
   try {
-    const res = await fetch('/api/agents');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await api.getAgents();
     const newAgents: Agent[] = data.agents || [];
 
     // 合并更新：保留现有的 avatar 等字段
@@ -178,9 +177,7 @@ async function fetchAgentsBasic() {
  */
 async function fetchActivity(days = 90) {
   try {
-    const res = await fetch(`/api/agents/with-activity?days=${days}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await api.getAgentsWithActivity(days);
     const newMap: Record<string, ActivityDay[]> = {};
     for (const agent of (data.agents || [])) {
       newMap[agent.agent_id] = agent.activity || [];
