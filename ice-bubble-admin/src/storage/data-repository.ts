@@ -504,25 +504,31 @@ export class DataRepository {
 
   /**
    * 批量更新 agent 活动计数（用于批量同步）
+   * 策略：先删除旧记录，再插入新记录（保证幂等性）
+   * 配合 DataSync 的全量聚合，确保每次同步结果一致
    */
   upsertAgentActivityBatch(records: { agentId: string; date: string; count: number }[]): void {
     if (records.length === 0) return;
 
-    const stmt = this.db.prepare(`
-      INSERT INTO agent_activity_daily (agent_id, date, message_count)
-      VALUES (?, ?, ?)
-      ON CONFLICT(agent_id, date) DO UPDATE SET
-        message_count = excluded.message_count
+    const deleteStmt = this.db.prepare(`
+      DELETE FROM agent_activity_daily WHERE agent_id = ? AND date = ?
+    `);
+
+    const insertStmt = this.db.prepare(`
+      INSERT INTO agent_activity_daily (agent_id, date, message_count) VALUES (?, ?, ?)
     `);
 
     const upsertMany = this.db.transaction((rows: typeof records) => {
       for (const row of rows) {
-        stmt.run(row.agentId, row.date, row.count);
+        // 先删除旧记录（如果存在）
+        deleteStmt.run(row.agentId, row.date);
+        // 再插入新记录
+        insertStmt.run(row.agentId, row.date, row.count);
       }
     });
 
     upsertMany(records);
-    console.log(`[DataRepository] Upserted ${records.length} activity records`);
+    console.log(`[DataRepository] Replaced ${records.length} activity records`);
   }
 
   /**

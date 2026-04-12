@@ -30,6 +30,98 @@ const totalMessages = ref(0);
 // agentId → ActivityDay[]
 const activityMap = ref<Record<string, ActivityDay[]>>({});
 
+/**
+ * 计算动态热力图阈值（基于百分位数）
+ * 返回 [t1, t2, t3, t4]，将数据分为5个等级
+ * t1: 0-25% -> level-0
+ * t2: 25-50% -> level-1
+ * t3: 50-75% -> level-2
+ * t4: 75-90% -> level-3
+ * >t4: -> level-4
+ */
+function getDynamicThresholds(activity: ActivityDay[]): number[] {
+  // 只统计有活动的日期（count > 0）
+  const counts = activity
+    .map(d => d.count)
+    .filter(c => c > 0);
+  
+  if (counts.length < 5) {
+    // 数据太少，使用固定阈值
+    return [0, 3, 6, 11];
+  }
+  
+  // 排序
+  const sorted = [...counts].sort((a, b) => a - b);
+  const n = sorted.length;
+  
+  // 计算百分位数
+  const p0 = sorted[0];                          // 最小值
+  const p25 = sorted[Math.floor(n * 0.25)];       // 25%
+  const p50 = sorted[Math.floor(n * 0.5)];       // 50%
+  const p75 = sorted[Math.floor(n * 0.75)];      // 75%
+  const p90 = sorted[Math.floor(n * 0.9)];       // 90%
+  
+  // 返回阈值：[level-1上限, level-2上限, level-3上限, level-4上限]
+  return [
+    Math.max(p0, 2),        // level-1: >0 且 <= 这个值
+    Math.max(p25, 3),       // level-2
+    Math.max(p50, 6),       // level-3
+    Math.max(p75, 11)       // level-4
+  ];
+}
+
+/**
+ * 根据动态阈值获取热力图等级
+ */
+function getActivityLevel(count: number, thresholds: number[]): number {
+  if (count === 0) return 0;
+  const [t1, t2, t3, t4] = thresholds;
+  if (count <= t1) return 1;
+  if (count <= t2) return 2;
+  if (count <= t3) return 3;
+  if (count <= t4) return 4;
+  return 4;
+}
+
+// 计算属性：所有 agent 的热力图阈值（动态百分位）
+const heatmapThresholdsMap = computed(() => {
+  const result: Record<string, number[]> = {};
+  for (const agentId of Object.keys(activityMap.value)) {
+    const activity = activityMap.value[agentId] || [];
+    result[agentId] = getDynamicThresholds(activity);
+  }
+  return result;
+});
+
+// 计算属性：所有 agent 的热力图网格数据（解决响应式问题）
+const heatmapGridMap = computed(() => {
+  const result: Record<string, ActivityDay[][]> = {};
+  for (const agentId of Object.keys(activityMap.value)) {
+    const activity = activityMap.value[agentId] || [];
+    const activityByDate = new Map(activity.map(a => [a.date, a.count]));
+    const today = new Date();
+    const grid: ActivityDay[][] = [];
+    
+    for (let row = 0; row < 5; row++) {
+      const week: ActivityDay[] = [];
+      for (let col = 0; col < 7; col++) {
+        const daysAgo = row * 7 + (6 - col);
+        if (daysAgo < 0) {
+          week.push({ date: '', count: -1 });
+        } else {
+          const d = new Date(today);
+          d.setDate(d.getDate() - daysAgo);
+          const dateStr = d.toISOString().split('T')[0];
+          week.push({ date: dateStr, count: activityByDate.get(dateStr) ?? 0 });
+        }
+      }
+      grid.push(week);
+    }
+    result[agentId] = grid;
+  }
+  return result;
+});
+
 // 热力图 tooltip 状态
 const tooltipState = ref({
   visible: false,
@@ -39,14 +131,17 @@ const tooltipState = ref({
   count: 0
 });
 
-function showTooltip(event: MouseEvent, day: ActivityDay) {
+function showTooltip(event: MouseEvent, day: ActivityDay, agentId: string) {
   if (day.date === '') return;
+  // 实时从 activityMap 获取最新数据
+  const activity = activityMap.value[agentId] || [];
+  const latestCount = activity.find(a => a.date === day.date)?.count ?? 0;
   tooltipState.value = {
     visible: true,
     x: event.clientX,
     y: event.clientY,
     date: day.date,
-    count: day.count
+    count: latestCount
   };
 }
 
@@ -87,82 +182,6 @@ async function fetchAgents() {
   } finally {
     loading.value = false;
   }
-}
-
-/**
- * 生成最近 N 天的完整日期网格（周一开始，7行×N/7列）
- */
-function generateDateGrid(days: number = 90): string[] {
-  const dates: string[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().split('T')[0]);
-  }
-  return dates;
-}
-
-/**
- * 根据消息数量返回热力图等级 (0-4)
- */
-function getActivityLevel(count: number): number {
-  if (count === 0) return 0;
-  if (count <= 2) return 1;
-  if (count <= 5) return 2;
-  if (count <= 10) return 3;
-  return 4;
-}
-
-/**
- * 获取某 agent 的活动热力图网格（补充缺失日期，count=0）
- */
-function getHeatmapGrid(agentId: string, days: number = 90): ActivityDay[] {
-  const activity = activityMap.value[agentId] || [];
-  const activityByDate = new Map(activity.map(a => [a.date, a.count]));
-  return generateDateGrid(days).map(date => ({
-    date,
-    count: activityByDate.get(date) ?? 0,
-  }));
-}
-
-/**
- * 将一维日期数组转换为周视图网格（4行×7列，右对齐，今天在右侧）
- */
-function toWeekGrid(activity: ActivityDay[]): ActivityDay[][] {
-  const today = new Date();
-
-  // 构建日期到count的映射
-  const activityMap = new Map(activity.map(d => [d.date, d.count]));
-
-  const result: ActivityDay[][] = [];
-
-  // 生成4行数据
-  // 列头：周日到周一（从左到右）
-  // 日(0) 六(1) 五(2) 四(3) 三(4) 二(5) 一(6)
-  // 第一行从今天开始，往右排（日期递增）
-  for (let row = 0; row < 4; row++) {
-    const week: ActivityDay[] = [];
-    for (let col = 0; col < 7; col++) {
-      // col=0 是周日(最左), col=6 是一(最右)
-      // daysAgo 越小日期越新
-      // formula: daysAgo = row * 7 + (6 - col)
-      const daysAgo = row * 7 + (6 - col);
-      
-      if (daysAgo < 0) {
-        week.push({ date: '', count: -1 });
-      } else {
-        const d = new Date(today);
-        d.setDate(d.getDate() - daysAgo);
-        const dateStr = d.toISOString().split('T')[0];
-        week.push({ date: dateStr, count: activityMap.get(dateStr) ?? 0 });
-      }
-    }
-    result.push(week);
-  }
-
-  return result;
 }
 
 function formatTime(dateString: string | null): string {
@@ -300,16 +319,17 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
           <div class="agent-heatmap">
             <div class="heatmap-grid">
               <div
-                v-for="(week, wi) in toWeekGrid(getHeatmapGrid(agent.agent_id, 90))"
+                v-for="(week, wi) in (heatmapGridMap[agent.agent_id] || [])"
                 :key="wi"
                 class="heatmap-week"
               >
                 <div
                   v-for="(day, di) in week"
                   :key="di"
-                  :class="['heatmap-cell', 'level-' + (day.count < 0 ? -1 : getActivityLevel(day.count))]"
-                  @mouseenter="showTooltip($event, day)"
+                  :class="['heatmap-cell', 'level-' + (day.count < 0 ? -1 : getActivityLevel(day.count, heatmapThresholdsMap[agent.agent_id] || [0,3,6,11]))]"
+                  @mouseenter="showTooltip($event, day, agent.agent_id)"
                   @mouseleave="hideTooltip"
+                  :data-count="day.count"
                 ></div>
               </div>
             </div>
@@ -546,19 +566,19 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .heatmap-grid {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .heatmap-week {
   display: flex;
   flex-direction: row-reverse;
-  gap: 5px;
+  gap: 4px;
 }
 
 .heatmap-cell {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
   flex-shrink: 0;
 }
 
