@@ -476,13 +476,16 @@ export class SQLiteManager {
      * 批量插入消息（核心性能方法）
      * - 使用事务批量插入
      * - 自动更新 session 的 message_count
+     * - 返回实际插入数（排除重复）
+     *
+     * @returns 实际插入的消息数量
      */
-    async batchInsertMessages(messages: SessionMessage[]): Promise<number> {
+    async batchInsertMessages(messages: SessionMessage[]): Promise<{ inserted: number; duplicates: number }> {
         if (!this.db || !this.isInitialized) {
             throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
         }
 
-        if (messages.length === 0) return 0;
+        if (messages.length === 0) return { inserted: 0, duplicates: 0 };
 
         try {
             // 使用 IMMEDIATE 事务避免 SQLITE_BUSY
@@ -499,29 +502,57 @@ export class SQLiteManager {
                     VALUES (${placeholders})
                 `);
 
-                let insertedCount = 0;
+                let actualInserts = 0;
                 for (const row of dbRows) {
                     const values = columns.map(col => row[col]);
-                    stmt.run(...values);
-                    insertedCount++;
+                    const result = stmt.run(...values);
+                    // result.changes > 0 表示实际插入了新行，0 表示被 IGNORE（重复）
+                    if (result.changes > 0) {
+                        actualInserts++;
+                    }
                 }
 
-                return insertedCount;
+                return actualInserts;
             });
 
             // 使用 IMMEDIATE 事务模式，避免并发冲突
-            const insertedCount = insertMany.immediate(messages);
+            const actualInserts = insertMany.immediate(messages);
+            const duplicates = messages.length - actualInserts;
 
-            // 计算每个 session 的最新消息时间和消息数量
+            // 计算每个 session 的最新消息时间和实际插入的消息数量
+            // 注意：只统计实际插入的消息，避免重复计数
             const sessionStats = new Map<string, { count: number; lastMessageAt: Date }>();
-            for (const msg of messages) {
-                const stats = sessionStats.get(msg.sessionKey) || { count: 0, lastMessageAt: new Date(0) };
-                stats.count++;
-                // 找到最新消息时间
-                if (msg.timestamp > stats.lastMessageAt) {
-                    stats.lastMessageAt = msg.timestamp;
+            const dbRows = SessionMessageMapper.batchToDb(messages);
+            
+            // 重新执行一次获取实际插入的 message_id 列表
+            const messageIds = dbRows.map(row => row.message_id).filter(Boolean);
+            
+            if (messageIds.length > 0) {
+                // 查询哪些 message_id 已经存在于数据库中（重复）
+                const placeholders = getPlaceholders(messageIds);
+                const existingStmt = this.db!.prepare(`
+                    SELECT message_id, session_key, timestamp 
+                    FROM session_messages 
+                    WHERE message_id IN (${placeholders})
+                `);
+                const existingRows = existingStmt.all(...messageIds) as SqlRow[];
+                const existingMessageIds = new Set(existingRows.map(r => r.message_id as string));
+
+                // 只对实际插入的消息更新统计
+                for (let i = 0; i < messages.length; i++) {
+                    const msg = messages[i];
+                    const dbRow = dbRows[i];
+                    // 跳过已存在的（重复）消息
+                    if (existingMessageIds.has(dbRow.message_id as string)) {
+                        continue;
+                    }
+                    const stats = sessionStats.get(msg.sessionKey) || { count: 0, lastMessageAt: new Date(0) };
+                    stats.count++;
+                    if (msg.timestamp > stats.lastMessageAt) {
+                        stats.lastMessageAt = msg.timestamp;
+                    }
+                    sessionStats.set(msg.sessionKey, stats);
                 }
-                sessionStats.set(msg.sessionKey, stats);
             }
 
             // 更新 session 的 message_count 和 last_message_at
@@ -538,7 +569,7 @@ export class SQLiteManager {
                 updateSession.run(stats.count, now, stats.lastMessageAt.toISOString(), sessionKey);
             }
 
-            return insertedCount;
+            return { inserted: actualInserts, duplicates };
         } catch (error) {
             throw new SQLiteError(
                 'Failed to batch insert messages',
@@ -592,13 +623,15 @@ export class SQLiteManager {
                             VALUES (${placeholders})
                         `);
 
-                        let inserted = 0;
+                        let actualInserts = 0;
                         for (const row of dbRows) {
                             const values = columns.map(col => row[col]);
-                            stmt.run(...values);
-                            inserted++;
+                            const result = stmt.run(...values);
+                            if (result.changes > 0) {
+                                actualInserts++;
+                            }
                         }
-                        return inserted;
+                        return actualInserts;
                     });
 
                     // 使用 EXCLUSIVE 模式

@@ -222,15 +222,15 @@ export class BatchWriter extends EventEmitter {
 
         try {
             // 批量写入
-            await this.sqliteManager.batchInsertMessages(messages);
+            const result = await this.sqliteManager.batchInsertMessages(messages);
 
-            // 更新统计
-            this.stats.totalProcessed += messages.length;
+            // 更新统计（使用实际插入数，排除重复）
+            this.stats.totalProcessed += result.inserted;
             this.stats.totalBatches++;
             this.stats.lastFlushAt = new Date();
 
             // 发送事件
-            this.emit('flush', { count: messages.length });
+            this.emit('flush', { count: result.inserted, duplicates: result.duplicates });
         } catch (error) {
             // 失败消息移入专用队列，不与后续新消息混合，保持顺序
             this.failedMessages = messages;

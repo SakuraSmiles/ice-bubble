@@ -602,4 +602,87 @@ export class DataRepository {
       lastSyncTime: syncRow.time
     };
   }
+
+  // ========== Data Rebuild ==========
+
+  /**
+   * 重建会话消息计数
+   * 
+   * 问题：由于 collector 的 batchInsertMessages 使用 INSERT OR IGNORE，
+   * 重复消息被忽略但 message_count 仍按 batch 总量累加，导致统计数据虚高。
+   * 
+   * 本方法按 admin_messages 实际行数重算所有 session 的 message_count，
+   * 并重建 admin_agents 汇总统计。
+   * 
+   * @returns 重算影响的 session 数量
+   */
+  rebuildSessionMessageCounts(): number {
+    console.log('[DataRepository] 开始重建会话消息计数...');
+
+    // Step 1: 按实际消息数重算所有 session 的 message_count
+    const updateSessionCounts = this.db.prepare(`
+      UPDATE admin_sessions s
+      SET 
+        message_count = (
+          SELECT COUNT(*) 
+          FROM admin_messages m 
+          WHERE m.session_key = s.session_key
+        ),
+        first_message_at = (
+          SELECT MIN(m.timestamp) 
+          FROM admin_messages m 
+          WHERE m.session_key = s.session_key
+        ),
+        last_message_at = (
+          SELECT MAX(m.timestamp) 
+          FROM admin_messages m 
+          WHERE m.session_key = s.session_key
+        )
+      WHERE EXISTS (
+        SELECT 1 FROM admin_messages m 
+        WHERE m.session_key = s.session_key
+      )
+    `);
+
+    const sessionResult = updateSessionCounts.run();
+    console.log(`[DataRepository] 重算 ${sessionResult.changes} 个 session 的 message_count`);
+
+    // Step 2: 重算所有 agent 的汇总统计
+    const updateAgentStats = this.db.prepare(`
+      UPDATE admin_agents aa
+      SET 
+        message_count = (
+          SELECT COALESCE(SUM(message_count), 0) 
+          FROM admin_sessions 
+          WHERE agent_id = aa.agent_id
+            AND session_key NOT LIKE '%checkpoint%'
+        ),
+        session_count = (
+          SELECT COUNT(DISTINCT session_key) 
+          FROM admin_sessions 
+          WHERE agent_id = aa.agent_id
+            AND session_key NOT LIKE '%checkpoint%'
+        ),
+        first_active_at = (
+          SELECT MIN(first_message_at) 
+          FROM admin_sessions 
+          WHERE agent_id = aa.agent_id
+            AND session_key NOT LIKE '%checkpoint%'
+            AND first_message_at IS NOT NULL
+        ),
+        last_active_at = (
+          SELECT MAX(last_message_at) 
+          FROM admin_sessions 
+          WHERE agent_id = aa.agent_id
+            AND session_key NOT LIKE '%checkpoint%'
+            AND last_message_at IS NOT NOT NULL
+        ),
+        updated_at = CURRENT_TIMESTAMP
+    `);
+
+    const agentResult = updateAgentStats.run();
+    console.log(`[DataRepository] 重算 ${agentResult.changes} 个 agent 的汇总统计`);
+
+    return sessionResult.changes;
+  }
 }
