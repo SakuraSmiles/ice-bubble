@@ -579,6 +579,37 @@ export class DataRepository {
     return rows;
   }
 
+  /**
+   * 批量获取所有 agent 的活动数据（最近 N 天）
+   * 一次查询返回所有数据，避免 N+1 问题
+   */
+  getAgentsWithActivity(days: number = 90): (AdminAgent & { activity: { date: string; count: number }[] })[] {
+    const agents = this.getAgents();
+
+    // 一次查询所有 agent 的 activity 数据
+    const rows = this.db.prepare(`
+      SELECT agent_id, date, message_count as count
+      FROM agent_activity_daily
+      WHERE date >= date('now', ?)
+      ORDER BY agent_id, date ASC
+    `).all(`-${days} days`) as { agent_id: string; date: string; count: number }[];
+
+    // 按 agent_id 分组
+    const activityByAgent: Record<string, { date: string; count: number }[]> = {};
+    for (const row of rows) {
+      if (!activityByAgent[row.agent_id]) {
+        activityByAgent[row.agent_id] = [];
+      }
+      activityByAgent[row.agent_id].push({ date: row.date, count: row.count });
+    }
+
+    // 合并到 agent 对象
+    return agents.map(agent => ({
+      ...agent,
+      activity: activityByAgent[agent.agent_id] || []
+    }));
+  }
+
   // ========== Stats ==========
 
   /**

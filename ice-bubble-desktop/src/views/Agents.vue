@@ -32,6 +32,9 @@ const totalMessages = ref(0);
 // agentId → ActivityDay[]
 const activityMap = ref<Record<string, ActivityDay[]>>({});
 
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let heatmapTimer: ReturnType<typeof setInterval> | null = null;
+
 /**
  * 计算动态热力图阈值（基于百分位数）
  * 返回 [t1-t5]，将数据分为6个等级
@@ -143,36 +146,61 @@ function hideTooltip() {
   tooltipState.value.visible = false;
 }
 
-async function fetchAgents() {
-  loading.value = true;
+/**
+ * 静默更新 agents 基本信息（无 loading 动画）
+ * 用于 30s 定时器，避免频繁打断用户操作
+ */
+async function fetchAgentsBasic() {
   try {
     const res = await fetch('/api/agents');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    agents.value = data.agents || [];
+    const newAgents: Agent[] = data.agents || [];
+
+    // 合并更新：保留现有的 avatar 等字段
+    const merged = newAgents.reduce((map, a) => {
+      const existing = agents.value.find(ex => ex.agent_id === a.agent_id);
+      map[a.agent_id] = existing ? { ...existing, ...a } : a;
+      return map;
+    }, {} as Record<string, Agent>);
+
+    agents.value = Object.values(merged);
     totalAgents.value = data.count || 0;
     totalSessions.value = agents.value.reduce((sum, a) => sum + (a.session_count || 0), 0);
     totalMessages.value = agents.value.reduce((sum, a) => sum + (a.message_count || 0), 0);
+  } catch (e: any) {
+    console.warn('[Agents] 静默更新失败:', e.message);
+  }
+}
 
-    // 并行获取所有 agent 的活动热力图数据
-    const activityResults = await Promise.allSettled(
-      agents.value.map(a =>
-        fetch(`/api/agents/${encodeURIComponent(a.agent_id)}/activity?days=90`)
-          .then(r => r.json())
-          .then(d => ({ agentId: a.agent_id, activity: d.activity || [] }))
-          .catch(() => ({ agentId: a.agent_id, activity: [] as ActivityDay[] }))
-      )
-    );
-
-    const newMap: typeof activityMap.value = {};
-    for (const result of activityResults) {
-      if (result.status === 'fulfilled') {
-        newMap[result.value.agentId] = result.value.activity;
-      }
+/**
+ * 批量获取所有 agent 的活动热力图数据（使用新的批量接口）
+ */
+async function fetchActivity(days = 90) {
+  try {
+    const res = await fetch(`/api/agents/with-activity?days=${days}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const newMap: Record<string, ActivityDay[]> = {};
+    for (const agent of (data.agents || [])) {
+      newMap[agent.agent_id] = agent.activity || [];
     }
     activityMap.value = newMap;
   } catch (e: any) {
-    ElMessage.error('获取成员列表失败: ' + (e.message || e));
+    console.warn('[Agents] 获取热力图数据失败:', e.message);
+  }
+}
+
+/**
+ * 完整初始化/刷新：agents + activity + loading 动画
+ */
+async function fetchAll(withActivity = true) {
+  loading.value = true;
+  try {
+    await fetchAgentsBasic();
+    if (withActivity) {
+      await fetchActivity();
+    }
   } finally {
     loading.value = false;
   }
@@ -223,17 +251,26 @@ function truncatePath(path: string | null): string {
   return parts.slice(0, 2).join('/') + '/.../' + parts.slice(-2).join('/');
 }
 
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
+function startTimers() {
+  // 30秒：静默更新 agents 基本信息（无 loading）
+  refreshTimer = setInterval(fetchAgentsBasic, 30000);
+  // 5分钟：更新热力图数据
+  heatmapTimer = setInterval(fetchActivity, 300000);
+}
 
 onMounted(async () => {
-  await fetchAgents();
-  refreshTimer = setInterval(fetchAgents, 30000);
+  await fetchAll(true);
+  startTimers();
 });
 
 onUnmounted(() => {
   if (refreshTimer) {
     clearInterval(refreshTimer);
     refreshTimer = null;
+  }
+  if (heatmapTimer) {
+    clearInterval(heatmapTimer);
+    heatmapTimer = null;
   }
 });
 
@@ -243,7 +280,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 <template>
   <div class="agents-page">
     <PageHeader title="成员" :subtitle="subtitle">
-      <el-button circle size="small" :loading="loading" @click="fetchAgents" title="刷新">
+      <el-button circle size="small" :loading="loading" @click="fetchAll(true)" title="刷新">
         <el-icon><Refresh /></el-icon>
       </el-button>
     </PageHeader>
