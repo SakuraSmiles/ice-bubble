@@ -666,7 +666,6 @@ export class FileCollector extends BaseCollector implements Collector {
           agent_id: agent.id,
           agent_name: agent.name || agent.id,
           workspace: agent.workspace || null,
-          source: 'openclaw',
           config_json: JSON.stringify(agent),
           status: 'configured',
           last_seen_at: new Date().toISOString(),

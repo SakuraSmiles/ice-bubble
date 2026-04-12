@@ -131,6 +131,7 @@ export async function startAdmin(): Promise<void> {
     const dataSync = new DataSync(
       {
         collectorBaseUrl: dataSyncConfig.collectorBaseUrl || 'http://localhost:13100',
+        moduleKey: dataSyncConfig.moduleKey || 'collector-openclaw',
         pollInterval: dataSyncConfig.pollInterval || 60000,
         batchSize: dataSyncConfig.batchSize || 500,
       },

@@ -290,10 +290,6 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
           <div class="agent-middle">
           <!-- 中间统计 -->
           <div class="agent-stats">
-            <div class="agent-source">
-              <span class="source-label">来源</span>
-              <span class="source-value">{{ agent.source === 'config' ? 'OpenClaw' : agent.source }}</span>
-            </div>
             <div class="agent-workspace">
               <span class="workspace-value">{{ truncatePath(agent.workspace) }}</span>
             </div>
@@ -321,6 +317,10 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
                 <span class="stat-label">消息</span>
               </div>
             </div>
+            </div>
+            <div class="source-row">
+              <span class="source-label">来源</span>
+              <span class="source-value">{{ agent.source }}</span>
             </div>
           </div>
 
@@ -534,11 +534,17 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   display: inline-block;
 }
 
-.agent-source {
+.source-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
+}
+
+.source-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .source-label {
@@ -555,11 +561,13 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .stat-row {
   display: flex;
   gap: 32px;
+  align-items: center;
+  margin: 10px 0;
 }
 
 .stat-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
 }
 

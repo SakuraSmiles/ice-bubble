@@ -276,10 +276,12 @@ export class DataRepository {
    * - 只同步 collectorAgents 中存在的 agent（来自 openclaw.json）
    * - 幽灵 agent（仅出现在消息中但不在配置中）会被忽略
    * - sessions 聚合数据仅用于补充配置的 agent 的统计信息
+   * - source 字段由 Admin 根据 module_key 统一设置
    *
    * @param collectorAgents - 从 Collector API 获取的 agent 配置列表（来自 openclaw.json）
+   * @param sourceModule - 模块标识，用于设置 source 字段（如 collector 注册时的 module_key）
    */
-  refreshAgents(collectorAgents: CollectorAgent[]): void {
+  refreshAgents(collectorAgents: CollectorAgent[], sourceModule: string = 'unknown'): void {
     if (collectorAgents.length === 0) {
       console.log('[DataRepository] No collector agents to refresh');
       return;
@@ -307,6 +309,7 @@ export class DataRepository {
         MAX(last_message_at) as last_active_at
       FROM admin_sessions
       WHERE agent_id IN (${placeholders})
+        AND session_key NOT LIKE '%checkpoint%'
       GROUP BY agent_id
     `).all(...configuredAgentIds) as Array<{
       agent_id: string;
@@ -358,7 +361,7 @@ export class DataRepository {
             stats?.first_active_at ?? null,
             stats?.last_active_at ?? null,
             model,
-            agent.source ?? 'openclaw' // source 为采集器标识，如 'openclaw'
+            sourceModule
           );
         }
       });
@@ -391,9 +394,11 @@ export class DataRepository {
           WHERE m.message_type = 'agent'
             AND m.model IS NOT NULL AND m.model != ''
             AND s.agent_id IS NOT NULL
+            AND s.session_key NOT LIKE '%checkpoint%'
           GROUP BY s.agent_id
         ) latest ON s.agent_id = latest.agent_id AND m.timestamp = latest.max_ts
         WHERE s.agent_id IS NOT NULL
+          AND s.session_key NOT LIKE '%checkpoint%'
       `).all() as Array<{ agent_id: string; model: string }>;
 
       for (const row of rows) {
@@ -413,7 +418,7 @@ export class DataRepository {
    */
   getAgents(): AdminAgent[] {
     return this.db.prepare(
-      "SELECT * FROM admin_agents WHERE source = 'openclaw' ORDER BY last_active_at DESC"
+      "SELECT * FROM admin_agents ORDER BY last_active_at DESC"
     ).all() as AdminAgent[];
   }
 

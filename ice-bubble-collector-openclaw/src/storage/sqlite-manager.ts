@@ -748,7 +748,7 @@ export class SQLiteManager {
         agent_id: string;
         agent_name: string;
         workspace?: string | null;
-        source: string;
+        source?: string | null;
         config_json: string;
         status: string;
         last_seen_at: string;

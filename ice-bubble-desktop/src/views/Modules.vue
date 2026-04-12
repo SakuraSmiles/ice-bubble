@@ -222,6 +222,14 @@ async function testConnection() {
     return;
   }
 
+  // URL 重复校验（检查是否已存在相同 URL 的模块）
+  const normalizedUrl = formData.value.baseUrl.trim().replace(/\/$/, '');
+  const existingByUrl = modules.value.find(m => m.baseUrl.replace(/\/$/, '') === normalizedUrl);
+  if (existingByUrl) {
+    ElMessage.error(`该 Collector URL 已注册为「${existingByUrl.name}」，请勿重复添加`);
+    return;
+  }
+
   dialogTestingConnection.value = true;
   try {
     // 通过 admin API 测试连接（统一处理跨域）
@@ -240,9 +248,21 @@ async function testConnection() {
     const data = await res.json();
 
     if (data.moduleKey) {
-      formData.value.moduleKey = data.moduleKey;
+      // 检查 moduleKey 是否冲突，如果冲突则自动追加后缀
+      let moduleKey = data.moduleKey;
+      let suffix = 2;
+      while (modules.value.some(m => m.moduleKey === moduleKey)) {
+        moduleKey = `${data.moduleKey}-${suffix}`;
+        suffix++;
+      }
+      formData.value.moduleKey = moduleKey;
       testPass.value = true;
-      ElMessage.success('连接成功，已自动获取模块Key');
+      
+      if (moduleKey !== data.moduleKey) {
+        ElMessage.success(`连接成功，模块Key已调整为「${moduleKey}」（避免冲突）`);
+      } else {
+        ElMessage.success('连接成功，已自动获取模块Key');
+      }
     } else {
       ElMessage.warning('连接成功，但未获取到模块信息');
     }
