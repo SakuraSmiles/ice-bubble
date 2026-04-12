@@ -366,6 +366,29 @@ export class ModuleScheduler {
   }
 
   /**
+   * 注册模块到数据库
+   */
+  public async registerModule(module: {
+    moduleKey: string;
+    moduleName: string;
+    moduleType: string;
+    status: string;
+  }): Promise<void> {
+    if (this.repository) {
+      await this.repository.registerModule(module);
+    }
+  }
+
+  /**
+   * 从数据库删除模块
+   */
+  public async deleteModule(moduleKey: string): Promise<void> {
+    if (this.repository) {
+      await this.repository.deleteModule(moduleKey);
+    }
+  }
+
+  /**
    * 从数据库获取模块状态（供 API 使用）
    */
   async getStatusFromDatabase(moduleKey: string): Promise<{

@@ -236,14 +236,12 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
 
     scheduler.addModule(newModule as Parameters<typeof scheduler.addModule>[0]);
 
-    if (scheduler['repository']) {
-      await scheduler['repository'].registerModule({
-        moduleKey,
-        moduleName: name,
-        moduleType: 'collector',
-        status: enabled !== false ? 'running' : 'stopped',
-      });
-    }
+    await scheduler.registerModule({
+      moduleKey,
+      moduleName: name,
+      moduleType: 'collector',
+      status: enabled !== false ? 'running' : 'stopped',
+    });
 
     res.status(201).json({ message: '模块添加成功', module: newModule });
   });
@@ -323,9 +321,7 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
 
     scheduler.removeModule(key);
 
-    if (scheduler['repository']) {
-      await scheduler['repository'].deleteModule(key);
-    }
+    await scheduler.deleteModule(key);
 
     res.json({ message: '模块删除成功', moduleKey: key });
   });
