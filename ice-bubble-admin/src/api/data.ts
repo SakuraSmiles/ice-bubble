@@ -133,29 +133,5 @@ export function createDataRouter(repository: DataRepository): Router {
     res.json({ agent_id: id, activity });
   });
 
-  /**
-   * POST /api/data/rebuild
-   * 重建会话消息计数
-   * 
-   * 问题：由于 collector 的 batchInsertMessages 使用 INSERT OR IGNORE，
-   * 重复消息被忽略但 message_count 仍按 batch 总量累加，导致统计数据虚高。
-   * 
-   * 本接口按 admin_messages 实际行数重算所有 session 的 message_count，
-   * 并重建 admin_agents 汇总统计。
-   */
-  router.post('/rebuild', (_req: Request, res: Response) => {
-    try {
-      const affectedSessions = repository.rebuildSessionMessageCounts();
-      res.json({ 
-        success: true, 
-        affectedSessions,
-        message: `已重算 ${affectedSessions} 个会话的消息计数并更新 agent 汇总统计`
-      });
-    } catch (error) {
-      console.error('[DataAPI] rebuild failed:', error);
-      res.status(500).json({ error: '重建失败', detail: String(error) });
-    }
-  });
-
   return router;
 }
