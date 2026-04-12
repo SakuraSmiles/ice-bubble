@@ -100,7 +100,7 @@ async function fetchSessions() {
   loading.value = true;
   error.value = '';
   try {
-    const res = await fetch('http://localhost:13000/api/data/sessions');
+    const res = await fetch('http://localhost:13000/api/sessions');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     sessions.value = data.sessions || [];

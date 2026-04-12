@@ -15,7 +15,7 @@ const loading = ref(false);
 async function fetchStats() {
   loading.value = true;
   try {
-    const res = await fetch('/api/data/stats');
+    const res = await fetch('/api/stats');
     const data = await res.json();
     stats.value = {
       sessionCount: data.sessionCount || 0,

@@ -140,8 +140,8 @@ export async function startAdmin(): Promise<void> {
     console.log('[Admin] 数据同步调度器初始化完成');
 
     // 注册 API 路由
+    app.use('/api', createDataRouter(dataRepository));
     app.use('/api/modules', createModulesRouter(scheduler));
-    app.use('/api/data', createDataRouter(dataRepository));
     app.use('/api/resources', createResourcesRouter(dataRepository));
     
     // 健康检查

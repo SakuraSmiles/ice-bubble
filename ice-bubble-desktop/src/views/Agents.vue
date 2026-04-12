@@ -24,7 +24,7 @@ const totalMessages = ref(0);
 async function fetchAgents() {
   loading.value = true;
   try {
-    const res = await fetch('/api/data/agents');
+    const res = await fetch('/api/agents');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     agents.value = data.agents || [];
