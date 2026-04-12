@@ -233,14 +233,6 @@ async function testConnection() {
   try {
     // 通过 admin API 测试连接（统一处理跨域）
     const data = await api.testModuleConnection(formData.value.baseUrl);
-    if (!res.ok) {
-      if (res.status === 404) {
-        throw new Error(`该地址未提供 /api/meta/status 接口，可能是非 Collector 模块或地址错误`);
-      }
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
 
     if (data.moduleKey) {
       // 检查 moduleKey 是否冲突，如果冲突则自动追加后缀
