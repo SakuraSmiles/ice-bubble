@@ -48,7 +48,7 @@ const adminModule = modulesConfig.modules.find((m: any) => m.key === 'admin');
 const adminUrl = adminModule?.url || 'http://localhost:13000';
 
 // Vite 服务器端口
-const VITE_PORT = 14200;
+const VITE_PORT = 1420;
 
 // API 代理配置
 // 开发模式：所有 /api/* 转发到本地 Express 服务器（端口由 .server-port 文件决定）

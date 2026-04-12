@@ -42,13 +42,13 @@ app.use((_req: Request, res: Response, next) => {
 });
 
 // 处理 OPTIONS 预检请求
-app.options('*', (_req: Request, res: Response) => {
+app.options('/{*path}', (_req: Request, res: Response) => {
   res.status(200).end();
 });
 
 // 返回当前服务器端口
 app.get('/__port', (_req: Request, res: Response) => {
-  res.json({ port: (server.address() as any)?.port ?? START_PORT });
+  res.json({ port: (currentServer?.address() as any)?.port ?? START_PORT });
 });
 
 // 启用配置文件热更新（开发模式）
@@ -64,7 +64,7 @@ app.use('/api', createProxyMiddleware());
 app.use(express.static(join(__dirname, '../../dist')));
 
 // 处理 SPA 路由 - 确保 index.html 被正确返回
-app.get('*', (_req: Request, res: Response) => {
+app.get('/{*path}', (_req: Request, res: Response) => {
   const indexPath = join(__dirname, '../../dist/index.html');
   
   if (existsSync(indexPath)) {
@@ -74,27 +74,33 @@ app.get('*', (_req: Request, res: Response) => {
   }
 });
 
-// 创建 HTTP 服务器
-const server = createServer(app);
+// 追踪当前运行的 server 实例
+let currentServer: ReturnType<typeof createServer> | null = null;
 
-// 尝试启动，端口冲突则尝试下一个
+// 尝试启动，端口冲突则创建新 server 重试
 async function tryListen(port: number): Promise<number | null> {
   return new Promise((resolve) => {
-    server.listen(port, () => {
+    // 每次尝试都创建新的 server 实例
+    const newServer = createServer(app);
+    currentServer = newServer;
+    
+    newServer.listen(port, () => {
       console.log(`[Server] Desktop 启动: http://localhost:${port}`);
       resolve(port);
     });
     
-    server.on('error', (err: NodeJS.ErrnoException) => {
+    newServer.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
-        if (port < MAX_PORT) {
-          console.log(`[Server] 端口 ${port} 已被占用，尝试 ${port + 1}...`);
-          server.close();
-          tryListen(port + 1).then(resolve);
-        } else {
-          console.error('[Server] 没有可用的端口');
-          resolve(null);
-        }
+        newServer.close(() => {
+          if (port < MAX_PORT) {
+            console.log(`[Server] 端口 ${port} 已被占用，尝试 ${port + 1}...`);
+            tryListen(port + 1).then(resolve);
+          } else {
+            console.error('[Server] 没有可用的端口 (14000-14010 均被占用)');
+            console.error('[Server] 请关闭占用这些端口的进程后重试');
+            process.exit(1);
+          }
+        });
       } else {
         console.error('[Server] 启动错误:', err);
         resolve(null);
@@ -107,10 +113,14 @@ async function tryListen(port: number): Promise<number | null> {
 function gracefulShutdown() {
   console.log('[Server] 正在关闭...');
   disableHotReload();
-  server.close(() => {
-    console.log('[Server] 已关闭');
+  if (currentServer) {
+    currentServer.close(() => {
+      console.log('[Server] 已关闭');
+      process.exit(0);
+    });
+  } else {
     process.exit(0);
-  });
+  }
 }
 
 process.on('SIGTERM', gracefulShutdown);
@@ -130,4 +140,4 @@ async function start() {
 
 start();
 
-export { app, server };
+export { app };

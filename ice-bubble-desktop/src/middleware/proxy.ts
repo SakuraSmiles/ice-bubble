@@ -5,12 +5,12 @@
 
 import http from 'http';
 import { Request, Response } from 'express';
-import { ModulesConfig, findModuleByPath, getConfig } from '../config/index.js';
+import { findModuleByPath } from '../config/index.js';
 
 /**
  * 创建代理中间件
  */
-export function createProxyMiddleware(_config?: ModulesConfig) {
+export function createProxyMiddleware() {
   return async (req: Request, res: Response) => {
     const originalPath = req.originalUrl || req.url;
     
@@ -68,13 +68,19 @@ export function createProxyMiddleware(_config?: ModulesConfig) {
       // 6. 返回响应
       res.status(result.status);
       
-      // 设置内容类型（如果代理返回了的话）
+      // 设置内容类型
       if (result.contentType) {
         res.setHeader('Content-Type', result.contentType);
       }
       
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.end(result.data);
+      // 对于二进制数据（如图片），使用 Buffer
+      if (result.isBinary && result.buffer) {
+        res.setHeader('Content-Length', result.buffer.length);
+        res.end(result.buffer);
+      } else {
+        // 对于文本数据，使用字符串
+        res.end(result.data);
+      }
     } catch (error) {
       console.error(`[Proxy] 转发请求失败:`, error);
       res.status(502).json({ error: `Failed to reach ${targetModule.key}` });
@@ -96,7 +102,9 @@ interface ForwardOptions {
 interface ForwardResult {
   status: number;
   data: string;
+  buffer?: Buffer;
   contentType?: string;
+  isBinary: boolean;
 }
 
 function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
@@ -114,24 +122,33 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
     console.log(`[Proxy] -> ${options.method} ${url.href}`);
 
     const proxyReq = http.request(proxyOptions, (proxyRes) => {
-      let data = '';
-      
-      // 处理 chunked 编码
-      if (proxyRes.headers['transfer-encoding'] === 'chunked') {
-        // 对于 chunked 响应，直接转发
-        const chunks: string[] = [];
+      const contentType = proxyRes.headers['content-type'] as string;
+      const isBinary = contentType && (
+        contentType.startsWith('image/') ||
+        contentType.startsWith('audio/') ||
+        contentType.startsWith('video/') ||
+        contentType === 'application/octet-stream'
+      );
+
+      if (isBinary) {
+        // 二进制数据处理
+        const chunks: Buffer[] = [];
         proxyRes.on('data', (chunk: Buffer) => {
-          chunks.push(chunk.toString());
-          data += chunk.toString();
+          chunks.push(chunk);
         });
         proxyRes.on('end', () => {
+          const buffer = Buffer.concat(chunks);
           resolve({
             status: proxyRes.statusCode || 500,
-            data,
-            contentType: proxyRes.headers['content-type'] as string
+            data: '',
+            buffer,
+            contentType,
+            isBinary: true
           });
         });
       } else {
+        // 文本数据处理
+        let data = '';
         proxyRes.on('data', (chunk: Buffer) => {
           data += chunk.toString();
         });
@@ -139,7 +156,8 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
           resolve({
             status: proxyRes.statusCode || 500,
             data,
-            contentType: proxyRes.headers['content-type'] as string
+            contentType,
+            isBinary: false
           });
         });
       }
@@ -162,12 +180,4 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
 
     proxyReq.end();
   });
-}
-
-/**
- * 获取当前配置中所有启用的模块
- */
-export function getEnabledModules() {
-  const config = getConfig();
-  return config.modules.filter(m => m.enabled);
 }
