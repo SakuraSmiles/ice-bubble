@@ -395,6 +395,7 @@ export class DBManager {
           message_count INTEGER DEFAULT 0,
           first_active_at TIMESTAMP,
           last_active_at TIMESTAMP,
+          model TEXT,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -522,6 +523,13 @@ export class DBManager {
     switch (version) {
       case 1:
         // 初始版本，表已创建
+        break;
+      case 2:
+        // 迁移：给 admin_agents 表添加 model 字段
+        this.db.exec(`
+          ALTER TABLE admin_agents ADD COLUMN model TEXT;
+        `);
+        logger.info('Migration v2: added model column to admin_agents');
         break;
       // 可以添加更多版本的迁移逻辑
       default:

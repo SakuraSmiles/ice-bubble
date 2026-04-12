@@ -480,8 +480,8 @@ onUnmounted(() => {
               </el-button>
               <el-button
                 v-if="mod.moduleKey !== 'admin'"
-                :type="mod.enabled ? 'warning' : 'success'"
-                class="action-btn"
+                :type="mod.enabled ? '' : 'success'"
+                :class="['action-btn', mod.enabled ? 'btn-stop' : 'btn-start']"
                 :loading="cardLoading[mod.moduleKey]"
                 :disabled="cardLoading[mod.moduleKey]"
                 @click.stop="toggleModule(mod)"
@@ -581,6 +581,18 @@ onUnmounted(() => {
 .card-actions-bottom .action-btn {
   flex: 1;
   width: 0;
+}
+
+/* 停用按钮：悬停黄色浅底 */
+.card-actions-bottom .btn-stop:hover {
+  background: var(--color-accent-yellow-subtle) !important;
+  border-color: var(--color-accent-yellow) !important;
+  color: var(--color-accent-yellow) !important;
+}
+
+/* 停用按钮：icon 也变黄色 */
+.card-actions-bottom .btn-stop:hover .el-icon {
+  color: var(--color-accent-yellow) !important;
 }
 
 
@@ -707,7 +719,7 @@ onUnmounted(() => {
 .info-value.url {
   font-family: monospace;
   font-size: 12px;
-  color: var(--color-accent-blue);
+  color: var(--color-accent-green);
 }
 
 .info-value.time {

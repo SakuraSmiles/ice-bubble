@@ -96,10 +96,15 @@
   --color-primary: #24292e;
   --color-border: #d1d5da;
   --color-accent-blue: #0969da;
+  --color-accent-blue-subtle: #ddf4ff;
   --color-accent-green: #1a7f37;
+  --color-accent-green-subtle: #dafbe1;
   --color-accent-red: #cf222e;
+  --color-accent-red-subtle: #ffebe9;
   --color-accent-yellow: #9a6700;
+  --color-accent-yellow-subtle: #fff8c5;
   --color-accent-orange: #bc4c00;
+  --color-accent-orange-subtle: #fff1e5;
   --color-bg: #ffffff;
   --color-bg-subtle: #f6f8fa;
   --color-text: #24292e;

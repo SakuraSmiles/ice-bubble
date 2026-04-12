@@ -5,6 +5,9 @@
  */
 
 import type { Database } from 'better-sqlite3';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 // ========== 类型定义 ==========
 
@@ -43,6 +46,7 @@ export interface AdminAgent {
   message_count: number;
   first_active_at: string | null;
   last_active_at: string | null;
+  model: string | null;
   updated_at: string;
 }
 
@@ -230,27 +234,130 @@ export class DataRepository {
    * 更新 agents 表（从 sessions 聚合）
    */
   refreshAgents(): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO admin_agents (agent_id, agent_name, session_count, message_count, first_active_at, last_active_at, updated_at)
+    // 1. 读取 openclaw.json 获取 agent 昵称
+    const agentNames = this.loadAgentNamesFromConfig();
+
+    // 2. 获取每个 agent 的 model（从最新一条 agent 消息）
+    const agentModels = this.loadAgentModelsFromMessages();
+
+    // 3. 从 sessions 聚合数据
+    const rows = this.db.prepare(`
       SELECT
         COALESCE(agent_id, 'unknown') as agent_id,
-        COALESCE(agent_id, 'unknown') as agent_name,
         COUNT(DISTINCT session_key) as session_count,
         SUM(message_count) as message_count,
         MIN(first_message_at) as first_active_at,
-        MAX(last_message_at) as last_active_at,
-        CURRENT_TIMESTAMP as updated_at
+        MAX(last_message_at) as last_active_at
       FROM admin_sessions
       WHERE agent_id IS NOT NULL
       GROUP BY agent_id
+    `).all() as Array<{
+      agent_id: string;
+      session_count: number;
+      message_count: number;
+      first_active_at: string | null;
+      last_active_at: string | null;
+    }>;
+
+    // 4. Upsert 每个 agent
+    const upsert = this.db.prepare(`
+      INSERT INTO admin_agents (agent_id, agent_name, session_count, message_count, first_active_at, last_active_at, model, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(agent_id) DO UPDATE SET
+        agent_name = excluded.agent_name,
         session_count = excluded.session_count,
         message_count = excluded.message_count,
         first_active_at = excluded.first_active_at,
         last_active_at = excluded.last_active_at,
+        model = excluded.model,
         updated_at = excluded.updated_at
     `);
-    stmt.run();
+
+    const upsertAll = this.db.transaction(() => {
+      for (const row of rows) {
+        const agentName = agentNames.get(row.agent_id) ?? row.agent_id;
+        const model = agentModels.get(row.agent_id) ?? null;
+        upsert.run(
+          row.agent_id,
+          agentName,
+          row.session_count,
+          row.message_count,
+          row.first_active_at,
+          row.last_active_at,
+          model
+        );
+      }
+    });
+
+    upsertAll();
+  }
+
+  /**
+   * 从 openclaw.json 读取 agent 昵称映射
+   */
+  private loadAgentNamesFromConfig(): Map<string, string> {
+    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+    const map = new Map<string, string>();
+
+    try {
+      if (!fs.existsSync(configPath)) {
+        console.log('[DataRepository] openclaw.json not found, using empty agent names');
+        return map;
+      }
+
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
+      if (config.agents?.list) {
+        for (const agent of config.agents.list) {
+          if (agent.id && agent.name) {
+            map.set(agent.id, agent.name);
+          }
+        }
+      }
+
+      console.log(`[DataRepository] Loaded ${map.size} agent names from openclaw.json`);
+    } catch (error) {
+      console.warn('[DataRepository] Failed to load agent names from openclaw.json:', error);
+    }
+
+    return map;
+  }
+
+  /**
+   * 从 admin_messages 聚合每个 agent 的最新 model
+   */
+  private loadAgentModelsFromMessages(): Map<string, string> {
+    const map = new Map<string, string>();
+
+    try {
+      // 通过 session_key 关联 admin_sessions 获取 agent_id
+      // 然后取每个 agent 最新一条 agent 消息的 model
+      const rows = this.db.prepare(`
+        SELECT s.agent_id, m.model
+        FROM admin_messages m
+        INNER JOIN admin_sessions s ON m.session_key = s.session_key
+        INNER JOIN (
+          SELECT s.agent_id, MAX(m.timestamp) as max_ts
+          FROM admin_messages m
+          INNER JOIN admin_sessions s ON m.session_key = s.session_key
+          WHERE m.message_type = 'agent'
+            AND m.model IS NOT NULL AND m.model != ''
+            AND s.agent_id IS NOT NULL
+          GROUP BY s.agent_id
+        ) latest ON s.agent_id = latest.agent_id AND m.timestamp = latest.max_ts
+        WHERE s.agent_id IS NOT NULL
+      `).all() as Array<{ agent_id: string; model: string }>;
+
+      for (const row of rows) {
+        map.set(row.agent_id, row.model);
+      }
+
+      console.log(`[DataRepository] Loaded ${map.size} agent models from messages`);
+    } catch (error) {
+      console.warn('[DataRepository] Failed to load agent models from messages:', error);
+    }
+
+    return map;
   }
 
   /**
@@ -258,6 +365,40 @@ export class DataRepository {
    */
   getAgents(): AdminAgent[] {
     return this.db.prepare('SELECT * FROM admin_agents ORDER BY last_active_at DESC').all() as AdminAgent[];
+  }
+
+  /**
+   * 获取按 agent 分组的 sessions（用于 Desktop 下拉列表）
+   * @param limitPerAgent 每个 agent 最多返回的 session 数量
+   */
+  getGroupedSessions(limitPerAgent: number = 5): { agentId: string; totalCount: number; sessions: AdminSession[] }[] {
+    // 获取所有 sessions，按 agent_id 分组
+    const allSessions = this.db.prepare(`
+      SELECT * FROM admin_sessions
+      ORDER BY agent_id, last_message_at DESC
+    `).all() as AdminSession[];
+
+    const groups: Record<string, AdminSession[]> = {};
+    for (const session of allSessions) {
+      if (!groups[session.agent_id]) {
+        groups[session.agent_id] = [];
+      }
+      groups[session.agent_id].push(session);
+    }
+
+    // 转换为数组，每个 group 限制数量并保留总数
+    return Object.entries(groups)
+      .map(([agentId, sessions]) => ({
+        agentId,
+        totalCount: sessions.length,
+        sessions: sessions.slice(0, limitPerAgent),
+      }))
+      .sort((a, b) => {
+        // 按最新 session 的 last_message_at 倒序排列 groups
+        const aLatest = a.sessions[0]?.last_message_at ?? '';
+        const bLatest = b.sessions[0]?.last_message_at ?? '';
+        return bLatest.localeCompare(aLatest);
+      });
   }
 
   // ========== Sync Progress ==========

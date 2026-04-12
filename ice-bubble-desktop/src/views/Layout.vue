@@ -5,8 +5,9 @@ const route = useRoute();
 
 const menuItems = [
   { path: '/', label: '工作台' },
-  { path: '/modules', label: '模块管理' },
-  { path: '/sessions', label: '会话管理' },
+  { path: '/modules', label: '模块' },
+  { path: '/agents', label: '成员' },
+  { path: '/sessions', label: '会话' },
 ];
 </script>
 
@@ -36,22 +37,13 @@ const menuItems = [
             <svg v-else-if="item.path === '/sessions'" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <path d="M2.5 3.5a.5.5 0 01.5-.5H13a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0 4a.5.5 0 01.5-.5h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0 4a.5.5 0 01.5-.5h6a.5.5 0 010 1H3a.5.5 0 01-.5-.5z"/>
             </svg>
+            <svg v-else-if="item.path === '/agents'" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 3.5c.83 0 1.5-.67 1.5-1.5S3.83 8.5 3 8.5 1.5 9.17 1.5 10s.67 1.5 1.5 1.5zm5 0c.83 0 1.5-.67 1.5-1.5S8.83 8.5 8 8.5 6.5 9.17 6.5 10s.67 1.5 1.5 1.5zm-3 3a4 4 0 01-4 0c0-1.5.5-3 2-4.5V13h8v-1.5c1.5 1.5 2 3 2 4.5a4 4 0 01-4 0z"/>
+            </svg>
           </span>
           <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
       </nav>
-
-      <div class="sidebar-footer">
-        <div class="footer-row">
-          <span class="version">v1.0.0</span>
-          <button class="settings-btn" title="设置">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 4.754a3.246 3.246 0 100 6.492 3.246 3.246 0 000-6.492zM5.754 8a2.246 2.246 0 114.492 0 2.246 2.246 0 01-4.492 0z"/>
-              <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 01-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 01-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 01.52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 011.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 011.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 01.52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 01-.52-1.255l.292-.16c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 01-1.255-.52l-.094-.319z"/>
-            </svg>
-          </button>
-        </div>
-      </div>
     </aside>
 
     <main class="main-content">
@@ -108,24 +100,37 @@ const menuItems = [
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 12px;
+  padding: 10px 12px;
   border-radius: var(--radius);
   color: var(--color-text-secondary);
   text-decoration: none;
   font-size: 14px;
   transition: background 0.15s, color 0.15s;
+  position: relative;
 }
 
 .nav-item:hover {
-  background: var(--color-bg-subtle);
+  background: var(--el-fill-color-light);
   color: var(--color-text);
 }
 
 .nav-item.active {
-  background: var(--color-bg-subtle);
-  color: var(--color-text);
-  font-weight: 600;
+  background: var(--color-accent-blue-subtle);
+  color: var(--color-accent-blue);
+  font-weight: 500;
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  background: var(--color-accent-blue);
+  border-radius: 0 2px 2px 0;
 }
 
 .nav-icon {

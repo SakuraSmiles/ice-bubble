@@ -9,6 +9,7 @@ import Layout from './views/Layout.vue';
 import Overview from './views/Overview.vue';
 import Modules from './views/Modules.vue';
 import Sessions from './views/Sessions.vue';
+import Agents from './views/Agents.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -20,6 +21,7 @@ const router = createRouter({
         { path: '', component: Overview },
         { path: 'modules', component: Modules },
         { path: 'sessions', component: Sessions },
+        { path: 'agents', component: Agents },
       ],
     },
   ],

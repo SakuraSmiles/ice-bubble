@@ -94,6 +94,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
+    await dbManager.migrate(2);  // 执行数据库迁移（添加 model 字段）
     const repository = new ModuleRepository(dbManager.getConnection());
     console.log('[Admin] 数据库初始化完成');
 

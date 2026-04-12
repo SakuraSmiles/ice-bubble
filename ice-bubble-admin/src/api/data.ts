@@ -44,6 +44,22 @@ export function createDataRouter(repository: DataRepository): Router {
   });
 
   /**
+   * GET /api/data/sessions/grouped
+   * 获取按 agent 分组的 sessions（用于 Desktop 下拉列表）
+   * Query: limitPerAgent - 每个 agent 最多返回的 session 数量，默认 5
+   */
+  router.get('/sessions/grouped', (req: Request, res: Response) => {
+    const limitPerAgent = Math.min(parseInt(String(req.query.limitPerAgent ?? '5')), 20);
+    const groups = repository.getGroupedSessions(limitPerAgent);
+    res.json({
+      count: groups.reduce((sum, g) => sum + g.sessions.length, 0),
+      total: groups.reduce((sum, g) => sum + g.totalCount, 0),
+      limitPerAgent,
+      groups,
+    });
+  });
+
+  /**
    * GET /api/data/sessions/:key
    * 获取单个 session
    */

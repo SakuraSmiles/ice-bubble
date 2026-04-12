@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import PageHeader from '../components/PageHeader.vue';
@@ -51,29 +51,36 @@ const sessionOptions = computed(() => {
   }));
 });
 
+const SESSIONS_LIMIT_PER_AGENT = 5;
+
 const groupedSessions = computed(() => {
-  const groups: Record<string, typeof sessionOptions.value> = {};
+  const groups: Record<string, { sessions: typeof sessionOptions.value; totalCount: number }> = {};
   
   for (const opt of sessionOptions.value) {
     const agentId = opt._agentId;
     if (!groups[agentId]) {
-      groups[agentId] = [];
+      groups[agentId] = { sessions: [], totalCount: 0 };
     }
-    groups[agentId].push(opt);
+    groups[agentId].sessions.push(opt);
+    groups[agentId].totalCount++;
   }
   
   // Sort sessions within each group by last_message_at desc
-  for (const sessions of Object.values(groups)) {
-    sessions.sort((a, b) => {
+  for (const group of Object.values(groups)) {
+    group.sessions.sort((a, b) => {
       const ta = a._lastAt ? new Date(a._lastAt).getTime() : 0;
       const tb = b._lastAt ? new Date(b._lastAt).getTime() : 0;
       return tb - ta;
     });
   }
   
-  // Convert to array and sort groups by most recent session's last_message_at desc
+  // Convert to array, limit displayed sessions per agent, sort groups by most recent
   return Object.entries(groups)
-    .map(([agentId, sessions]) => ({ agentId, sessions }))
+    .map(([agentId, group]) => ({
+      agentId,
+      sessions: group.sessions.slice(0, SESSIONS_LIMIT_PER_AGENT),
+      totalCount: group.totalCount,
+    }))
     .sort((a, b) => {
       const aLatest = a.sessions[0]?._lastAt ? new Date(a.sessions[0]._lastAt).getTime() : 0;
       const bLatest = b.sessions[0]?._lastAt ? new Date(b.sessions[0]._lastAt).getTime() : 0;
@@ -117,10 +124,17 @@ function formatRelativeTime(dateString: string | null): string {
 async function fetchAllSessions() {
   loading.value = true;
   try {
-    const res = await fetch('/api/data/sessions');
+    const res = await fetch('/api/data/sessions?limit=50');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     allSessions.value = data.sessions || [];
+    // 自动选中第一条会话
+    if (allSessions.value.length > 0 && !selectedSessionKey.value) {
+      const first = allSessions.value[0];
+      selectedSession.value = first;
+      selectedSessionKey.value = first.session_key;
+      chatPanelRef.value?.fetchMessages();
+    }
   } catch (e: any) {
     ElMessage.error('获取会话列表失败: ' + (e.message || e));
   } finally {
@@ -141,16 +155,30 @@ async function handleRefresh() {
   }
 }
 
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
 onMounted(async () => {
   await fetchAllSessions();
-  // 每 30 秒自动刷新会话列表
-  setInterval(fetchAllSessions, 30000);
+  // 每 30 秒自动刷新会话列表和当前会话消息
+  refreshTimer = setInterval(() => {
+    fetchAllSessions();
+    if (selectedSession.value) {
+      chatPanelRef.value?.fetchMessages();
+    }
+  }, 30000);
+});
+
+onUnmounted(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
 });
 </script>
 
 <template>
   <div class="sessions-page">
-    <PageHeader :title="'会话管理'" :subtitle="subtitle">
+    <PageHeader :title="'会话'" :subtitle="subtitle">
       <el-button circle size="small" :loading="loading" @click="handleRefresh" title="刷新">
         <el-icon><Refresh /></el-icon>
       </el-button>
@@ -159,10 +187,8 @@ onMounted(async () => {
         v-model="selectedSessionKey"
         placeholder="选择会话"
         filterable
-        clearable
         :filter-method="(val: string) => { searchQuery = val; }"
         @change="(key: string) => handleSelectSession(key)"
-        @clear="() => { selectedSession = null; selectedSessionKey = null; }"
         class="session-selector"
         no-data-text="无匹配会话"
         placeholder-text="选择会话"
@@ -177,7 +203,7 @@ onMounted(async () => {
         <el-option-group
           v-for="group in groupedSessions"
           :key="group.agentId"
-          :label="group.agentId + ' (' + group.sessions.length + ')'"
+          :label="group.agentId + ' (' + group.totalCount + ')'"
         >
           <el-option
             v-for="opt in group.sessions"
