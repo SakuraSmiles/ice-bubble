@@ -30,6 +30,30 @@ const totalMessages = ref(0);
 // agentId → ActivityDay[]
 const activityMap = ref<Record<string, ActivityDay[]>>({});
 
+// 热力图 tooltip 状态
+const tooltipState = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  date: '',
+  count: 0
+});
+
+function showTooltip(event: MouseEvent, day: ActivityDay) {
+  if (day.date === '') return;
+  tooltipState.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    date: day.date,
+    count: day.count
+  };
+}
+
+function hideTooltip() {
+  tooltipState.value.visible = false;
+}
+
 async function fetchAgents() {
   loading.value = true;
   try {
@@ -284,10 +308,22 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
                   v-for="(day, di) in week"
                   :key="di"
                   :class="['heatmap-cell', 'level-' + (day.count < 0 ? -1 : getActivityLevel(day.count))]"
+                  @mouseenter="showTooltip($event, day)"
+                  @mouseleave="hideTooltip"
                 ></div>
               </div>
             </div>
           </div>
+
+            <!-- 热力图 Tooltip -->
+            <div
+              v-if="tooltipState.visible"
+              class="heatmap-tooltip"
+              :style="{ left: tooltipState.x + 'px', top: tooltipState.y + 'px' }"
+            >
+              <div class="tooltip-date">{{ tooltipState.date }}</div>
+              <div class="tooltip-count">{{ tooltipState.count }} 条消息</div>
+            </div>
           </div>
 
           <!-- 分隔线 -->
@@ -534,4 +570,38 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .heatmap-cell.level-2 { background: #40c463; }
 .heatmap-cell.level-3 { background: #30a14e; }
 .heatmap-cell.level-4 { background: #216e39; }
+
+/* 热力图 Tooltip */
+.heatmap-tooltip {
+  position: fixed;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  z-index: 9999;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+  margin-top: -8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.heatmap-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.85);
+}
+
+.tooltip-date {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.tooltip-count {
+  color: rgba(255, 255, 255, 0.8);
+}
 </style>
