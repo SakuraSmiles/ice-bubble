@@ -546,18 +546,19 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .heatmap-grid {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
 }
 
 .heatmap-week {
   display: flex;
-  gap: 3px;
+  flex-direction: row-reverse;
+  gap: 5px;
 }
 
 .heatmap-cell {
-  width: 11px;
-  height: 11px;
-  border-radius: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
   flex-shrink: 0;
 }
 
@@ -576,13 +577,13 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   position: fixed;
   background: rgba(0, 0, 0, 0.85);
   color: #fff;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
   z-index: 9999;
   pointer-events: none;
   transform: translate(-50%, -100%);
-  margin-top: -8px;
+  margin-top: -10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
