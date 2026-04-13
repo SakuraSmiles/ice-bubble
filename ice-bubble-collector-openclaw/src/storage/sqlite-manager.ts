@@ -556,6 +556,8 @@ export class SQLiteManager {
             }
 
             // 更新 session 的 message_count 和 last_message_at
+            // 使用 UPSERT 模式：UPDATE 失败则 INSERT
+            // 这样可以处理 session 已存在和不存在两种情况
             const updateSession = this.db.prepare(`
                 UPDATE sessions
                 SET message_count = message_count + ?,
@@ -564,9 +566,35 @@ export class SQLiteManager {
                 WHERE session_key = ?
             `);
 
+            // 当 session 不存在时，需要 INSERT 完整的记录
+            // 从 sessionKey 解析 agent_id 和 channel
+            const insertSession = this.db.prepare(`
+                INSERT OR IGNORE INTO sessions 
+                    (session_key, agent_id, channel, message_count, updated_at, last_message_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            `);
+
+            // 解析 sessionKey 提取 agent_id 和 channel
+            // 格式: agent:{agentId}:{channel}:{accountId}:{type}:{targetId}
+            const parseSessionKey = (key: string) => {
+                const parts = key.split(':');
+                return {
+                    agentId: parts[1] || 'unknown',
+                    channel: parts[2] || 'unknown',
+                };
+            };
+
             const now = new Date().toISOString();
             for (const [sessionKey, stats] of sessionStats) {
-                updateSession.run(stats.count, now, stats.lastMessageAt.toISOString(), sessionKey);
+                // 1. 先尝试 UPDATE
+                const updateResult = updateSession.run(stats.count, now, stats.lastMessageAt instanceof Date ? stats.lastMessageAt.toISOString() : stats.lastMessageAt, sessionKey);
+
+                // 2. 如果 UPDATE 影响 0 行，说明 session 不存在，需要 INSERT
+                if (updateResult.changes === 0) {
+                    const { agentId, channel } = parseSessionKey(sessionKey);
+                    insertSession.run(sessionKey, agentId, channel, stats.count, now, stats.lastMessageAt instanceof Date ? stats.lastMessageAt.toISOString() : stats.lastMessageAt);
+                    sqliteLogger.debug(`Session 不存在已创建: ${sessionKey}, agent=${agentId}, channel=${channel}`);
+                }
             }
 
             return { inserted: actualInserts, duplicates };
