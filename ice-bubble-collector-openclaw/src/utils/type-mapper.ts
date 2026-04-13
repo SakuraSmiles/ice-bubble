@@ -89,9 +89,7 @@ export class SessionMapper {
       peer_id: session.peerId || null,
       guild_id: session.guildId || null,
       created_at: session.createdAt.toISOString(),
-      updated_at: session.updatedAt.toISOString(),
-      message_count: session.messageCount,
-      last_message_at: session.lastMessageAt?.toISOString() || null
+      updated_at: session.updatedAt.toISOString()
     };
   }
 
@@ -107,9 +105,7 @@ export class SessionMapper {
       peerId: row.peer_id || undefined,
       guildId: row.guild_id || undefined,
       createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
-      messageCount: row.message_count,
-      lastMessageAt: row.last_message_at ? new Date(row.last_message_at) : undefined
+      updatedAt: new Date(row.updated_at)
     };
   }
 }
@@ -196,7 +192,7 @@ export function getDbColumns(entity: 'session_messages' | 'sessions' | 'agents')
     ],
     sessions: [
       'id', 'session_key', 'agent_id', 'channel', 'account_id',
-      'peer_id', 'guild_id', 'created_at', 'updated_at', 'message_count', 'last_message_at'
+      'peer_id', 'guild_id', 'created_at', 'updated_at'
     ],
     agents: [
       'id', 'agent_id', 'agent_name', 'config_json', 'status',

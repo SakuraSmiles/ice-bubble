@@ -119,9 +119,7 @@ export class SQLiteManager {
                 peer_id TEXT,
                 guild_id TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                message_count INTEGER DEFAULT 0,
-                last_message_at TIMESTAMP
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE INDEX IF NOT EXISTS idx_sessions_agent_id ON sessions(agent_id);
@@ -174,14 +172,14 @@ export class SQLiteManager {
             const hasWorkspace = columns.some(col => col.name === 'workspace');
             if (!hasWorkspace) {
                 this.db.exec('ALTER TABLE agents ADD COLUMN workspace TEXT');
-                logger.info('[Migration] Added workspace column to agents table');
+                sqliteLogger.info('[Migration] Added workspace column to agents table');
             }
 
             // 迁移：检查并添加 source 列
             const hasSource = columns.some(col => col.name === 'source');
             if (!hasSource) {
                 this.db.exec('ALTER TABLE agents ADD COLUMN source TEXT DEFAULT "openclaw"');
-                logger.info('[Migration] Added source column to agents table');
+                sqliteLogger.info('[Migration] Added source column to agents table');
             }
         } catch (e) {
             // 忽略错误（表可能不存在或列已存在）
@@ -291,7 +289,7 @@ export class SQLiteManager {
                 }
             }
         } catch (error) {
-            sqliteLogger.warn('Migration 1 skipped or failed:', error instanceof Error ? error.message : String(error));
+            sqliteLogger.warn('Migration 1 skipped or failed: ' + (error instanceof Error ? error.message : String(error)));
         }
     }
 
@@ -311,7 +309,7 @@ export class SQLiteManager {
 
     /**
      * 插入或更新会话（upsert）
-     * - 存在则更新 updated_at 和 message_count
+     * - 存在则更新 updated_at
      * - 不存在则插入新记录
      */
     async upsertSession(session: Session): Promise<void> {
@@ -331,9 +329,7 @@ export class SQLiteManager {
                 INSERT INTO sessions (${columns.join(', ')})
                 VALUES (${placeholders})
                 ON CONFLICT(session_key) DO UPDATE SET
-                    updated_at = excluded.updated_at,
-                    message_count = excluded.message_count,
-                    last_message_at = excluded.last_message_at
+                    updated_at = excluded.updated_at
             `);
 
             // 按列顺序获取值
@@ -430,8 +426,6 @@ export class SQLiteManager {
             guildId: row.guild_id as string | undefined,
             createdAt: new Date(row.created_at as string | number | Date),
             updatedAt: new Date(row.updated_at as string | number | Date),
-            messageCount: row.message_count as number,
-            lastMessageAt: row.last_message_at ? new Date(row.last_message_at as string | number | Date) : undefined,
         };
     }
 
@@ -475,7 +469,6 @@ export class SQLiteManager {
     /**
      * 批量插入消息（核心性能方法）
      * - 使用事务批量插入
-     * - 自动更新 session 的 message_count
      * - 返回实际插入数（排除重复）
      *
      * @returns 实际插入的消息数量
@@ -518,84 +511,6 @@ export class SQLiteManager {
             // 使用 IMMEDIATE 事务模式，避免并发冲突
             const actualInserts = insertMany.immediate(messages);
             const duplicates = messages.length - actualInserts;
-
-            // 计算每个 session 的最新消息时间和实际插入的消息数量
-            // 注意：只统计实际插入的消息，避免重复计数
-            const sessionStats = new Map<string, { count: number; lastMessageAt: Date }>();
-            const dbRows = SessionMessageMapper.batchToDb(messages);
-            
-            // 重新执行一次获取实际插入的 message_id 列表
-            const messageIds = dbRows.map(row => row.message_id).filter(Boolean);
-            
-            if (messageIds.length > 0) {
-                // 查询哪些 message_id 已经存在于数据库中（重复）
-                const placeholders = getPlaceholders(messageIds);
-                const existingStmt = this.db!.prepare(`
-                    SELECT message_id, session_key, timestamp 
-                    FROM session_messages 
-                    WHERE message_id IN (${placeholders})
-                `);
-                const existingRows = existingStmt.all(...messageIds) as SqlRow[];
-                const existingMessageIds = new Set(existingRows.map(r => r.message_id as string));
-
-                // 只对实际插入的消息更新统计
-                for (let i = 0; i < messages.length; i++) {
-                    const msg = messages[i];
-                    const dbRow = dbRows[i];
-                    // 跳过已存在的重复消息
-                    if (existingMessageIds.has(dbRow.message_id as string)) {
-                        continue;
-                    }
-                    const stats = sessionStats.get(msg.sessionKey) || { count: 0, lastMessageAt: new Date(0) };
-                    stats.count++;
-                    if (msg.timestamp > stats.lastMessageAt) {
-                        stats.lastMessageAt = msg.timestamp;
-                    }
-                    sessionStats.set(msg.sessionKey, stats);
-                }
-            }
-
-            // 更新 session 的 message_count 和 last_message_at
-            // 使用 UPSERT 模式：UPDATE 失败则 INSERT
-            // 这样可以处理 session 已存在和不存在两种情况
-            const updateSession = this.db.prepare(`
-                UPDATE sessions
-                SET message_count = message_count + ?,
-                    updated_at = ?,
-                    last_message_at = ?
-                WHERE session_key = ?
-            `);
-
-            // 当 session 不存在时，需要 INSERT 完整的记录
-            // 从 sessionKey 解析 agent_id 和 channel
-            const insertSession = this.db.prepare(`
-                INSERT OR IGNORE INTO sessions 
-                    (session_key, agent_id, channel, message_count, updated_at, last_message_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            `);
-
-            // 解析 sessionKey 提取 agent_id 和 channel
-            // 格式: agent:{agentId}:{channel}:{accountId}:{type}:{targetId}
-            const parseSessionKey = (key: string) => {
-                const parts = key.split(':');
-                return {
-                    agentId: parts[1] || 'unknown',
-                    channel: parts[2] || 'unknown',
-                };
-            };
-
-            const now = new Date().toISOString();
-            for (const [sessionKey, stats] of sessionStats) {
-                // 1. 先尝试 UPDATE
-                const updateResult = updateSession.run(stats.count, now, stats.lastMessageAt instanceof Date ? stats.lastMessageAt.toISOString() : stats.lastMessageAt, sessionKey);
-
-                // 2. 如果 UPDATE 影响 0 行，说明 session 不存在，需要 INSERT
-                if (updateResult.changes === 0) {
-                    const { agentId, channel } = parseSessionKey(sessionKey);
-                    insertSession.run(sessionKey, agentId, channel, stats.count, now, stats.lastMessageAt instanceof Date ? stats.lastMessageAt.toISOString() : stats.lastMessageAt);
-                    sqliteLogger.debug(`Session 不存在已创建: ${sessionKey}, agent=${agentId}, channel=${channel}`);
-                }
-            }
 
             return { inserted: actualInserts, duplicates };
         } catch (error) {
@@ -697,45 +612,19 @@ export class SQLiteManager {
             }
         }
 
-        // 批量更新 session 统计
-        await this.updateSessionStats(messages);
-
         return totalInserted;
     }
 
     /**
-     * 更新 Session 统计信息（批量优化）
+     * 更新 Session 统计信息（已废弃，统计由 Admin 计算）
      */
-    private async updateSessionStats(messages: SessionMessage[]): Promise<void> {
-        if (!this.db || messages.length === 0) return;
-
-        const sessionCounts = new Map<string, number>();
-        const sessionLastMessage = new Map<string, Date>();
-
-        for (const msg of messages) {
-            const count = sessionCounts.get(msg.sessionKey) || 0;
-            sessionCounts.set(msg.sessionKey, count + 1);
-
-            // 记录最新的消息时间
-            const currentLast = sessionLastMessage.get(msg.sessionKey);
-            if (!currentLast || msg.timestamp > currentLast) {
-                sessionLastMessage.set(msg.sessionKey, msg.timestamp);
-            }
-        }
-
-        const updateStmt = this.db.prepare(`
-            UPDATE sessions
-            SET message_count = message_count + ?,
-                updated_at = ?,
-                last_message_at = ?
-            WHERE session_key = ?
-        `);
-
-        const now = new Date().toISOString();
-        for (const [sessionKey, count] of sessionCounts) {
-            const lastMessageAt = sessionLastMessage.get(sessionKey);
-            updateStmt.run(count, now, lastMessageAt?.toISOString() || now, sessionKey);
-        }
+    /**
+     * 更新 Session 统计信息（已废弃，统计由 Admin 计算）
+     * @deprecated 由 Admin 的 computeSessionStats() 计算
+     */
+    // @ts-ignore -- 已废弃，保留方法签名由 Admin 计算
+    private async _updateSessionStats(_messages: SessionMessage[]): Promise<void> {
+        // 统计功能已移除，由 Admin 的 computeSessionStats() 计算
     }
 
     /**
@@ -1105,9 +994,13 @@ export class SQLiteManager {
             `);
             const messagesResult = deleteMessages.run(cutoffISO);
 
-            // 删除空会话
+            // 删除空会话（无对应消息的 session）
             const deleteSessions = this.db.prepare(`
-                DELETE FROM sessions WHERE message_count = 0 AND updated_at < ?
+                DELETE FROM sessions 
+                WHERE updated_at < ?
+                AND NOT EXISTS (
+                    SELECT 1 FROM session_messages WHERE session_messages.session_key = sessions.session_key
+                )
             `);
             const sessionsResult = deleteSessions.run(cutoffISO);
 

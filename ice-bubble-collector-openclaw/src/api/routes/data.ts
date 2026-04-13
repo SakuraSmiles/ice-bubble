@@ -159,10 +159,6 @@ function sessionToJson(s: Session): Record<string, unknown> {
         guild_id: s.guildId ?? null,
         created_at: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
         updated_at: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : s.updatedAt,
-        message_count: s.messageCount,
-        last_message_at: s.lastMessageAt
-            ? (s.lastMessageAt instanceof Date ? s.lastMessageAt.toISOString() : s.lastMessageAt)
-            : null,
     };
 }
 

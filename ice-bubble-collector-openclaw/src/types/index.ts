@@ -24,8 +24,6 @@ export interface Session {
     guildId?: string;
     createdAt: Date;
     updatedAt: Date;
-    messageCount: number;
-    lastMessageAt?: Date;
 }
 
 export interface SessionMessage {

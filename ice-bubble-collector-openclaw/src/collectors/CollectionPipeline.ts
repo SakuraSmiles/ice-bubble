@@ -228,7 +228,6 @@ export class CollectionPipeline extends EventEmitter {
       guildId: sessionType === 'guild' ? peerId : undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
-      messageCount: 0,
     };
 
     await this.sqliteManager.upsertSession(session);

@@ -610,6 +610,110 @@ export class DataRepository {
     }));
   }
 
+  // ========== Stats Computation (from admin_messages) ==========
+
+  /**
+   * 从 admin_messages 计算并更新每个 session 的统计信息
+   * - message_count: 消息总数
+   * - first_message_at: 首条消息时间
+   * - last_message_at: 末条消息时间
+   * 仅当 message_count 或 last_message_at 发生变化时更新
+   * @returns 更新涉及的 session 数量
+   */
+  computeSessionStats(): number {
+    console.log('[DataRepository] Computing session stats from admin_messages...');
+
+    const computeAndUpsert = this.db.transaction(() => {
+      // 获取所有 session_key
+      const sessions = this.db.prepare('SELECT session_key FROM admin_sessions').all() as { session_key: string }[];
+      let updated = 0;
+
+      for (const { session_key } of sessions) {
+        const row = this.db.prepare(`
+          SELECT
+            COUNT(*) as message_count,
+            MIN(timestamp) as first_message_at,
+            MAX(timestamp) as last_message_at
+          FROM admin_messages
+          WHERE session_key = ?
+        `).get(session_key) as { message_count: number; first_message_at: string | null; last_message_at: string | null } | undefined;
+
+        if (!row) continue;
+
+        // 仅当 message_count 或 last_message_at 变化时更新
+        const update = this.db.prepare(`
+          UPDATE admin_sessions
+          SET message_count = ?, first_message_at = ?, last_message_at = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE session_key = ?
+            AND (message_count != ? OR last_message_at != ? OR first_message_at IS NULL)
+        `);
+        const result = update.run(row.message_count, row.first_message_at, row.last_message_at, session_key, row.message_count, row.last_message_at);
+        if (result.changes > 0) updated++;
+      }
+
+      return updated;
+    });
+
+    const updated = computeAndUpsert();
+    console.log(`[DataRepository] Session stats computed: ${updated} sessions updated`);
+    return updated;
+  }
+
+  /**
+   * 从 admin_messages 计算并更新每个 agent 的统计信息
+   * - session_count: 独立会话数（不含 checkpoint）
+   * - message_count: 消息总数（不含 checkpoint）
+   * - first_active_at: 首次活跃时间（不含 checkpoint）
+   * - last_active_at: 最近活跃时间（不含 checkpoint）
+   * 仅当任何统计值发生变化时更新
+   * @returns 更新涉及的 agent 数量
+   */
+  computeAgentStats(): number {
+    console.log('[DataRepository] Computing agent stats from admin_messages...');
+
+    const computeAndUpsert = this.db.transaction(() => {
+      // 获取所有配置的 agent_id
+      const agents = this.db.prepare('SELECT agent_id FROM admin_agents').all() as { agent_id: string }[];
+      let updated = 0;
+
+      for (const { agent_id } of agents) {
+        const row = this.db.prepare(`
+          SELECT
+            COUNT(DISTINCT m.session_key) as session_count,
+            COUNT(*) as message_count,
+            MIN(m.timestamp) as first_active_at,
+            MAX(m.timestamp) as last_active_at
+          FROM admin_messages m
+          INNER JOIN admin_sessions s ON m.session_key = s.session_key
+          WHERE s.agent_id = ?
+            AND m.session_key NOT LIKE '%checkpoint%'
+        `).get(agent_id) as { session_count: number; message_count: number; first_active_at: string | null; last_active_at: string | null } | undefined;
+
+        if (!row) continue;
+
+        // 仅当任何统计值变化时更新
+        const update = this.db.prepare(`
+          UPDATE admin_agents
+          SET session_count = ?, message_count = ?, first_active_at = ?, last_active_at = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE agent_id = ?
+            AND (session_count != ? OR message_count != ? OR first_active_at != ? OR last_active_at != ? OR first_active_at IS NULL)
+        `);
+        const result = update.run(
+          row.session_count, row.message_count, row.first_active_at, row.last_active_at,
+          agent_id,
+          row.session_count, row.message_count, row.first_active_at, row.last_active_at
+        );
+        if (result.changes > 0) updated++;
+      }
+
+      return updated;
+    });
+
+    const updated = computeAndUpsert();
+    console.log(`[DataRepository] Agent stats computed: ${updated} agents updated`);
+    return updated;
+  }
+
   // ========== Stats ==========
 
   /**

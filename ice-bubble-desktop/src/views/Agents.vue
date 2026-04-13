@@ -100,16 +100,24 @@ const heatmapGridMap = computed(() => {
     const today = new Date();
     const grid: ActivityDay[][] = [];
     
+    // 计算今天的列位置：col 0=周日, col 6=周六
+    const todayCol = (today.getDay() + 6) % 7; // 周一→6, 周二→5, ..., 周六→0
+    
     for (let row = 0; row < 5; row++) {
       const week: ActivityDay[] = [];
       for (let col = 0; col < 7; col++) {
-        const daysAgo = row * 7 + (6 - col);
+        // 今天所在的列永远 col 6，通过相对位置计算其他列
+        const daysAgo = row * 7 + (todayCol - col);
         if (daysAgo < 0) {
           week.push({ date: '', count: -1 });
         } else {
           const d = new Date(today);
           d.setDate(d.getDate() - daysAgo);
-          const dateStr = d.toISOString().split('T')[0];
+          // 使用本地日期，避免 toISOString() 在凌晨时区问题
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const dateStr = `${y}-${m}-${day}`;
           week.push({ date: dateStr, count: activityByDate.get(dateStr) ?? 0 });
         }
       }
