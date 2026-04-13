@@ -166,6 +166,9 @@ export class CollectionPipeline extends EventEmitter {
             model: message.model,
             tokensInput: message.tokens?.input,
             tokensOutput: message.tokens?.output,
+            costTotal: message.tokens?.cost?.total,
+            costInput: message.tokens?.cost?.input,
+            costOutput: message.tokens?.cost?.output,
             toolsJson: message.tools ? JSON.stringify(message.tools) : undefined,
             timestamp: message.timestamp,
           };

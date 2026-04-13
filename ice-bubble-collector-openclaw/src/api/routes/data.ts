@@ -174,6 +174,9 @@ function messageToJson(m: SessionMessage): Record<string, unknown> {
         model: m.model ?? null,
         tokens_input: m.tokensInput ?? null,
         tokens_output: m.tokensOutput ?? null,
+        cost_total: m.costTotal ?? null,
+        cost_input: m.costInput ?? null,
+        cost_output: m.costOutput ?? null,
         tools_json: m.toolsJson ?? null,
         timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
         created_at: m.createdAt

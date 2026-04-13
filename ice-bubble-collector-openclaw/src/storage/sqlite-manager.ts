@@ -138,6 +138,9 @@ export class SQLiteManager {
                 model TEXT,
                 tokens_input INTEGER,
                 tokens_output INTEGER,
+                cost_total REAL,
+                cost_input REAL,
+                cost_output REAL,
                 tools_json TEXT,
                 timestamp TIMESTAMP NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -257,6 +260,9 @@ export class SQLiteManager {
                             model TEXT,
                             tokens_input INTEGER,
                             tokens_output INTEGER,
+                            cost_total REAL,
+                            cost_input REAL,
+                            cost_output REAL,
                             tools_json TEXT,
                             timestamp TIMESTAMP NOT NULL,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -266,8 +272,8 @@ export class SQLiteManager {
 
                     // 复制数据
                     this.db.exec(`
-                        INSERT INTO session_messages (id, session_key, message_type, content, model, tokens_input, tokens_output, tools_json, timestamp, created_at)
-                        SELECT id, session_key, message_type, content, model, tokens_input, tokens_output, tools_json, timestamp, created_at FROM session_messages_old
+                        INSERT INTO session_messages (id, session_key, message_type, content, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, tools_json, timestamp, created_at)
+                        SELECT id, session_key, message_type, content, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, tools_json, timestamp, created_at FROM session_messages_old
                     `);
 
                     // 删除旧表
@@ -290,6 +296,20 @@ export class SQLiteManager {
             }
         } catch (error) {
             sqliteLogger.warn('Migration 1 skipped or failed: ' + (error instanceof Error ? error.message : String(error)));
+        }
+
+        // Migration 2: 添加 cost 列（如果不存在）
+        try {
+            const hasCostTotal = this.db.prepare("SELECT name FROM pragma_table_info('session_messages') WHERE name='cost_total'").get();
+            if (!hasCostTotal) {
+                sqliteLogger.info('Running migration 2: 添加 cost 列到 session_messages 表');
+                this.db.exec('ALTER TABLE session_messages ADD COLUMN cost_total REAL');
+                this.db.exec('ALTER TABLE session_messages ADD COLUMN cost_input REAL');
+                this.db.exec('ALTER TABLE session_messages ADD COLUMN cost_output REAL');
+                sqliteLogger.info('Migration 2 completed: cost 列已添加');
+            }
+        } catch (error) {
+            sqliteLogger.warn('Migration 2 skipped or failed: ' + (error instanceof Error ? error.message : String(error)));
         }
     }
 

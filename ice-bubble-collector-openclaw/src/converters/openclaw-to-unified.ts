@@ -238,6 +238,16 @@ export function convertAssistantMessage(
   const tokens = message.usage ? {
     input: message.usage.input,
     output: message.usage.output,
+    totalTokens: message.usage.totalTokens,
+    cacheRead: message.usage.cacheRead,
+    cacheWrite: message.usage.cacheWrite,
+    cost: message.usage.cost ? {
+      total: message.usage.cost.total,
+      input: message.usage.cost.input,
+      output: message.usage.cost.output,
+      cacheRead: message.usage.cost.cacheRead,
+      cacheWrite: message.usage.cost.cacheWrite,
+    } : undefined,
   } : undefined;
 
   return {
@@ -261,14 +271,6 @@ export function convertAssistantMessage(
       thinkingIncluded: message.content.some(c => c.type === 'thinking'),
       // 记录所有内容类型
       contentTypes: message.content.map(c => c.type),
-      // Token 详细信息
-      totalTokens: message.usage?.totalTokens,
-      cacheRead: message.usage?.cacheRead,
-      cacheWrite: message.usage?.cacheWrite,
-      // 成本信息
-      cost: message.usage?.cost?.total,
-      costInput: message.usage?.cost?.input,
-      costOutput: message.usage?.cost?.output,
       // 消息时间戳
       messageTimestamp: message.timestamp,
     },

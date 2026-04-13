@@ -375,6 +375,9 @@ export class DBManager {
           model TEXT,
           tokens_input INTEGER,
           tokens_output INTEGER,
+          cost_total REAL,
+          cost_input REAL,
+          cost_output REAL,
           timestamp TIMESTAMP NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           source_created_at TIMESTAMP,
@@ -569,6 +572,15 @@ export class DBManager {
           ALTER TABLE admin_agents ADD COLUMN workspace TEXT;
         `);
         logger.info('Migration v7: added workspace column to admin_agents');
+        break;
+      case 8:
+        // 迁移：给 admin_messages 表添加 token cost 字段
+        this.db.exec(`
+          ALTER TABLE admin_messages ADD COLUMN cost_total REAL;
+          ALTER TABLE admin_messages ADD COLUMN cost_input REAL;
+          ALTER TABLE admin_messages ADD COLUMN cost_output REAL;
+        `);
+        logger.info('Migration v8: added cost columns to admin_messages');
         break;
       default:
         logger.warn(`No migration defined for version ${version}`);

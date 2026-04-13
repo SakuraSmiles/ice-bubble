@@ -36,6 +36,9 @@ export interface SessionMessage {
     model?: string;
     tokensInput?: number;
     tokensOutput?: number;
+    costTotal?: number;
+    costInput?: number;
+    costOutput?: number;
     toolsJson?: string;
     timestamp: Date;
     createdAt?: Date;
@@ -141,6 +144,16 @@ export interface UnifiedMessage {
     tokens?: {
         input: number;
         output: number;
+        totalTokens?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+        cost?: {
+            total?: number;
+            input?: number;
+            output?: number;
+            cacheRead?: number;
+            cacheWrite?: number;
+        };
     };
     
     /**

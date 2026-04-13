@@ -34,6 +34,9 @@ export interface AdminMessage {
   model: string | null;
   tokens_input: number | null;
   tokens_output: number | null;
+  cost_total: number | null;
+  cost_input: number | null;
+  cost_output: number | null;
   timestamp: string;
   created_at: string;
   source_created_at: string | null;
@@ -207,8 +210,9 @@ export class DataRepository {
     const stmt = this.db.prepare(`
       INSERT OR IGNORE INTO admin_messages (
         source_id, source_module, session_key, message_type, content,
-        model, tokens_input, tokens_output, timestamp, created_at, source_created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        model, tokens_input, tokens_output, cost_total, cost_input, cost_output,
+        timestamp, created_at, source_created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const now = new Date().toISOString();
@@ -225,6 +229,9 @@ export class DataRepository {
           row.model ?? null,
           row.tokens_input ?? null,
           row.tokens_output ?? null,
+          row.cost_total ?? null,
+          row.cost_input ?? null,
+          row.cost_output ?? null,
           row.timestamp,
           now,
           row.source_created_at ?? null

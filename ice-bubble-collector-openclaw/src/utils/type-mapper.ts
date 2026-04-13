@@ -31,6 +31,9 @@ export class SessionMessageMapper {
       model: message.model || null,
       tokens_input: message.tokensInput || null,
       tokens_output: message.tokensOutput || null,
+      cost_total: message.costTotal || null,
+      cost_input: message.costInput || null,
+      cost_output: message.costOutput || null,
       tools_json: message.toolsJson || null,
       timestamp: message.timestamp.toISOString(),
       created_at: message.createdAt?.toISOString() || null
@@ -50,6 +53,9 @@ export class SessionMessageMapper {
       model: row.model || undefined,
       tokensInput: row.tokens_input || undefined,
       tokensOutput: row.tokens_output || undefined,
+      costTotal: row.cost_total || undefined,
+      costInput: row.cost_input || undefined,
+      costOutput: row.cost_output || undefined,
       toolsJson: row.tools_json || undefined,
       timestamp: new Date(row.timestamp),
       createdAt: row.created_at ? new Date(row.created_at) : undefined
@@ -188,7 +194,8 @@ export function getDbColumns(entity: 'session_messages' | 'sessions' | 'agents')
   const columnMap = {
     session_messages: [
       'id', 'message_id', 'session_key', 'message_type', 'content', 'model',
-      'tokens_input', 'tokens_output', 'tools_json', 'timestamp', 'created_at'
+      'tokens_input', 'tokens_output', 'cost_total', 'cost_input', 'cost_output',
+      'tools_json', 'timestamp', 'created_at'
     ],
     sessions: [
       'id', 'session_key', 'agent_id', 'channel', 'account_id',
