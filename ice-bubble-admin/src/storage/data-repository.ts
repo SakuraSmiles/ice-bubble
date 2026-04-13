@@ -199,10 +199,169 @@ export class DataRepository {
     return row ?? null;
   }
 
+  // ========== Token Summary ==========
+
+  /**
+   * Token 统计聚合接口
+   */
+  getTokenSummary(agentId?: string): Array<{
+    agent_id: string;
+    total_input_tokens: number;
+    total_output_tokens: number;
+    total_cost: number;
+    cost_input: number;
+    cost_output: number;
+    message_count: number;
+    updated_at: string;
+  }> {
+    if (agentId) {
+      const row = this.db.prepare(
+        'SELECT * FROM token_summary WHERE agent_id = ?'
+      ).get(agentId) as {
+        agent_id: string;
+        total_input_tokens: number;
+        total_output_tokens: number;
+        total_cost: number;
+        cost_input: number;
+        cost_output: number;
+        message_count: number;
+        updated_at: string;
+      } | undefined;
+      return row ? [row] : [];
+    }
+    return this.db.prepare(
+      'SELECT * FROM token_summary ORDER BY updated_at DESC'
+    ).all() as Array<{
+      agent_id: string;
+      total_input_tokens: number;
+      total_output_tokens: number;
+      total_cost: number;
+      cost_input: number;
+      cost_output: number;
+      message_count: number;
+      updated_at: string;
+    }>;
+  }
+
+  /**
+   * 批量更新 token_summary（在事务内执行）
+   */
+  private batchUpdateTokenSummary(
+    updates: Array<{
+      agentId: string;
+      tokensInput: number;
+      tokensOutput: number;
+      costTotal: number;
+      costInput: number;
+      costOutput: number;
+    }>
+  ): void {
+    if (updates.length === 0) return;
+
+    const upsertSQL = `
+      INSERT INTO token_summary
+        (agent_id, total_input_tokens, total_output_tokens, total_cost, cost_input, cost_output, message_count)
+      VALUES (?, ?, ?, ?, ?, ?, 1)
+      ON CONFLICT(agent_id) DO UPDATE SET
+        total_input_tokens = total_input_tokens + excluded.total_input_tokens,
+        total_output_tokens = total_output_tokens + excluded.total_output_tokens,
+        total_cost = total_cost + excluded.total_cost,
+        cost_input = cost_input + excluded.cost_input,
+        cost_output = cost_output + excluded.cost_output,
+        message_count = message_count + 1,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+    const stmt = this.db.prepare(upsertSQL);
+
+    for (const update of updates) {
+      stmt.run(
+        update.agentId,
+        update.tokensInput,
+        update.tokensOutput,
+        update.costTotal,
+        update.costInput,
+        update.costOutput
+      );
+    }
+    console.log(`[DataRepository] Batch updated token_summary for ${updates.length} agents`);
+  }
+
+  /**
+   * 全量重建 token_summary（从 admin_messages 聚合）
+   * @returns 受影响的 agent 数量
+   */
+  rebuildTokenSummary(): { affected_agents: number; duration_ms: number } {
+    console.log('[DataRepository] Starting token_summary rebuild...');
+    const start = Date.now();
+
+    const rebuild = this.db.transaction(() => {
+      // 1. 清空 token_summary 表
+      this.db.prepare('DELETE FROM token_summary').run();
+
+      // 2. 按 agent_id 聚合 admin_messages 的 token 数据
+      const rows = this.db.prepare(`
+        SELECT
+          s.agent_id,
+          COALESCE(SUM(CAST(m.tokens_input AS INTEGER)), 0) as total_input_tokens,
+          COALESCE(SUM(CAST(m.tokens_output AS INTEGER)), 0) as total_output_tokens,
+          COALESCE(SUM(CAST(m.cost_total AS REAL)), 0) as total_cost,
+          COALESCE(SUM(CAST(m.cost_input AS REAL)), 0) as cost_input,
+          COALESCE(SUM(CAST(m.cost_output AS REAL)), 0) as cost_output,
+          COUNT(*) as message_count
+        FROM admin_messages m
+        INNER JOIN admin_sessions s ON m.session_key = s.session_key
+        WHERE s.agent_id IS NOT NULL
+          AND s.session_key NOT LIKE '%checkpoint%'
+          AND (
+            m.tokens_input IS NOT NULL OR
+            m.tokens_output IS NOT NULL OR
+            m.cost_total IS NOT NULL
+          )
+        GROUP BY s.agent_id
+      `).all() as Array<{
+        agent_id: string;
+        total_input_tokens: number;
+        total_output_tokens: number;
+        total_cost: number;
+        cost_input: number;
+        cost_output: number;
+        message_count: number;
+      }>;
+
+      // 3. 重新插入
+      const insertSQL = `
+        INSERT INTO token_summary
+          (agent_id, total_input_tokens, total_output_tokens, total_cost, cost_input, cost_output, message_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `;
+      const stmt = this.db.prepare(insertSQL);
+      for (const row of rows) {
+        stmt.run(
+          row.agent_id,
+          row.total_input_tokens,
+          row.total_output_tokens,
+          row.total_cost,
+          row.cost_input,
+          row.cost_output,
+          row.message_count
+        );
+      }
+
+      return rows.length;
+    });
+
+    const affected_agents = rebuild();
+    const duration_ms = Date.now() - start;
+    console.log(`[DataRepository] Token summary rebuilt: ${affected_agents} agents in ${duration_ms}ms`);
+
+    return { affected_agents, duration_ms };
+  }
+
   // ========== Messages ==========
 
   /**
    * 批量保存 messages（upsert with UNIQUE constraint）
+   * 同时更新 token_summary 表
    */
   saveMessages(messages: AdminMessage[]): number {
     if (messages.length === 0) return 0;
@@ -237,6 +396,62 @@ export class DataRepository {
           row.source_created_at ?? null
         );
         if (result.changes > 0) inserted++;
+      }
+
+      // 收集需要更新的 token 数据
+      // 1. 获取所有 session_key -> agent_id 映射
+      const sessionKeys = [...new Set(rows.map(r => r.session_key))];
+      const sessionAgentMap = this.getSessionAgentIds(sessionKeys);
+
+      // 2. 按 agentId 聚合 token 数据（只统计有 token 或 cost 的消息）
+      const tokenUpdates = new Map<string, {
+        tokensInput: number;
+        tokensOutput: number;
+        costTotal: number;
+        costInput: number;
+        costOutput: number;
+      }>();
+
+      for (const row of rows) {
+        const agentId = sessionAgentMap.get(row.session_key);
+        if (!agentId) continue;
+
+        // 只统计有 token 或 cost 的消息
+        const hasTokenData =
+          (row.tokens_input != null && row.tokens_input > 0) ||
+          (row.tokens_output != null && row.tokens_output > 0) ||
+          (row.cost_total != null && row.cost_total > 0);
+        if (!hasTokenData) continue;
+
+        const existing = tokenUpdates.get(agentId) || {
+          tokensInput: 0,
+          tokensOutput: 0,
+          costTotal: 0,
+          costInput: 0,
+          costOutput: 0,
+        };
+
+        tokenUpdates.set(agentId, {
+          tokensInput: existing.tokensInput + (row.tokens_input ?? 0),
+          tokensOutput: existing.tokensOutput + (row.tokens_output ?? 0),
+          costTotal: existing.costTotal + (row.cost_total ?? 0),
+          costInput: existing.costInput + (row.cost_input ?? 0),
+          costOutput: existing.costOutput + (row.cost_output ?? 0),
+        });
+      }
+
+      // 3. 批量更新 token_summary
+      if (tokenUpdates.size > 0) {
+        const updates = Array.from(tokenUpdates.entries()).map(([agentId, data]) => ({
+          agentId,
+          ...data,
+        }));
+        try {
+          this.batchUpdateTokenSummary(updates);
+        } catch (error) {
+          // token 更新失败不影响消息入库，记录错误
+          console.error('[DataRepository] Failed to update token_summary:', error);
+        }
       }
     });
 

@@ -95,7 +95,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(8);  // 执行数据库迁移（v8: 添加 token cost 字段）
+    await dbManager.migrate(9);  // 执行数据库迁移（v9: 创建 token_summary 表）
     const repository = new ModuleRepository(dbManager.getConnection());
     console.log('[Admin] 数据库初始化完成');
 

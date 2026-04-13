@@ -137,13 +137,26 @@ export function createDataRouter(repository: DataRepository): Router {
    * GET /api/data/agents/with-activity
    * 批量获取所有 agent 及其活动热力图数据（一次请求）
    * Query: days - 返回最近 N 天的活动数据，默认 90，上限 365
+   * 返回包含 token_stats 字段
    */
   router.get('/agents/with-activity', (req: Request, res: Response) => {
     const days = Math.min(Math.max(parseInt(String(req.query.days ?? '90')), 1), 365);
     const agentsWithActivity = repository.getAgentsWithActivity(days);
+
+    // 获取所有 agent 的 token 统计
+    const tokenStatsMap = new Map(
+      repository.getTokenSummary().map(s => [s.agent_id, s])
+    );
+
+    // 合并 token_stats 到每个 agent
+    const agentsWithStats = agentsWithActivity.map(agent => ({
+      ...agent,
+      token_stats: tokenStatsMap.get(agent.agent_id) || null
+    }));
+
     res.json({
-      count: agentsWithActivity.length,
-      agents: agentsWithActivity
+      count: agentsWithStats.length,
+      agents: agentsWithStats
     });
   });
 

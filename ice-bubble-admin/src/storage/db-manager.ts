@@ -582,6 +582,23 @@ export class DBManager {
         `);
         logger.info('Migration v8: added cost columns to admin_messages');
         break;
+      case 9:
+        // 迁移：创建 token_summary 表（token 统计聚合表）
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS token_summary (
+            agent_id TEXT PRIMARY KEY,
+            total_input_tokens INTEGER DEFAULT 0,
+            total_output_tokens INTEGER DEFAULT 0,
+            total_cost REAL DEFAULT 0,
+            cost_input REAL DEFAULT 0,
+            cost_output REAL DEFAULT 0,
+            message_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        logger.info('Migration v9: created token_summary table');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }
