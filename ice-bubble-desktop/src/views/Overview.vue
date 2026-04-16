@@ -144,11 +144,13 @@ const trendAreaPath = computed(() => {
 onMounted(() => {
   refreshData();
   refreshModules();
-  // 每秒刷新一次数据
+  // 每秒刷新API监控数据，每30秒刷新模块数据
   refreshTimer = setInterval(() => {
     refreshData();
-    refreshModules();
   }, 1000);
+  setInterval(() => {
+    refreshModules();
+  }, 30000);
 });
 
 onUnmounted(() => {
