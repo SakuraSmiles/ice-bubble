@@ -206,6 +206,7 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
     });
 
     socket.on('end', () => {
+      socket.destroy();  // 确保socket关闭
       resolve({
         status: statusCode,
         data: responseData || '',
