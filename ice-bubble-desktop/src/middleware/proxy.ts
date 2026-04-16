@@ -14,7 +14,6 @@ import { findModuleByPath } from '../config.server.js';
 export function createProxyMiddleware() {
   return async (req: Request, res: Response) => {
     const originalPath = req.originalUrl || req.url;
-    
     console.log(`[Proxy] ${req.method} ${originalPath}`);
 
     // 1. 查找目标模块
@@ -114,7 +113,6 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
     const path = url.pathname + url.search;
 
     console.log(`[Proxy] -> ${options.method} ${hostname}:${port}${path}`);
-    const startTs = Date.now();
 
     console.log(`[Proxy] 开始连接 ${hostname}:${port}...`);
     const socket = net.createConnection({
@@ -144,7 +142,7 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
     let contentType: string | undefined;
 
     socket.on('connect', () => {
-      console.log(`[Proxy] Socket连接成功，耗时: ${Date.now() - startTs}ms`);
+      console.log(`[Proxy] Socket连接成功`);
       if (options.body.length > 0) {
         socket.write(httpRequest, () => {
           socket.write(options.body);
