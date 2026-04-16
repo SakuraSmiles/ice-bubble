@@ -104,20 +104,40 @@ interface ForwardResult {
 }
 
 /**
- * 使用 net.Socket 直接发起 HTTP 请求（绕过系统代理）
+ * 检测代理端口是否可用
+ */
+function isProxyAvailable(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port: 7890, timeout: 500 });
+    socket.on('connect', () => { socket.destroy(); resolve(true); });
+    socket.on('error', () => { socket.destroy(); resolve(false); });
+    socket.on('timeout', () => { socket.destroy(); resolve(false); });
+  });
+}
+
+/**
+ * 使用 net.Socket 发起 HTTP 请求（自动检测代理是否可用）
  */
 function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const url = new URL(options.targetPath, options.targetUrl);
     const hostname = url.hostname;
     const port = parseInt(url.port || (url.protocol === 'https:' ? '443' : '80'), 10);
     const path = url.pathname + url.search;
 
-    console.log(`[Proxy] -> ${options.method} ${hostname}:${port}${path}`);
+    // 检测代理是否可用
+    const proxyAvailable = await isProxyAvailable();
+    const useProxy = proxyAvailable;
+
+    console.log(`[Proxy] -> ${options.method} ${hostname}:${port}${path} ${useProxy ? '(via proxy)' : '(direct)'}`);
+
+    // 选择连接目标：代理或直连
+    const targetHost = useProxy ? '127.0.0.1' : hostname;
+    const targetPort = useProxy ? 7890 : port;
 
     const socket = net.createConnection({
-      host: hostname,
-      port: port,
+      host: targetHost,
+      port: targetPort,
       timeout: 10000
     });
 
@@ -128,12 +148,19 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
         headers[key] = Array.isArray(value) ? value.join(', ') : value;
       }
     }
-    
-    const headerLines = Object.entries(headers)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join('\r\n');
 
-    const httpRequest = `${options.method} ${path} HTTP/1.1\r\nHost: ${hostname}:${port}\r\n${headerLines}\r\n\r\n`;
+    // 构建请求
+    let httpRequest: string;
+    if (useProxy) {
+      // HTTP CONNECT 代理模式
+      httpRequest = `CONNECT ${hostname}:${port} HTTP/1.1\r\nHost: ${hostname}:${port}\r\n\r\n`;
+    } else {
+      // 直连模式
+      const headerLines = Object.entries(headers)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\r\n');
+      httpRequest = `${options.method} ${path} HTTP/1.1\r\nHost: ${hostname}:${port}\r\n${headerLines}\r\n\r\n`;
+    }
 
     let responseData = '';
     let responseBuffer: Buffer | undefined;
@@ -142,18 +169,42 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
     let contentType: string | undefined;
 
     socket.on('connect', () => {
-      if (options.body.length > 0) {
-        socket.write(httpRequest, () => {
-          socket.write(options.body);
-        });
-      } else {
+      if (useProxy) {
+        // 先发送 CONNECT 建立隧道
         socket.write(httpRequest);
+      } else {
+        if (options.body.length > 0) {
+          socket.write(httpRequest, () => {
+            socket.write(options.body);
+          });
+        } else {
+          socket.write(httpRequest);
+        }
       }
     });
 
+    // 代理模式下，收到 CONNECT 响应后发送实际请求
+    let proxyConnectDone = false;
+    
     socket.on('data', (chunk: Buffer) => {
+      if (useProxy && !proxyConnectDone) {
+        const str = chunk.toString('utf8');
+        if (str.includes('200') || str.includes('Connection established')) {
+          proxyConnectDone = true;
+          // 发送实际请求
+          const headerLines = Object.entries(headers)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join('\r\n');
+          const actualRequest = `${options.method} ${path} HTTP/1.1\r\nHost: ${hostname}:${port}\r\n${headerLines}\r\n\r\n`;
+          socket.write(actualRequest);
+          if (options.body.length > 0) {
+            socket.write(options.body);
+          }
+          return;
+        }
+      }
+      
       if (!headersParsed) {
-        // 查找 header 和 body 之间的空行
         const str = chunk.toString('utf8');
         const headerEndIdx = str.indexOf('\r\n\r\n');
         if (headerEndIdx !== -1) {
@@ -161,14 +212,10 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
           const headerSection = str.substring(0, headerEndIdx);
           const bodyStart = headerEndIdx + 4;
           
-          // 解析状态行
           const statusLine = headerSection.split('\r\n')[0];
           const match = statusLine.match(/HTTP\/\d\.\d\s+(\d+)/);
-          if (match) {
-            statusCode = parseInt(match[1], 10);
-          }
+          if (match) statusCode = parseInt(match[1], 10);
           
-          // 解析响应头
           const headerPairs = headerSection.split('\r\n').slice(1);
           for (const pair of headerPairs) {
             const colonIdx = pair.indexOf(':');
@@ -179,7 +226,6 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
             }
           }
           
-          // 如果还有剩余数据，那就是 body
           if (chunk.length > bodyStart) {
             if (contentType && (contentType.startsWith('image/') || contentType.startsWith('audio/') || contentType.startsWith('video/'))) {
               responseBuffer = chunk.subarray(bodyStart);
@@ -188,17 +234,11 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
             }
           }
         } else {
-          // 还没收到完整的 headers，继续累积
           responseData += str;
         }
       } else {
-        // headers 已解析，后续数据都是 body
         if (contentType && (contentType.startsWith('image/') || contentType.startsWith('audio/') || contentType.startsWith('video/'))) {
-          if (responseBuffer) {
-            responseBuffer = Buffer.concat([responseBuffer, chunk]);
-          } else {
-            responseBuffer = chunk;
-          }
+          responseBuffer = responseBuffer ? Buffer.concat([responseBuffer, chunk]) : chunk;
         } else {
           responseData += chunk.toString('utf8');
         }
