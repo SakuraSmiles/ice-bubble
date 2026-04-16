@@ -4,6 +4,7 @@
  */
 
 import { API_BASE } from '../config';
+import { apiMonitor } from '../utils/monitor';
 
 // ============ DTO 接口 ============
 
@@ -126,14 +127,25 @@ export interface TokenSummaryResponseDTO {
 // ============ 内部工具 ============
 
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    credentials: 'include'
-  });
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+  const start = performance.now();
+  const method = options?.method || 'GET';
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      credentials: 'include'
+    });
+    const latency = Math.round(performance.now() - start);
+    if (!response.ok) {
+      apiMonitor.record(path, method, latency, false, `HTTP ${response.status}`);
+      throw new Error(`API error: ${response.status}`);
+    }
+    apiMonitor.record(path, method, latency, true);
+    return response.json();
+  } catch (e: any) {
+    const latency = Math.round(performance.now() - start);
+    apiMonitor.record(path, method, latency, false, e.message);
+    throw e;
   }
-  return response.json();
 }
 
 // ============ API 方法 ============

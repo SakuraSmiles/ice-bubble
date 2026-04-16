@@ -27,11 +27,10 @@ function writePortFile(port: number) {
 // 创建 Express 应用
 const app = express();
 
-// 解析 JSON 请求体
+// 解析原始请求体（用于代理），同时支持 JSON 解析
 app.use(express.json({ limit: '10mb' }));
-
-// 解析 URL 编码请求体
 app.use(express.urlencoded({ extended: true }));
+app.use(express.raw({ type: 'application/octet-stream', limit: '10mb' }));
 
 // CORS 头
 app.use((_req: Request, res: Response, next) => {

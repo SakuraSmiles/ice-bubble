@@ -1,122 +1,252 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { api } from '../api/client.ts';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { apiMonitor, type MonitorStats, type EndpointStats, type LatencyRecord } from '../utils/monitor';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 
-const stats = ref({
-  sessionCount: 0,
-  messageCount: 0,
-  moduleCount: 0,
-  collectorStatus: 'unknown' as 'running' | 'stopped' | 'unknown'
+// 统计数据
+const stats = ref<MonitorStats>({
+  totalRequests: 0,
+  successCount: 0,
+  failureCount: 0,
+  successRate: 0,
+  currentLatency: 0,
+  avgLatency: 0,
+  minLatency: 0,
+  maxLatency: 0
 });
 
-const loading = ref(false);
+// 各端点统计
+const endpointStats = ref<EndpointStats[]>([]);
 
-async function fetchStats() {
-  loading.value = true;
-  try {
-    const data = await api.getStats();
-    stats.value = {
-      sessionCount: data.sessionCount || 0,
-      messageCount: data.messageCount || 0,
-      moduleCount: data.moduleCount || 0,
-      collectorStatus: data.collectorStatus || 'unknown'
-    };
-  } catch (e) {
-    console.error('Failed to fetch stats:', e);
-  } finally {
-    loading.value = false;
-  }
+// 延迟趋势数据（用于图表）
+const trendData = ref<LatencyRecord[]>([]);
+
+// 定时器
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * 刷新监控数据
+ */
+function refreshData(): void {
+  stats.value = apiMonitor.getStats();
+  endpointStats.value = apiMonitor.getEndpointStats();
+  trendData.value = apiMonitor.getRecentRecords(30);
 }
 
+/**
+ * 格式化延迟显示
+ */
+function formatLatency(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
+/**
+ * 获取延迟等级颜色
+ */
+function getLatencyColor(ms: number): string {
+  if (ms < 50) return 'var(--el-color-success)';
+  if (ms < 100) return 'var(--el-color-warning)';
+  return 'var(--el-color-danger)';
+}
+
+/**
+ * 获取成功率等级
+ */
+function getSuccessRateType(rate: number): string {
+  if (rate >= 99) return 'success';
+  if (rate >= 95) return 'warning';
+  return 'danger';
+}
+
+/**
+ * 计算延迟条形图宽度（基于最大延迟）
+ */
+function getBarWidth(latency: number, maxLatency: number): string {
+  if (maxLatency === 0) return '0%';
+  return `${Math.min((latency / maxLatency) * 100, 100)}%`;
+}
+
+/**
+ * 简化端点名称
+ */
+function simplifyEndpoint(endpoint: string): string {
+  // 移除前置路径，如 /api/agents -> /agents
+  return endpoint.replace(/^\/(api)?/, '/').split('?')[0];
+}
+
+// 最大端点延迟（用于条形图）
+const maxEndpointLatency = computed(() => {
+  if (endpointStats.value.length === 0) return 0;
+  return Math.max(...endpointStats.value.map(s => s.maxLatency));
+});
+
+// 延迟趋势SVG路径
+const trendPath = computed(() => {
+  if (trendData.value.length < 2) return '';
+
+  const data = trendData.value;
+  const maxLatency = Math.max(...data.map(d => d.latency), 100);
+  const width = 100;
+  const height = 100;
+  const padding = 5;
+
+  const points = data.map((d, i) => {
+    const x = padding + (i / (data.length - 1)) * (width - padding * 2);
+    const y = height - padding - (d.latency / maxLatency) * (height - padding * 2);
+    return `${x},${y}`;
+  });
+
+  return `M ${points.join(' L ')}`;
+});
+
+// 延迟趋势面积路径
+const trendAreaPath = computed(() => {
+  if (trendData.value.length < 2) return '';
+
+  const data = trendData.value;
+  const maxLatency = Math.max(...data.map(d => d.latency), 100);
+  const width = 100;
+  const height = 100;
+  const padding = 5;
+
+  const points = data.map((d, i) => {
+    const x = padding + (i / (data.length - 1)) * (width - padding * 2);
+    const y = height - padding - (d.latency / maxLatency) * (height - padding * 2);
+    return `${x},${y}`;
+  });
+
+  const lastX = padding + (width - padding * 2);
+  const firstX = padding;
+
+  return `M ${firstX},${height - padding} L ${points.join(' L ')} L ${lastX},${height - padding} Z`;
+});
+
 onMounted(() => {
-  fetchStats();
+  refreshData();
+  // 每秒刷新一次数据
+  refreshTimer = setInterval(refreshData, 1000);
+});
+
+onUnmounted(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
 });
 </script>
 
 <template>
-  <div class="modules-page">
-    <PageHeader title="工作台" subtitle="系统概览" />
-    
+  <div class="overview-page">
+    <PageHeader title="工作台" subtitle="系统监控" />
+
+    <!-- 统计卡片 -->
     <el-card class="content-area">
-      <el-row :gutter="20">
+      <el-row :gutter="16" class="stats-row">
+        <!-- 当前延迟 -->
         <el-col :span="6">
-          <el-card shadow="hover">
-            <div class="stat-card">
-              <div class="stat-icon sessions">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                </svg>
-              </div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.sessionCount }}</div>
-                <div class="stat-label">会话总数</div>
-              </div>
+          <div class="stat-card">
+            <div class="stat-label">当前延迟</div>
+            <div class="stat-value" :style="{ color: getLatencyColor(stats.currentLatency) }">
+              {{ formatLatency(stats.currentLatency) }}
             </div>
-          </el-card>
+          </div>
         </el-col>
-        
+
+        <!-- 平均延迟 -->
         <el-col :span="6">
-          <el-card shadow="hover">
-            <div class="stat-card">
-              <div class="stat-icon messages">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
-                </svg>
-              </div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.messageCount }}</div>
-                <div class="stat-label">消息总数</div>
-              </div>
+          <div class="stat-card">
+            <div class="stat-label">平均延迟</div>
+            <div class="stat-value" :style="{ color: getLatencyColor(stats.avgLatency) }">
+              {{ formatLatency(stats.avgLatency) }}
             </div>
-          </el-card>
+          </div>
         </el-col>
-        
+
+        <!-- 延迟范围 -->
         <el-col :span="6">
-          <el-card shadow="hover">
-            <div class="stat-card">
-              <div class="stat-icon modules">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M4 4h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 10h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 16h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4z"/>
-                </svg>
-              </div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.moduleCount }}</div>
-                <div class="stat-label">模块数量</div>
-              </div>
+          <div class="stat-card">
+            <div class="stat-label">延迟范围</div>
+            <div class="stat-value small">
+              {{ formatLatency(stats.minLatency) }} ~ {{ formatLatency(stats.maxLatency) }}
             </div>
-          </el-card>
+          </div>
         </el-col>
-        
+
+        <!-- 成功率 -->
         <el-col :span="6">
-          <el-card shadow="hover">
-            <div class="stat-card">
-              <div class="stat-icon status" :class="stats.collectorStatus">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10 10-4.48 10-10 10zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8z"/>
-                </svg>
-              </div>
-              <div class="stat-info">
-                <div class="stat-value">
-                  <el-tag :type="stats.collectorStatus === 'running' ? 'success' : 'danger'">
-                    {{ stats.collectorStatus === 'running' ? '运行中' : '已停止' }}
-                  </el-tag>
-                </div>
-                <div class="stat-label">采集器状态</div>
-              </div>
+          <div class="stat-card">
+            <div class="stat-label">成功率</div>
+            <div class="stat-value">
+              <el-tag :type="getSuccessRateType(stats.successRate)" size="large">
+                {{ stats.successRate }}%
+              </el-tag>
             </div>
-          </el-card>
+          </div>
         </el-col>
       </el-row>
+
+      <!-- 请求统计 -->
+      <div class="request-stats">
+        <span>总请求: {{ stats.totalRequests }}</span>
+        <span class="divider">|</span>
+        <span class="success">成功: {{ stats.successCount }}</span>
+        <span class="divider">|</span>
+        <span class="failure">失败: {{ stats.failureCount }}</span>
+      </div>
+
+      <!-- 延迟趋势图 -->
+      <div class="section-title">延迟趋势（最近30次）</div>
+      <div class="trend-chart" v-if="trendData.length >= 2">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="trend-svg">
+          <defs>
+            <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--el-color-primary)" stop-opacity="0.3" />
+              <stop offset="100%" stop-color="var(--el-color-primary)" stop-opacity="0" />
+            </linearGradient>
+          </defs>
+          <path :d="trendAreaPath" fill="url(#trendGradient)" />
+          <path :d="trendPath" fill="none" stroke="var(--el-color-primary)" stroke-width="2" vector-effect="non-scaling-stroke" />
+        </svg>
+        <div class="trend-labels">
+          <span>{{ trendData[0]?.timestamp ? new Date(trendData[0].timestamp).toLocaleTimeString() : '' }}</span>
+          <span>{{ trendData[trendData.length - 1]?.timestamp ? new Date(trendData[trendData.length - 1].timestamp).toLocaleTimeString() : '' }}</span>
+        </div>
+      </div>
+      <div class="empty-chart" v-else>
+        <el-empty description="暂无延迟数据" :image-size="60" />
+      </div>
+
+      <!-- 各端点延迟 -->
+      <div class="section-title">各端点延迟</div>
+      <div class="endpoint-list" v-if="endpointStats.length > 0">
+        <div class="endpoint-item" v-for="ep in endpointStats" :key="ep.endpoint">
+          <div class="endpoint-name">{{ simplifyEndpoint(ep.endpoint) }}</div>
+          <div class="endpoint-bar-wrapper">
+            <div class="endpoint-bar" :style="{ width: getBarWidth(ep.avgLatency, maxEndpointLatency), backgroundColor: getLatencyColor(ep.avgLatency) }"></div>
+          </div>
+          <div class="endpoint-latency">
+            <span class="avg">{{ formatLatency(ep.avgLatency) }}</span>
+            <span class="detail">({{ formatLatency(ep.minLatency) }}~{{ formatLatency(ep.maxLatency) }})</span>
+          </div>
+          <el-tag size="small" :type="ep.successRate >= 99 ? 'success' : ep.successRate >= 95 ? 'warning' : 'danger'">
+            {{ ep.successRate }}%
+          </el-tag>
+          <span class="count">({{ ep.count }})</span>
+        </div>
+      </div>
+      <div class="empty-chart" v-else>
+        <el-empty description="暂无端点数据" :image-size="60" />
+      </div>
     </el-card>
-    
+
     <AppFooter />
   </div>
 </template>
 
 <style scoped>
-.modules-page {
+.overview-page {
   width: 100%;
   max-width: 100%;
   display: flex;
@@ -131,38 +261,149 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
+.stats-row {
+  margin-bottom: 16px;
+}
+
 .stat-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.stat-icon.sessions { background: #409eff; }
-.stat-icon.messages { background: #67c23a; }
-.stat-icon.modules { background: #e6a23c; }
-.stat-icon.status.running { background: #67c23a; }
-.stat-icon.status.stopped { background: #f56c6c; }
-.stat-icon.status.unknown { background: #909399; }
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
+  padding: 12px;
+  text-align: center;
 }
 
 .stat-label {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 600;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.stat-value.small {
+  font-size: 18px;
+}
+
+.request-stats {
+  text-align: center;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 24px;
+}
+
+.request-stats .divider {
+  margin: 0 12px;
+  color: var(--el-border-color);
+}
+
+.request-stats .success {
+  color: var(--el-color-success);
+}
+
+.request-stats .failure {
+  color: var(--el-color-danger);
+}
+
+.section-title {
   font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin: 20px 0 12px;
+}
+
+/* 延迟趋势图 */
+.trend-chart {
+  height: 120px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  padding: 12px;
+  position: relative;
+}
+
+.trend-svg {
+  width: 100%;
+  height: 90px;
+}
+
+.trend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
   color: var(--el-text-color-secondary);
   margin-top: 4px;
+}
+
+.empty-chart {
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+}
+
+/* 各端点延迟 */
+.endpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.endpoint-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.endpoint-name {
+  width: 160px;
+  font-size: 13px;
+  font-family: monospace;
+  color: var(--el-text-color-primary);
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.endpoint-bar-wrapper {
+  flex: 1;
+  height: 8px;
+  background: var(--el-fill-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.endpoint-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.endpoint-latency {
+  width: 120px;
+  text-align: right;
+  font-size: 12px;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.endpoint-latency .avg {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+.endpoint-latency .detail {
+  color: var(--el-text-color-secondary);
+  margin-left: 4px;
+}
+
+.count {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  width: 40px;
+  text-align: right;
 }
 </style>

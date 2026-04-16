@@ -1,9 +1,10 @@
 /**
  * 动态代理中间件
  * 白名单机制：只允许转发到 modules.json 中配置的模块地址
+ * 使用 net.Socket 直接连接，绕过系统代理
  */
 
-import http from 'http';
+import net from 'net';
 import { Request, Response } from 'express';
 import { findModuleByPath } from '../config.server.js';
 
@@ -32,20 +33,15 @@ export function createProxyMiddleware() {
       return;
     }
 
-    // 3. 收集请求体
+    // 3. 获取请求体
     let body: Buffer = Buffer.alloc(0);
-    try {
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        const chunks: Buffer[] = [];
-        for await (const chunk of req) {
-          chunks.push(chunk);
-        }
-        body = Buffer.concat(chunks);
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      if (Buffer.isBuffer(req.body)) {
+        body = req.body;
+      } else if (req.body !== undefined && req.body !== null) {
+        // req.body is a parsed object from express.json()
+        body = Buffer.from(JSON.stringify(req.body));
       }
-    } catch (error) {
-      console.error('[Proxy] 读取请求体失败:', error);
-      res.status(500).json({ error: 'Proxy error' });
-      return;
     }
 
     // 4. 构建目标 URL（路径透传）
@@ -107,77 +103,129 @@ interface ForwardResult {
   isBinary: boolean;
 }
 
+/**
+ * 使用 net.Socket 直接发起 HTTP 请求（绕过系统代理）
+ */
 function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
   return new Promise((resolve, reject) => {
     const url = new URL(options.targetPath, options.targetUrl);
+    const hostname = url.hostname;
+    const port = parseInt(url.port || (url.protocol === 'https:' ? '443' : '80'), 10);
+    const path = url.pathname + url.search;
+
+    console.log(`[Proxy] -> ${options.method} ${hostname}:${port}${path}`);
+
+    const socket = net.createConnection({
+      host: hostname,
+      port: port,
+      timeout: 10000
+    });
+
+    // 构建 HTTP 请求头
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(options.headers)) {
+      if (value !== undefined && key.toLowerCase() !== 'proxy-connection' && key.toLowerCase() !== 'connection') {
+        headers[key] = Array.isArray(value) ? value.join(', ') : value;
+      }
+    }
     
-    const proxyOptions = {
-      hostname: url.hostname,
-      port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname + url.search,
-      method: options.method,
-      headers: options.headers
-    };
+    const headerLines = Object.entries(headers)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\r\n');
 
-    console.log(`[Proxy] -> ${options.method} ${url.href}`);
+    const httpRequest = `${options.method} ${path} HTTP/1.1\r\nHost: ${hostname}:${port}\r\n${headerLines}\r\n\r\n`;
 
-    const proxyReq = http.request(proxyOptions, (proxyRes) => {
-      const contentType = proxyRes.headers['content-type'] as string;
-      const isBinary = contentType && (
-        contentType.startsWith('image/') ||
-        contentType.startsWith('audio/') ||
-        contentType.startsWith('video/') ||
-        contentType === 'application/octet-stream'
-      );
+    let responseData = '';
+    let responseBuffer: Buffer | undefined;
+    let headersParsed = false;
+    let statusCode = 500;
+    let contentType: string | undefined;
 
-      if (isBinary) {
-        // 二进制数据处理
-        const chunks: Buffer[] = [];
-        proxyRes.on('data', (chunk: Buffer) => {
-          chunks.push(chunk);
-        });
-        proxyRes.on('end', () => {
-          const buffer = Buffer.concat(chunks);
-          resolve({
-            status: proxyRes.statusCode || 500,
-            data: '',
-            buffer,
-            contentType,
-            isBinary: true
-          });
+    socket.on('connect', () => {
+      if (options.body.length > 0) {
+        socket.write(httpRequest, () => {
+          socket.write(options.body);
         });
       } else {
-        // 文本数据处理
-        let data = '';
-        proxyRes.on('data', (chunk: Buffer) => {
-          data += chunk.toString();
-        });
-        proxyRes.on('end', () => {
-          resolve({
-            status: proxyRes.statusCode || 500,
-            data,
-            contentType,
-            isBinary: false
-          });
-        });
+        socket.write(httpRequest);
       }
     });
 
-    proxyReq.on('error', (error) => {
-      console.error(`[Proxy] 请求错误:`, error.message);
-      reject(error);
+    socket.on('data', (chunk: Buffer) => {
+      if (!headersParsed) {
+        // 查找 header 和 body 之间的空行
+        const str = chunk.toString('utf8');
+        const headerEndIdx = str.indexOf('\r\n\r\n');
+        if (headerEndIdx !== -1) {
+          headersParsed = true;
+          const headerSection = str.substring(0, headerEndIdx);
+          const bodyStart = headerEndIdx + 4;
+          
+          // 解析状态行
+          const statusLine = headerSection.split('\r\n')[0];
+          const match = statusLine.match(/HTTP\/\d\.\d\s+(\d+)/);
+          if (match) {
+            statusCode = parseInt(match[1], 10);
+          }
+          
+          // 解析响应头
+          const headerPairs = headerSection.split('\r\n').slice(1);
+          for (const pair of headerPairs) {
+            const colonIdx = pair.indexOf(':');
+            if (colonIdx !== -1) {
+              const key = pair.substring(0, colonIdx).trim().toLowerCase();
+              const value = pair.substring(colonIdx + 1).trim();
+              if (key === 'content-type') contentType = value;
+            }
+          }
+          
+          // 如果还有剩余数据，那就是 body
+          if (chunk.length > bodyStart) {
+            if (contentType && (contentType.startsWith('image/') || contentType.startsWith('audio/') || contentType.startsWith('video/'))) {
+              responseBuffer = chunk.subarray(bodyStart);
+            } else {
+              responseData += chunk.toString('utf8', bodyStart);
+            }
+          }
+        } else {
+          // 还没收到完整的 headers，继续累积
+          responseData += str;
+        }
+      } else {
+        // headers 已解析，后续数据都是 body
+        if (contentType && (contentType.startsWith('image/') || contentType.startsWith('audio/') || contentType.startsWith('video/'))) {
+          if (responseBuffer) {
+            responseBuffer = Buffer.concat([responseBuffer, chunk]);
+          } else {
+            responseBuffer = chunk;
+          }
+        } else {
+          responseData += chunk.toString('utf8');
+        }
+      }
     });
 
-    proxyReq.on('timeout', () => {
-      console.error(`[Proxy] 请求超时`);
-      proxyReq.destroy();
+    socket.on('end', () => {
+      resolve({
+        status: statusCode,
+        data: responseData || '',
+        buffer: responseBuffer,
+        contentType,
+        isBinary: !!responseBuffer
+      });
+    });
+
+    socket.on('error', (err) => {
+      console.error(`[Proxy] 连接错误: ${err.message}`);
+      reject(new Error(`连接错误: ${err.message}`));
+    });
+
+    socket.on('timeout', () => {
+      console.error(`[Proxy] 连接超时`);
+      socket.destroy();
       reject(new Error('Request timeout'));
     });
 
-    if (options.body.length > 0) {
-      proxyReq.write(options.body);
-    }
 
-    proxyReq.end();
   });
 }

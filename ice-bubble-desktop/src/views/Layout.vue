@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { provide, ref } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 const route = useRoute();
+
+// 全局连接状态，供子视图使用
+const isAdminConnected = ref(true);
+provide('isAdminConnected', isAdminConnected);
 
 const menuItems = [
   { path: '/', label: '工作台' },

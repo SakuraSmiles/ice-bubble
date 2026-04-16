@@ -203,9 +203,12 @@ async function testConnection() {
     return;
   }
 
-  // URL 重复校验（检查是否已存在相同 URL 的模块）
+  // URL 重复校验（检查是否已存在相同 URL 的模块，排除自己）
   const normalizedUrl = formData.value.baseUrl.trim().replace(/\/$/, '');
-  const existingByUrl = modules.value.find(m => m.baseUrl.replace(/\/$/, '') === normalizedUrl);
+  const existingByUrl = modules.value.find(m => 
+    m.baseUrl.replace(/\/$/, '') === normalizedUrl && 
+    m.moduleKey !== formData.value.moduleKey  // 编辑模式下排除自己
+  );
   if (existingByUrl) {
     ElMessage.error(`该 Collector URL 已注册为「${existingByUrl.name}」，请勿重复添加`);
     return;
@@ -217,17 +220,21 @@ async function testConnection() {
     const data = await api.testModuleConnection(formData.value.baseUrl);
 
     if (data.moduleKey) {
-      // 检查 moduleKey 是否冲突，如果冲突则自动追加后缀
+      // 编辑模式下直接使用 API 返回的 key，不做重复检测
+      // 新增模式下检查 moduleKey 是否冲突，如果冲突则自动追加后缀
+      const isEdit = !!editingModule.value;
       let moduleKey = data.moduleKey;
-      let suffix = 2;
-      while (modules.value.some(m => m.moduleKey === moduleKey)) {
-        moduleKey = `${data.moduleKey}-${suffix}`;
-        suffix++;
+      if (!isEdit) {
+        let suffix = 2;
+        while (modules.value.some(m => m.moduleKey === moduleKey)) {
+          moduleKey = `${data.moduleKey}-${suffix}`;
+          suffix++;
+        }
       }
       formData.value.moduleKey = moduleKey;
       testPass.value = true;
       
-      if (moduleKey !== data.moduleKey) {
+      if (!isEdit && moduleKey !== data.moduleKey) {
         ElMessage.success(`连接成功，模块Key已调整为「${moduleKey}」（避免冲突）`);
       } else {
         ElMessage.success('连接成功，已自动获取模块Key');
@@ -530,13 +537,6 @@ onUnmounted(() => {
   padding: 0 32px;
   box-sizing: border-box;
   min-height: calc(100vh - 1px);
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 0;
 }
 
 .header-actions {

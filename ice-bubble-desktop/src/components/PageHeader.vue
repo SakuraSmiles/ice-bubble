@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ConnectionAlert from './ConnectionAlert.vue';
+
 defineProps<{
   title: string;
   subtitle?: string;
@@ -7,12 +9,17 @@ defineProps<{
 
 <template>
   <header class="page-header">
-    <div class="page-title-area">
-      <h1 class="page-title">{{ title }}</h1>
-      <span v-if="subtitle" class="page-subtitle">{{ subtitle }}</span>
+    <div class="header-top">
+      <div class="page-title-area">
+        <h1 class="page-title">{{ title }}</h1>
+        <span v-if="subtitle" class="page-subtitle">{{ subtitle }}</span>
+      </div>
+      <div class="page-actions">
+        <slot />
+      </div>
     </div>
-    <div class="page-actions">
-      <slot />
+    <div class="header-bottom">
+      <ConnectionAlert />
     </div>
   </header>
 </template>
@@ -20,9 +27,14 @@ defineProps<{
 <style scoped>
 .page-header {
   display: flex;
+  flex-direction: column;
+  padding: 24px 0 0;
+}
+
+.header-top {
+  display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 24px 0 16px;
 }
 
 .page-title-area {
@@ -54,5 +66,10 @@ defineProps<{
   gap: 12px;
   min-height: 36px;
   padding-top: 6px;
+}
+
+.header-bottom {
+  width: 100%;
+  margin-top: 12px;
 }
 </style>
