@@ -491,14 +491,15 @@ export class ModuleRepository {
     };
     lastPollTime?: string;
     lastError?: string;
+    latencyMs?: number;
   }): Promise<void> {
     try {
       const stmt = this.db.prepare(`
         INSERT INTO module_runtime_status (
           module_key, is_running, start_time, uptime_seconds,
           last_heartbeat, messages_collected, errors_count,
-          last_poll_time, last_error, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          last_poll_time, last_error, latency_ms, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(module_key) DO UPDATE SET
           is_running = excluded.is_running,
           start_time = excluded.start_time,
@@ -508,6 +509,7 @@ export class ModuleRepository {
           errors_count = excluded.errors_count,
           last_poll_time = excluded.last_poll_time,
           last_error = excluded.last_error,
+          latency_ms = excluded.latency_ms,
           updated_at = excluded.updated_at
       `);
 
@@ -522,6 +524,7 @@ export class ModuleRepository {
         status.runtime?.errorsCount || 0,
         status.lastPollTime || now,
         status.lastError || null,
+        status.latencyMs || 0,
         now
       );
 
@@ -557,6 +560,7 @@ export class ModuleRepository {
     };
     lastPollTime?: string;
     lastError?: string;
+    latencyMs?: number;
     lastFetchedAt: string;
   } | null> {
     try {
@@ -564,7 +568,7 @@ export class ModuleRepository {
         SELECT r.status, r.version,
                s.is_running, s.start_time, s.uptime_seconds,
                s.messages_collected, s.errors_count,
-               s.last_poll_time, s.last_error,
+               s.last_poll_time, s.last_error, s.latency_ms,
                s.updated_at as last_fetched
         FROM module_registry r
         LEFT JOIN module_runtime_status s ON r.module_key = s.module_key
@@ -585,6 +589,7 @@ export class ModuleRepository {
         } : undefined,
         lastPollTime: row.last_poll_time as string | undefined,
         lastError: row.last_error as string | undefined,
+        latencyMs: row.latency_ms as number | undefined,
         lastFetchedAt: row.last_fetched as string,
       };
     } catch (error) {

@@ -205,6 +205,7 @@ export class DBManager {
           errors_count INTEGER DEFAULT 0,
           last_poll_time TEXT,
           last_error TEXT,
+          latency_ms INTEGER DEFAULT 0,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (module_key) REFERENCES module_registry(module_key) ON DELETE CASCADE

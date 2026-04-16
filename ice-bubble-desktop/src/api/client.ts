@@ -41,6 +41,7 @@ export interface ModuleStatusDTO {
   state: 'running' | 'stopped' | 'error' | null;
   lastPollTime?: string;
   lastError?: string;
+  latencyMs?: number | null;
 }
 
 export interface ModuleDTO {
@@ -54,6 +55,7 @@ export interface ModuleDTO {
   status?: {
     state?: string;
     runtime?: { startTime?: string };
+    latencyMs?: number | null;
   };
 }
 

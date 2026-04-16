@@ -3,6 +3,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { apiMonitor, type MonitorStats, type EndpointStats, type LatencyRecord } from '../utils/monitor';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
+import { api } from '../api/client';
+import type { ModuleDTO } from '../api/client';
 
 // 统计数据
 const stats = ref<MonitorStats>({
@@ -19,6 +21,9 @@ const stats = ref<MonitorStats>({
 // 各端点统计
 const endpointStats = ref<EndpointStats[]>([]);
 
+// 模块列表
+const moduleList = ref<ModuleDTO[]>([]);
+
 // 延迟趋势数据（用于图表）
 const trendData = ref<LatencyRecord[]>([]);
 
@@ -32,6 +37,18 @@ function refreshData(): void {
   stats.value = apiMonitor.getStats();
   endpointStats.value = apiMonitor.getEndpointStats();
   trendData.value = apiMonitor.getRecentRecords(30);
+}
+
+/**
+ * 刷新模块数据
+ */
+async function refreshModules(): Promise<void> {
+  try {
+    const data = await api.getModules();
+    moduleList.value = data.modules || [];
+  } catch (e) {
+    console.error('获取模块列表失败:', e);
+  }
 }
 
 /**
@@ -60,27 +77,26 @@ function getSuccessRateType(rate: number): string {
   return 'danger';
 }
 
-/**
- * 计算延迟条形图宽度（基于最大延迟）
- */
-function getBarWidth(latency: number, maxLatency: number): string {
-  if (maxLatency === 0) return '0%';
-  return `${Math.min((latency / maxLatency) * 100, 100)}%`;
-}
-
-/**
- * 简化端点名称
- */
-function simplifyEndpoint(endpoint: string): string {
-  // 移除前置路径，如 /api/agents -> /agents
-  return endpoint.replace(/^\/(api)?/, '/').split('?')[0];
-}
-
-// 最大端点延迟（用于条形图）
-const maxEndpointLatency = computed(() => {
-  if (endpointStats.value.length === 0) return 0;
-  return Math.max(...endpointStats.value.map(s => s.maxLatency));
+// 最大模块延迟（用于条形图）
+const maxModuleLatency = computed(() => {
+  if (moduleList.value.length === 0) return 0;
+  return Math.max(...moduleList.value.map(m => m.status?.latencyMs || 0), 1);
 });
+
+// 获取模块延迟条形图宽度
+function getModuleLatencyWidth(mod: ModuleDTO): string {
+  const latency = mod.status?.latencyMs || 0;
+  if (maxModuleLatency.value === 0) return '0%';
+  return `${Math.min((latency / maxModuleLatency.value) * 100, 100)}%`;
+}
+
+// 获取模块延迟来源标签
+function getModuleSource(moduleKey: string): string {
+  if (moduleKey === 'admin') return '前端→Admin';
+  return 'Admin→模块';
+}
+
+
 
 // 延迟趋势SVG路径
 const trendPath = computed(() => {
@@ -125,8 +141,12 @@ const trendAreaPath = computed(() => {
 
 onMounted(() => {
   refreshData();
+  refreshModules();
   // 每秒刷新一次数据
-  refreshTimer = setInterval(refreshData, 1000);
+  refreshTimer = setInterval(() => {
+    refreshData();
+    refreshModules();
+  }, 1000);
 });
 
 onUnmounted(() => {
@@ -218,26 +238,25 @@ onUnmounted(() => {
         <el-empty description="暂无延迟数据" :image-size="60" />
       </div>
 
-      <!-- 各端点延迟 -->
-      <div class="section-title">各端点延迟</div>
-      <div class="endpoint-list" v-if="endpointStats.length > 0">
-        <div class="endpoint-item" v-for="ep in endpointStats" :key="ep.endpoint">
-          <div class="endpoint-name">{{ simplifyEndpoint(ep.endpoint) }}</div>
+      <!-- 各模块延迟 -->
+      <div class="section-title">各模块延迟</div>
+      <div class="module-list" v-if="moduleList.length > 0">
+        <div class="endpoint-item" v-for="mod in moduleList" :key="mod.moduleKey">
+          <div class="endpoint-name">{{ mod.name }}</div>
           <div class="endpoint-bar-wrapper">
-            <div class="endpoint-bar" :style="{ width: getBarWidth(ep.avgLatency, maxEndpointLatency), backgroundColor: getLatencyColor(ep.avgLatency) }"></div>
+            <div class="endpoint-bar" :style="{ width: getModuleLatencyWidth(mod), backgroundColor: getLatencyColor(mod.status?.latencyMs || 0) }"></div>
           </div>
           <div class="endpoint-latency">
-            <span class="avg">{{ formatLatency(ep.avgLatency) }}</span>
-            <span class="detail">({{ formatLatency(ep.minLatency) }}~{{ formatLatency(ep.maxLatency) }})</span>
+            <span class="avg">{{ formatLatency(mod.status?.latencyMs || 0) }}</span>
           </div>
-          <el-tag size="small" :type="ep.successRate >= 99 ? 'success' : ep.successRate >= 95 ? 'warning' : 'danger'">
-            {{ ep.successRate }}%
+          <el-tag size="small" :type="mod.status?.state === 'running' ? 'success' : mod.status?.state === 'error' ? 'danger' : 'info'">
+            {{ mod.status?.state || 'unknown' }}
           </el-tag>
-          <span class="count">({{ ep.count }})</span>
+          <span class="endpoint-source">{{ getModuleSource(mod.moduleKey) }}</span>
         </div>
       </div>
       <div class="empty-chart" v-else>
-        <el-empty description="暂无端点数据" :image-size="60" />
+        <el-empty description="暂无模块数据" :image-size="60" />
       </div>
     </el-card>
 
@@ -404,6 +423,13 @@ onUnmounted(() => {
   font-size: 11px;
   color: var(--el-text-color-secondary);
   width: 40px;
+  text-align: right;
+}
+
+.endpoint-source {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  width: 80px;
   text-align: right;
 }
 </style>

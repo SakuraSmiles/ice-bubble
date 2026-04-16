@@ -29,6 +29,7 @@ interface ModuleStatus {
   state: 'running' | 'stopped' | 'error';
   lastPollTime: string | null;
   lastError: string | null;
+  latencyMs?: number | null;
   runtime: {
     startTime: string | null;
     uptimeSeconds?: number;
@@ -103,6 +104,7 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
               state: dbStatus.status,
               lastPollTime: dbStatus.lastPollTime || null,
               lastError: dbStatus.lastError || null,
+            latencyMs: dbStatus.latencyMs || null,
               runtime: dbStatus.runtime ? {
                 startTime: dbStatus.runtime.startTime,
                 uptimeSeconds: dbStatus.runtime.uptimeSeconds,
@@ -160,6 +162,7 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
           state: dbStatus.status,
           lastPollTime: dbStatus.lastPollTime || null,
           lastError: dbStatus.lastError || null,
+            latencyMs: dbStatus.latencyMs || null,
           runtime: dbStatus.runtime ? {
             startTime: dbStatus.runtime.startTime,
             uptimeSeconds: dbStatus.runtime.uptimeSeconds,

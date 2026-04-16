@@ -190,6 +190,7 @@ export class ModuleScheduler {
    */
   private async pollModule(module: ModuleEndpointConfig): Promise<ModuleStatus | null> {
     const now = new Date().toISOString();
+    const startTime = Date.now();
     try {
       // 设置 NO_PROXY 避免代理问题
       const originalNoProxy = process.env.NO_PROXY;
@@ -208,6 +209,7 @@ export class ModuleScheduler {
       
       const data = await response.json() as unknown as ModuleStatus;
       this.logger.log(`[ModuleScheduler] 获取到 ${module.moduleKey} 状态: ${data.status || 'unknown'}`);
+      const endTime = Date.now();
 
       // 存入数据库（成功：status=running, lastPollTime=now, lastError=undefined）
       if (this.repository) {
@@ -222,6 +224,7 @@ export class ModuleScheduler {
             errorsCount: data.runtime.errorsCount,
           } : undefined,
           lastPollTime: now,
+          latencyMs: endTime - startTime,
         });
       }
 
@@ -236,6 +239,7 @@ export class ModuleScheduler {
           status: 'error',
           lastPollTime: now,
           lastError: errMsg,
+          latencyMs: 0,
         });
       }
       
@@ -404,6 +408,7 @@ export class ModuleScheduler {
     };
     lastPollTime?: string;
     lastError?: string;
+    latencyMs?: number;
   } | null> {
     if (!this.repository) {
       return null;
@@ -424,6 +429,7 @@ export class ModuleScheduler {
         } : undefined,
         lastPollTime: row.lastPollTime,
         lastError: row.lastError,
+        latencyMs: row.latencyMs,
       };
     } catch (error) {
       this.logger.error(`[ModuleScheduler] 从数据库获取 ${moduleKey} 状态失败:`, error);
