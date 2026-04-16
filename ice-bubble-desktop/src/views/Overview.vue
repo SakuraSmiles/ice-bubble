@@ -79,21 +79,14 @@ function getSuccessRateType(rate: number): string {
 
 // 最大模块延迟（用于条形图）
 const maxModuleLatency = computed(() => {
-  if (moduleList.value.length === 0) return 0;
-  // admin 用前端监控的延迟，其他模块用后端返回的延迟
-  const adminLatency = apiMonitor.getEndpointStats().find(e => e.endpoint.includes('/api/modules'))?.avgLatency || 0;
-  const moduleMax = Math.max(...moduleList.value
-    .filter(m => m.moduleKey !== 'admin')
-    .map(m => m.status?.latencyMs || 0), 1);
-  return Math.max(adminLatency, moduleMax);
+  // 只计算非admin模块的延迟
+  const modules = moduleList.value.filter(m => m.moduleKey !== 'admin');
+  if (modules.length === 0) return 0;
+  return Math.max(...modules.map(m => m.status?.latencyMs || 0), 1);
 });
 
-// 获取模块延迟
+// 获取模块延迟（排除admin）
 function getModuleLatency(mod: ModuleDTO): number {
-  if (mod.moduleKey === 'admin') {
-    // admin 用前端监控的平均延迟
-    return apiMonitor.getEndpointStats().find(e => e.endpoint.includes('/api/modules'))?.avgLatency || 0;
-  }
   return mod.status?.latencyMs || 0;
 }
 
@@ -104,11 +97,6 @@ function getModuleLatencyWidth(mod: ModuleDTO): string {
   return `${Math.min((latency / maxModuleLatency.value) * 100, 100)}%`;
 }
 
-// 获取模块延迟来源标签
-function getModuleSource(moduleKey: string): string {
-  if (moduleKey === 'admin') return '前端→Admin';
-  return 'Admin→模块';
-}
 
 
 
@@ -178,20 +166,10 @@ onUnmounted(() => {
     <!-- 统计卡片 -->
     <el-card class="content-area">
       <el-row :gutter="16" class="stats-row">
-        <!-- 当前延迟 -->
+        <!-- 前端→Admin 延迟 -->
         <el-col :span="6">
           <div class="stat-card">
-            <div class="stat-label">当前延迟</div>
-            <div class="stat-value" :style="{ color: getLatencyColor(stats.currentLatency) }">
-              {{ formatLatency(stats.currentLatency) }}
-            </div>
-          </div>
-        </el-col>
-
-        <!-- 平均延迟 -->
-        <el-col :span="6">
-          <div class="stat-card">
-            <div class="stat-label">平均延迟</div>
+            <div class="stat-label">前端→Admin</div>
             <div class="stat-value" :style="{ color: getLatencyColor(stats.avgLatency) }">
               {{ formatLatency(stats.avgLatency) }}
             </div>
@@ -252,8 +230,8 @@ onUnmounted(() => {
         <el-empty description="暂无延迟数据" :image-size="60" />
       </div>
 
-      <!-- 各模块延迟 -->
-      <div class="section-title">各模块延迟</div>
+      <!-- Admin→模块延迟 -->
+      <div class="section-title">Admin→模块 延迟</div>
       <div class="module-list" v-if="moduleList.length > 0">
         <div class="endpoint-item" v-for="mod in moduleList" :key="mod.moduleKey">
           <div class="endpoint-name">{{ mod.name }}</div>
@@ -266,7 +244,7 @@ onUnmounted(() => {
           <el-tag size="small" :type="mod.status?.state === 'running' ? 'success' : mod.status?.state === 'error' ? 'danger' : 'info'">
             {{ mod.status?.state || 'unknown' }}
           </el-tag>
-          <span class="endpoint-source">{{ getModuleSource(mod.moduleKey) }}</span>
+
         </div>
       </div>
       <div class="empty-chart" v-else>
