@@ -13,6 +13,7 @@ export interface ModuleEndpointConfig {
   enabled: boolean;
   pollInterval?: number;
   registeredTime?: string;
+  version?: string;
 }
 
 export interface ModuleStatus {
@@ -131,7 +132,7 @@ export class ModuleScheduler {
     // 对于外部模块，获取注册信息和版本
     const modulesWithDbTime = this.modules.map(m => {
       let registeredTime = m.registeredTime || this.adminStartTime.toISOString();
-      let version: string | null = null;
+      let version: string | undefined;
       
       if (this.repository) {
         const dbTime = this.repository.getModuleCreatedAt(m.moduleKey);
@@ -139,7 +140,7 @@ export class ModuleScheduler {
           registeredTime = new Date(dbTime).toISOString();
         }
         // 获取 version
-        version = this.repository.getModuleVersion(m.moduleKey);
+        version = this.repository.getModuleVersion(m.moduleKey) ?? undefined;
       }
       
       return { ...m, registeredTime, version };
@@ -148,10 +149,9 @@ export class ModuleScheduler {
     // admin 也获取 version
     let adminVersion: string | null = '1.0.0';
     if (this.repository) {
-      const adminReg = this.repository.getModule('admin');
-      adminVersion = adminReg?.version || '1.0.0';
+      adminVersion = this.repository.getModuleVersion('admin') || '1.0.0';
     }
-    adminConfig.version = adminVersion;
+    adminConfig.version = adminVersion ?? undefined;
 
     return [adminConfig, ...modulesWithDbTime];
   }
@@ -193,7 +193,8 @@ export class ModuleScheduler {
     try {
       // 设置 NO_PROXY 避免代理问题
       const originalNoProxy = process.env.NO_PROXY;
-      process.env.NO_PROXY = process.env.NO_PROXY + ',localhost';
+      const current = process.env.NO_PROXY || '';
+      process.env.NO_PROXY = current ? `${current},localhost` : 'localhost';
       
       const url = `${module.baseUrl.replace(/\/$/, '')}/api/meta/status`;
       const response = await fetch(url);
@@ -213,13 +214,13 @@ export class ModuleScheduler {
         // version 来自 collector 返回的数据
         await this.repository.saveModuleStatus(module.moduleKey, {
           status: 'running',
-          version: data.version || null,
-          runtime: {
-            startTime: data.runtime?.startTime || null,
-            uptimeSeconds: data.runtime?.uptimeSeconds || 0,
-            messagesCollected: data.runtime?.messagesCollected || 0,
-            errorsCount: data.runtime?.errorsCount || 0,
-          },
+          version: data.version ?? undefined,
+          runtime: data.runtime ? {
+            startTime: data.runtime.startTime,
+            uptimeSeconds: data.runtime.uptimeSeconds,
+            messagesCollected: data.runtime.messagesCollected,
+            errorsCount: data.runtime.errorsCount,
+          } : undefined,
           lastPollTime: now,
         });
       }
@@ -278,7 +279,8 @@ export class ModuleScheduler {
     try {
       // 设置 NO_PROXY 避免代理问题
       const originalNoProxy = process.env.NO_PROXY;
-      process.env.NO_PROXY = process.env.NO_PROXY + ',localhost';
+      const current = process.env.NO_PROXY || '';
+      process.env.NO_PROXY = current ? `${current},localhost` : 'localhost';
       
       const url = `${module.baseUrl.replace(/\/$/, '')}/api/meta/config`;
       const response = await fetch(url);

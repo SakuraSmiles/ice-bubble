@@ -8,6 +8,7 @@ import express from 'express';
 import { config } from 'dotenv';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { logger } from './utils/index.js';
 import { ModuleScheduler } from './modules/module-scheduler.js';
 import { createModulesRouter } from './api/modules.js';
 import { createDataRouter } from './api/data.js';
@@ -39,7 +40,7 @@ async function bootstrapModules(
   moduleConfigs: Array<{ moduleKey: string; name: string; baseUrl: string; enabled: boolean; pollInterval?: number }>
 ): Promise<void> {
   const configs = moduleConfigs.filter(c => c.enabled);
-  console.log(`[Admin] 准备加载 ${configs.length} 个模块...`);
+  logger.info(`[Admin] 准备加载 ${configs.length} 个模块...`);
 
   for (const cfg of configs) {
     try {
@@ -63,9 +64,9 @@ async function bootstrapModules(
         await repository.saveModuleStatus(cfg.moduleKey, status);
       }
 
-      console.log(`[Admin] 模块 ${cfg.moduleKey} 加载成功`);
+      logger.info(`[Admin] 模块 ${cfg.moduleKey} 加载成功`);
     } catch (error) {
-      console.error(`[Admin] 模块 ${cfg.moduleKey} 加载失败:`, error);
+      logger.error(`[Admin] Module ${cfg.moduleKey} load failed`, { error });
 
       // 即使失败也注册
       await repository.registerModule({
@@ -78,7 +79,7 @@ async function bootstrapModules(
     }
   }
 
-  console.log(`[Admin] 模块加载完成，共 ${configs.length} 个模块`);
+  logger.info(`[Admin] 模块加载完成，共 ${configs.length} 个模块`);
 }
 
 /**
@@ -95,9 +96,9 @@ export async function startAdmin(): Promise<void> {
     const dbPath = join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(9);  // 执行数据库迁移（v9: 创建 token_summary 表）
+    await dbManager.migrate(10);  // 执行数据库迁移（v10: token_summary 改为每日聚合）
     const repository = new ModuleRepository(dbManager.getConnection());
-    console.log('[Admin] 数据库初始化完成');
+    logger.info('[Admin] 数据库初始化完成');
 
     // 首次启动检查：如果数据库中没有模块，自动注册 admin 自己
     const existingModules = await repository.getModules({ limit: 1 });
@@ -109,22 +110,22 @@ export async function startAdmin(): Promise<void> {
         status: 'running',
         version: VERSION
       });
-      console.log('[Admin] 首次启动，自动注册 admin 模块到数据库');
+      logger.info('[Admin] 首次启动，自动注册 admin 模块到数据库');
     }
 
     // 初始化模块调度器
     const moduleConfigs = configData.modules || [];
     const scheduler = new ModuleScheduler(moduleConfigs, repository);
 
-    console.log('[Admin] 模块调度器初始化完成');
-    console.log(`[Admin] 已配置 ${moduleConfigs.length} 个模块`);
+    logger.info('[Admin] 模块调度器初始化完成');
+    logger.info(`[Admin] 已配置 ${moduleConfigs.length} 个模块`);
 
     // 初始化数据仓库和同步调度器
     const avatarsDir = join(__dirname, '..', '..', 'data', 'avatars');
     // 确保头像目录存在
     if (!existsSync(avatarsDir)) {
       mkdirSync(avatarsDir, { recursive: true });
-      console.log('[Admin] 头像目录已创建:', avatarsDir);
+      logger.info('[Admin] Avatar directory created', { path: avatarsDir });
     }
     const dataRepository = new DataRepository(dbManager.getConnection(), avatarsDir);
     const dataSyncConfig = configData.dataSync || {};
@@ -138,7 +139,7 @@ export async function startAdmin(): Promise<void> {
       dataRepository
     );
     dataSync.start();
-    console.log('[Admin] 数据同步调度器初始化完成');
+    logger.info('[Admin] 数据同步调度器初始化完成');
 
     // 注册 API 路由
     app.use('/api', createDataRouter(dataRepository));
@@ -158,12 +159,12 @@ export async function startAdmin(): Promise<void> {
 
     // 启动服务器
     app.listen(PORT, HOST, () => {
-        console.log(`[Admin] 服务启动成功: http://${HOST}:${PORT}`);
-        console.log(`[Admin] API: http://${HOST}:${PORT}/api/modules`);
+        logger.info(`[Admin] 服务启动成功: http://${HOST}:${PORT}`);
+        logger.info(`[Admin] API: http://${HOST}:${PORT}/api/modules`);
     });
 }
 
 startAdmin().catch((error) => {
-    console.error('Failed to start admin', error);
+    logger.error('Failed to start admin', { error });
     process.exit(1);
 });

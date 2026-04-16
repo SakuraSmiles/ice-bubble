@@ -6,14 +6,12 @@
 
 import { Router, Request, Response } from 'express';
 import { readFileSync, writeFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { ModuleScheduler } from '../modules/module-scheduler.js';
 
-// config.json 路径（相对于 src/）
+// config.json 路径（使用 process.cwd() 获取项目根目录）
 function getConfigPath(): string {
-  const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-  return join(projectRoot, 'config', 'config.json');
+  return join(process.cwd(), 'config', 'config.json');
 }
 
 function readConfig(): Record<string, unknown> {
@@ -51,7 +49,7 @@ interface ModuleResponse {
 }
 
 function buildModuleResponse(
-  m: { moduleKey: string; name: string; baseUrl: string; enabled: boolean; pollInterval: number; registeredTime: string },
+  m: { moduleKey: string; name: string; baseUrl: string; enabled: boolean; pollInterval?: number; registeredTime?: string },
   version: string | null,
   status: ModuleStatus | null
 ): ModuleResponse {
@@ -60,8 +58,8 @@ function buildModuleResponse(
     name: m.name,
     baseUrl: m.baseUrl,
     enabled: m.enabled,
-    pollInterval: m.pollInterval,
-    registeredTime: m.registeredTime,
+    pollInterval: m.pollInterval ?? 0,
+    registeredTime: m.registeredTime ?? '',
     version: version || '-',
     status: status || {
       state: 'running',
@@ -156,7 +154,7 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
         dbStatus = await scheduler.getStatusFromDatabase(key);
       }
       
-      version = dbStatus?.version || module.version || null;
+      version = dbStatus?.version || null;
       if (dbStatus) {
         status = {
           state: dbStatus.status,
@@ -196,8 +194,6 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
    * 新增模块
    */
   router.post('/', async (req: Request, res: Response) => {
-    console.log('[DEBUG POST /api/modules] req.body:', JSON.stringify(req.body));
-    console.log('[DEBUG] headers:', JSON.stringify(req.headers));
     
     const { moduleKey, name, baseUrl, enabled, pollInterval } = req.body as {
       moduleKey: string;
@@ -385,7 +381,7 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
         return;
       }
       
-      const data = await response.json();
+      const data = await response.json() as { moduleKey: string; moduleType: string; status: string; version: string };
       res.json({ success: true, moduleKey: data.moduleKey, moduleType: data.moduleType, status: data.status, version: data.version });
     } catch (err: any) {
       res.status(500).json({ error: `连接失败: ${err.message}` });

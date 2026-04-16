@@ -1,31 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
-import { api } from '../api/client.ts';
+import { formatTime, formatRelativeTime, getActivityStatus, truncatePath, formatNumber } from '../utils/format.ts';
+import { api, AgentWithActivityDTO } from '../api/client.ts';
 import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
-
-interface Agent {
-  agent_id: string;
-  agent_name: string | null;
-  workspace: string | null;
-  session_count: number;
-  message_count: number;
-  first_active_at: string | null;
-  last_active_at: string | null;
-  updated_at: string;
-  avatar: string | null;
-  model: string | null;
-  source: string;
-}
 
 interface ActivityDay {
   date: string;
   count: number;
 }
 
-const agents = ref<Agent[]>([]);
+const agents = ref<AgentWithActivityDTO[]>([]);
 const loading = ref(false);
 const totalAgents = ref(0);
 const totalSessions = ref(0);
@@ -33,8 +19,20 @@ const totalMessages = ref(0);
 // agentId → ActivityDay[]
 const activityMap = ref<Record<string, ActivityDay[]>>({});
 
+
+function getTokenTrend(agent: AgentWithActivityDTO): { text: string; class: string } {
+  if (!agent.todayTokenStats || !agent.yesterdayTokenStats) return { text: '', class: '' };
+  const today = agent.todayTokenStats.total_tokens_input + agent.todayTokenStats.total_tokens_output;
+  const yesterday = agent.yesterdayTokenStats.total_tokens_input + agent.yesterdayTokenStats.total_tokens_output;
+  if (yesterday <= 0) return { text: '', class: '' };
+  const diff = today - yesterday;
+  const sign = diff >= 0 ? '+' : '-';
+  const className = diff >= 0 ? 'trend-up' : 'trend-down';
+  return { text: `${sign}${formatNumber(Math.abs(diff))}`, class: className };
+}
+
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
-let heatmapTimer: ReturnType<typeof setInterval> | null = null;
+let heavyDataTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * 计算动态热力图阈值（基于百分位数）
@@ -162,14 +160,14 @@ function hideTooltip() {
 async function fetchAgentsBasic() {
   try {
     const data = await api.getAgents();
-    const newAgents: Agent[] = data.agents || [];
+    const newAgents = data.agents || [];
 
-    // 合并更新：保留现有的 avatar 等字段
+    // 合并更新：保留现有的 activity、token_stats 等字段
     const merged = newAgents.reduce((map, a) => {
       const existing = agents.value.find(ex => ex.agent_id === a.agent_id);
-      map[a.agent_id] = existing ? { ...existing, ...a } : a;
+      map[a.agent_id] = existing ? { ...existing, ...a, activity: existing.activity } : { ...a, activity: [] };
       return map;
-    }, {} as Record<string, Agent>);
+    }, {} as Record<string, AgentWithActivityDTO>);
 
     agents.value = Object.values(merged);
     totalAgents.value = data.count || 0;
@@ -197,6 +195,72 @@ async function fetchActivity(days = 90) {
 }
 
 /**
+ * 获取 Token 统计数据（今日 + 昨日）
+ */
+async function fetchTokenStats() {
+  try {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+
+    // 计算昨天的日期
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    // 并行获取：今日数据 + 昨日数据
+    const [todayRes, yesterdayRes] = await Promise.all([
+      api.getTokenSummary(undefined, today),
+      api.getTokenSummary(undefined, yesterdayStr)
+    ]);
+
+    // 构建 map 便于快速查找
+    const todayMap = new Map(todayRes.summary.map(s => [s.agent_id, s]));
+    const yesterdayMap = new Map(yesterdayRes.summary.map(s => [s.agent_id, s]));
+
+    // 填充到 agents
+    for (const agent of agents.value) {
+      const todayStats = todayMap.get(agent.agent_id);
+      const yesterdayStats = yesterdayMap.get(agent.agent_id);
+
+      // token_stats: 总览数据（用于显示主数据，即今日）
+      agent.token_stats = todayStats ? {
+        agent_id: todayStats.agent_id,
+        total_tokens_input: todayStats.total_tokens_input,
+        total_tokens_output: todayStats.total_tokens_output,
+        total_cost: todayStats.total_cost,
+        cost_input: todayStats.cost_input,
+        cost_output: todayStats.cost_output,
+        message_count: todayStats.message_count
+      } : null;
+
+      // todayTokenStats: 今日数据
+      agent.todayTokenStats = todayStats ? {
+        agent_id: todayStats.agent_id,
+        total_tokens_input: todayStats.total_tokens_input,
+        total_tokens_output: todayStats.total_tokens_output,
+        total_cost: todayStats.total_cost,
+        cost_input: todayStats.cost_input,
+        cost_output: todayStats.cost_output,
+        message_count: todayStats.message_count
+      } : null;
+
+      // yesterdayTokenStats: 昨日数据
+      agent.yesterdayTokenStats = yesterdayStats ? {
+        agent_id: yesterdayStats.agent_id,
+        total_tokens_input: yesterdayStats.total_tokens_input,
+        total_tokens_output: yesterdayStats.total_tokens_output,
+        total_cost: yesterdayStats.total_cost,
+        cost_input: yesterdayStats.cost_input,
+        cost_output: yesterdayStats.cost_output,
+        message_count: yesterdayStats.message_count
+      } : null;
+    }
+  } catch (e: any) {
+    console.warn('[Agents] 获取 Token 统计失败:', e.message);
+  }
+}
+
+/**
  * 完整初始化/刷新：agents + activity + loading 动画
  */
 async function fetchAll(withActivity = true) {
@@ -204,17 +268,11 @@ async function fetchAll(withActivity = true) {
   try {
     await fetchAgentsBasic();
     if (withActivity) {
-      await fetchActivity();
+      await Promise.all([fetchActivity(), fetchTokenStats()]);
     }
   } finally {
     loading.value = false;
   }
-}
-
-function formatTime(dateString: string | null): string {
-  if (!dateString) return '-';
-  const d = new Date(dateString);
-  return `${d.getMonth() + 1}-${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
 
 function getAvatarUrl(avatar: string | null): string | null {
@@ -222,45 +280,14 @@ function getAvatarUrl(avatar: string | null): string | null {
   return `/api/resources/avatars/${avatar}`;
 }
 
-function formatRelativeTime(dateString: string | null): string {
-  if (!dateString) return '-';
-  const now = Date.now();
-  const date = new Date(dateString).getTime();
-  const diff = now - date;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}小时前`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}天前`;
-  return formatTime(dateString);
-}
-
-function getActivityStatus(lastActiveAt: string | null): { label: string; type: string } {
-  if (!lastActiveAt) return { label: '失联', type: 'danger' };
-  const now = Date.now();
-  const date = new Date(lastActiveAt).getTime();
-  const diff = now - date;
-  const hours = diff / 3600000;
-  if (hours < 24) return { label: '活跃', type: 'success' };
-  if (hours < 72) return { label: '休假', type: 'warning' };
-  return { label: '离线', type: 'info' };
-}
-
-function truncatePath(path: string | null): string {
-  if (!path) return '-';
-  if (path.length <= 35) return path;
-  const parts = path.split('/');
-  if (parts.length <= 3) return path;
-  return parts.slice(0, 2).join('/') + '/.../' + parts.slice(-2).join('/');
-}
-
 function startTimers() {
-  // 30秒：静默更新 agents 基本信息（无 loading）
-  refreshTimer = setInterval(fetchAgentsBasic, 30000);
-  // 5分钟：更新热力图数据
-  heatmapTimer = setInterval(fetchActivity, 300000);
+  // 30秒：静默刷新基础数据（agents基本信息，不触发loading）
+  refreshTimer = setInterval(() => fetchAgentsBasic(), 30000);
+
+  // 5分钟：刷新重型数据（activity热力图 + token统计，不触发loading）
+  heavyDataTimer = setInterval(() => {
+    Promise.all([fetchActivity(), fetchTokenStats()]);
+  }, 300000);  // 5分钟 = 300秒
 }
 
 onMounted(async () => {
@@ -273,9 +300,9 @@ onUnmounted(() => {
     clearInterval(refreshTimer);
     refreshTimer = null;
   }
-  if (heatmapTimer) {
-    clearInterval(heatmapTimer);
-    heatmapTimer = null;
+  if (heavyDataTimer) {
+    clearInterval(heavyDataTimer);
+    heavyDataTimer = null;
   }
 });
 
@@ -285,12 +312,12 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 <template>
   <div class="agents-page">
     <PageHeader title="成员" :subtitle="subtitle">
-      <el-button circle size="small" :loading="loading" @click="fetchAll(true)" title="刷新">
+      <el-button circle size="small" :disabled="loading" @click="fetchAll(true)" title="刷新">
         <el-icon><Refresh /></el-icon>
       </el-button>
     </PageHeader>
 
-    <el-card class="content-area">
+    <el-card class="content-area" v-loading="loading">
       <div v-if="agents.length === 0 && !loading" class="empty-msg">暂无成员</div>
       <div v-if="agents.length === 0 && loading" class="empty-msg">加载中...</div>
       <div v-if="agents.length > 0" class="cards-grid">
@@ -304,13 +331,14 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
                   :size="88"
                   :src="getAvatarUrl(agent.avatar)!"
                   fit="cover"
-                  style="background: #fff; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
+                  class="agent-avatar"
                 >
                 </el-avatar>
                 <el-avatar v-else
                   :size="88"
                   fit="cover"
-                  style="background: #fff; color: var(--color-accent-blue); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
+                  class="agent-avatar"
+                  style="color: var(--color-accent-blue);"
                 >
                   {{ agent.agent_id.substring(0, 1).toUpperCase() }}
                 </el-avatar>
@@ -339,17 +367,6 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
               <div class="stat-item">
                 <div class="stat-icon">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M2.5 3.5a.5.5 0 01.5-.5H13a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0 4a.5.5 0 01.5-.5h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0 4a.5.5 0 01.5-.5h6a.5.5 0 010 1H3a.5.5 0 01-.5-.5z"/>
-                </svg>
-              </div>
-              <div class="stat-content">
-                <span class="stat-value">{{ agent.session_count }}</span>
-                <span class="stat-label">会话</span>
-              </div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-icon">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M14 1a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1h12zM2 0a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V2a2 2 0 00-2-2H2z"/>
                   <path d="M3 4h10v1H3V4zm0 3h10v1H3V7zm0 3h7v1H3v-1z"/>
                 </svg>
@@ -357,6 +374,28 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
               <div class="stat-content">
                 <span class="stat-value">{{ agent.message_count }}</span>
                 <span class="stat-label">消息</span>
+                <div class="token-breakdown">
+                  <span>({{ agent.session_count }} 会话)</span>
+                </div>
+              </div>
+            </div>
+            <div class="stat-item" v-if="agent.todayTokenStats">
+              <div class="stat-icon">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M8 4v8M6 6.5c0-1.1.9-2 2-2s2 .9 2 2c0 1.1-.9 2-2 2s-2 .9-2 2 1 2 2 2"/>
+                </svg>
+              </div>
+              <div class="stat-content">
+                <div class="token-main-row">
+                  <span class="stat-value token-cost-value">{{ formatNumber(agent.todayTokenStats.total_tokens_input + agent.todayTokenStats.total_tokens_output) }}</span>
+                  <span class="token-trend" :class="getTokenTrend(agent).class">{{ getTokenTrend(agent).text }}</span>
+                </div>
+                <span class="stat-label">Tokens</span>
+                <div class="token-breakdown">
+                  <span>↓ {{ formatNumber(agent.todayTokenStats.total_tokens_input) }}</span>
+                  <span>↑ {{ formatNumber(agent.todayTokenStats.total_tokens_output) }}</span>
+                </div>
               </div>
             </div>
             </div>
@@ -365,6 +404,8 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
               <span class="source-value">{{ agent.source }}</span>
             </div>
           </div>
+
+
 
           <!-- 活动热力图 -->
           <div class="agent-heatmap">
@@ -484,6 +525,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   margin-bottom: 2px;
   background: #fff;
   border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .agent-avatar-wrapper {
@@ -524,7 +566,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 
 .model-value {
   font-size: 12px;
-  color: #4a9340;
+  color: var(--color-accent-blue);
   font-family: monospace;
   width: 100%;
   overflow: hidden;
@@ -568,8 +610,8 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .workspace-value {
   font-size: 16px;
   font-family: monospace;
-  color: #4a9340;
-  max-width: 250px;
+  color: var(--color-accent-blue);
+  max-width: 350px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -626,7 +668,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 }
 
 .stat-value {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 600;
   color: var(--color-text);
   font-family: monospace;
@@ -636,6 +678,33 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .stat-label {
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+.token-breakdown {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.token-main-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.token-trend {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.token-trend.trend-up {
+  color: var(--el-color-success);
+}
+
+.token-trend.trend-down {
+  color: var(--el-color-danger);
 }
 
 .agent-times {
@@ -677,6 +746,66 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   vertical-align: bottom;
   font-size: 11px;
   color: var(--color-text-secondary, #888);
+}
+
+/* ===== Token 统计 ===== */
+.agent-token-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 16px;
+  border-right: 1px solid var(--color-border);
+  min-width: 140px;
+}
+
+.token-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.token-row.today {
+  margin-top: 4px;
+}
+
+.token-label {
+  color: var(--color-text-secondary);
+  min-width: 32px;
+}
+
+.token-value {
+  font-family: monospace;
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.token-value.cost {
+  color: var(--color-accent-blue);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.token-value.muted {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.token-cost {
+  font-family: monospace;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.token-cost-value {
+  font-family: monospace;
+  font-weight: 600;
+}
+
+.token-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
 }
 
 /* ===== 活动热力图 ===== */

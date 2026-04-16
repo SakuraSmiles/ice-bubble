@@ -57,9 +57,7 @@ async function fetchMessages(reset = false) {
     if (Array.isArray(data)) {
       msgs = data;
     } else if (data.messages && Array.isArray(data.messages)) {
-      msgs = data.messages;
-    } else if (data.data && Array.isArray(data.data)) {
-      msgs = data.data;
+      msgs = data.messages as unknown as ChatMessage[];
     }
 
     if (reset) {

@@ -19,7 +19,9 @@ export interface SessionDTO {
   agent_id: string;
   channel: string;
   message_count: number;
+  first_message_at: string | null;
   last_message_at: string | null;
+  created_at: string;
 }
 
 export interface SessionsResponseDTO {
@@ -82,12 +84,43 @@ export interface ActivityDayDTO {
   count: number;
 }
 
+export interface TokenStatsDTO {
+  agent_id: string;
+  total_tokens_input: number;
+  total_tokens_output: number;
+  total_cost: number;
+  cost_input: number;
+  cost_output: number;
+  message_count: number;
+}
+
 export interface AgentWithActivityDTO extends AgentDTO {
   activity: ActivityDayDTO[];
+  // Token stats (可选，由单独接口获取后填充)
+  token_stats?: TokenStatsDTO | null;
+  todayTokenStats?: TokenStatsDTO | null;
+  yesterdayTokenStats?: TokenStatsDTO | null;
 }
 
 export interface AgentsWithActivityResponseDTO {
   agents: AgentWithActivityDTO[];
+}
+
+export interface TokenSummaryDTO {
+  agent_id: string;
+  date: string;
+  total_tokens_input: number;
+  total_tokens_output: number;
+  total_cost: number;
+  cost_input: number;
+  cost_output: number;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TokenSummaryResponseDTO {
+  summary: TokenSummaryDTO[];
 }
 
 // ============ 内部工具 ============
@@ -107,24 +140,24 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   // 统计
-  getStats: (): Promise<StatsDTO> => fetchJson('/data/stats'),
+  getStats: (): Promise<StatsDTO> => fetchJson('/stats'),
 
   // 会话
   getSessions: (params?: { limit?: number; offset?: number }) => {
     const query = params ? '?' + new URLSearchParams(
       Object.entries(params).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {})
     ).toString() : '';
-    return fetchJson<SessionsResponseDTO>(`/data/sessions${query}`);
+    return fetchJson<SessionsResponseDTO>(`/sessions${query}`);
   },
 
   getSession: (key: string) =>
-    fetchJson<SessionDTO>(`/data/sessions/${encodeURIComponent(key)}`),
+    fetchJson<SessionDTO>(`/sessions/${encodeURIComponent(key)}`),
 
   getSessionMessages: (sessionKey: string, params?: { limit?: number; offset?: number }) => {
     const query = params ? '?' + new URLSearchParams(
       Object.entries(params).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {})
     ).toString() : '';
-    return fetchJson<{ messages: MessageDTO[] }>(`/data/sessions/${encodeURIComponent(sessionKey)}/messages${query}`);
+    return fetchJson<{ messages: MessageDTO[] }>(`/sessions/${encodeURIComponent(sessionKey)}/messages${query}`);
   },
 
   // 消息
@@ -132,7 +165,7 @@ export const api = {
     const query = params ? '?' + new URLSearchParams(
       Object.entries(params).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {})
     ).toString() : '';
-    return fetchJson<{ messages: MessageDTO[] }>(`/data/messages${query}`);
+    return fetchJson<{ messages: MessageDTO[] }>(`/messages${query}`);
   },
 
   // 模块
@@ -168,4 +201,11 @@ export const api = {
   getAgents: () => fetchJson<AgentsResponseDTO>('/agents'),
   getAgentsWithActivity: (days = 90) =>
     fetchJson<AgentsWithActivityResponseDTO>(`/agents/with-activity?days=${days}`),
+  getTokenSummary: (agentId?: string, date?: string) => {
+    const params = new URLSearchParams();
+    if (agentId) params.set('agentId', agentId);
+    if (date) params.set('date', date);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return fetchJson<TokenSummaryResponseDTO>(`/agents/token-summary${query}`);
+  },
 };

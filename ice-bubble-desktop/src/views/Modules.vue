@@ -5,6 +5,7 @@ import { Refresh, Plus, Delete, InfoFilled, VideoPlay, VideoPause } from '@eleme
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { formatTime } from '../utils/format.ts';
 import { api } from '../api/client.ts';
 
 interface ModuleStatus {
@@ -115,9 +116,6 @@ async function fetchModules(showLoading = true) {
   if (showLoading) loading.value = true;
   error.value = '';
   try {
-    // 模拟网络延迟，确保 loading 至少显示 0.8 秒
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
     const listData = await api.getModules();
 
     // API 已返回完整数据（包括状态），直接使用
@@ -160,22 +158,6 @@ function getDisplayStatus(mod: Module): { label: string; type: string } {
 
 function getLastError(mod: Module): string | null {
   return mod.status?.lastError || null;
-}
-
-// 优化时间格式 (MM-DD HH:MM 更简洁)
-function formatTime(dateString: string | null | undefined): string {
-  if (!dateString) return '-';
-  try {
-    const date = new Date(dateString);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  } catch {
-    return '-';
-  }
 }
 
 function getLastPollTime(mod: Module): string | null {
@@ -287,7 +269,6 @@ async function saveModule() {
     };
 
     const isEdit = !!editingModule.value;
-    const url = isEdit && editingModule.value ? '/api/modules/' + editingModule.value.moduleKey : '/api/modules';
     const method = isEdit ? 'PUT' : 'POST';
 
     const res = await api.saveModule(body, method, isEdit && editingModule.value ? editingModule.value.moduleKey : undefined);
@@ -391,10 +372,10 @@ onUnmounted(() => {
 <template>
   <div class="modules-page">
     <PageHeader title="模块管理" subtitle="配置和管理模块信息">
-      <el-button :disabled="loading" circle @click="fetchModules(true)">
+      <el-button :disabled="loading" circle size="small" @click="fetchModules(true)">
         <el-icon><Refresh /></el-icon>
       </el-button>
-      <el-button type="primary" circle @click="openAddDialog">
+      <el-button type="primary" circle size="small" @click="openAddDialog">
         <el-icon><Plus /></el-icon>
       </el-button>
     </PageHeader>

@@ -1,128 +1,102 @@
-"use strict";
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var import_http = require("http");
-var import_fs = require("fs");
-var import_path = require("path");
-var import_url = require("url");
-var import_http2 = __toESM(require("http"), 1);
-const import_meta = {};
-const __dirname = (0, import_path.dirname)((0, import_url.fileURLToPath)(import_meta.url));
+import { createServer } from "http";
+import { writeFileSync, existsSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import express from "express";
+import { enableHotReload, disableHotReload, reloadConfig } from "../config.server.js";
+import { createProxyMiddleware } from "../middleware/proxy.js";
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const START_PORT = 14e3;
 const MAX_PORT = 14010;
 function writePortFile(port) {
-  const portFile = (0, import_path.join)(__dirname, "../../.server-port");
+  const portFile = join(__dirname, "../../.server-port");
   try {
-    (0, import_fs.writeFileSync)(portFile, String(port));
-    console.log(`Server port: ${port}`);
+    writeFileSync(portFile, String(port));
+    console.log(`[Server] \u7AEF\u53E3: ${port}`);
   } catch {
   }
 }
-const server = (0, import_http.createServer)(async (req, res) => {
+const app = express();
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") {
-    res.statusCode = 200;
-    res.end();
-    return;
-  }
-  if (req.url === "/__port") {
-    res.statusCode = 200;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ port: server.address()?.port ?? 14e3 }));
-    return;
-  }
-  if (req.url?.startsWith("/api/")) {
-    console.log(`>>> ${req.method} ${req.url}`);
-    const chunks = [];
-    for await (const chunk of req) {
-      chunks.push(chunk.toString());
-    }
-    const body = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-    const reqUrl2 = req.url || "/";
-    const options = {
-      hostname: "localhost",
-      port: 13e3,
-      path: reqUrl2,
-      method: req.method,
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": body.length
-      }
-    };
-    const result = await new Promise((resolve) => {
-      const proxyReq = import_http2.default.request(options, (proxyRes) => {
-        let data = "";
-        proxyRes.on("data", (chunk) => {
-          data += chunk.toString();
-        });
-        proxyRes.on("end", () => {
-          resolve({ status: proxyRes.statusCode ?? 500, data });
-        });
-      });
-      proxyReq.on("error", (e) => resolve({ status: 500, data: JSON.stringify({ error: e.message }) }));
-      if (body.length > 0) proxyReq.write(body);
-      proxyReq.end();
-    });
-    res.statusCode = result.status;
-    res.setHeader("Content-Type", "application/json");
-    res.end(result.data);
-    return;
-  }
-  const distPath = (0, import_path.join)(__dirname, "../../dist");
-  const reqUrl = req.url || "/";
-  const filePath = (0, import_path.join)(distPath, reqUrl === "/" ? "index.html" : reqUrl.replace(/^\//, ""));
-  if ((0, import_fs.existsSync)(filePath)) {
-    res.statusCode = 200;
-    res.end((0, import_fs.readFileSync)(filePath));
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  next();
+});
+app.options("/{*path}", (_req, res) => {
+  res.status(200).end();
+});
+app.get("/__port", (_req, res) => {
+  res.json({ port: currentServer?.address()?.port ?? START_PORT });
+});
+const isDev = process.env.NODE_ENV !== "production";
+if (isDev) {
+  enableHotReload();
+}
+app.use("/api", createProxyMiddleware());
+app.use(express.static(join(__dirname, "../../dist")));
+app.get("/{*path}", (_req, res) => {
+  const indexPath = join(__dirname, "../../dist/index.html");
+  if (existsSync(indexPath)) {
+    res.sendFile(indexPath);
   } else {
-    res.statusCode = 404;
-    res.end("Not found");
+    res.status(404).send("Not found");
   }
 });
+let currentServer = null;
 async function tryListen(port) {
   return new Promise((resolve) => {
-    server.listen(port, () => {
-      console.log(`Desktop: ${port}`);
+    const newServer = createServer(app);
+    currentServer = newServer;
+    newServer.listen(port, () => {
+      console.log(`[Server] Desktop \u542F\u52A8: http://localhost:${port}`);
       resolve(port);
     });
-    server.on("error", () => {
-      if (port < MAX_PORT) {
-        console.log(`Port ${port} in use, trying ${port + 1}...`);
-        server.close();
-        tryListen(port + 1).then(resolve);
+    newServer.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        newServer.close(() => {
+          if (port < MAX_PORT) {
+            console.log(`[Server] \u7AEF\u53E3 ${port} \u5DF2\u88AB\u5360\u7528\uFF0C\u5C1D\u8BD5 ${port + 1}...`);
+            tryListen(port + 1).then(resolve);
+          } else {
+            console.error("[Server] \u6CA1\u6709\u53EF\u7528\u7684\u7AEF\u53E3 (14000-14010 \u5747\u88AB\u5360\u7528)");
+            console.error("[Server] \u8BF7\u5173\u95ED\u5360\u7528\u8FD9\u4E9B\u7AEF\u53E3\u7684\u8FDB\u7A0B\u540E\u91CD\u8BD5");
+            process.exit(1);
+          }
+        });
       } else {
-        console.error("No ports available");
+        console.error("[Server] \u542F\u52A8\u9519\u8BEF:", err);
         resolve(null);
       }
     });
   });
 }
+function gracefulShutdown() {
+  console.log("[Server] \u6B63\u5728\u5173\u95ED...");
+  disableHotReload();
+  if (currentServer) {
+    currentServer.close(() => {
+      console.log("[Server] \u5DF2\u5173\u95ED");
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+}
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGINT", gracefulShutdown);
 async function start() {
+  console.log("[Server] \u542F\u52A8\u4E2D...");
+  console.log("[Config] \u5F53\u524D\u914D\u7F6E:", JSON.stringify(reloadConfig(), null, 2));
   const port = await tryListen(START_PORT);
   if (port) {
     writePortFile(port);
+    console.log("[Server] \u51C6\u5907\u5C31\u7EEA");
   }
 }
 start();
+export {
+  app
+};

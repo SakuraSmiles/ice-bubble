@@ -120,6 +120,8 @@ function formatRelativeTime(dateString: string | null): string {
 
 async function fetchAllSessions() {
   loading.value = true;
+  // 确保 loading 状态可见（请求太快需要模拟延迟）
+  await new Promise(r => setTimeout(r, 500));
   try {
     const data = await api.getSessions({ limit: 50 });
     allSessions.value = data.sessions || [];
@@ -174,7 +176,7 @@ onUnmounted(() => {
 <template>
   <div class="sessions-page">
     <PageHeader :title="'会话'" :subtitle="subtitle">
-      <el-button circle size="small" :loading="loading" @click="handleRefresh" title="刷新">
+      <el-button circle size="small" :disabled="loading" @click="handleRefresh" title="刷新">
         <el-icon><Refresh /></el-icon>
       </el-button>
 

@@ -9,6 +9,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { logger } from '../utils/index.js';
 import { DataRepository } from '../storage/data-repository.js';
 
 export function createDataRouter(repository: DataRepository): Router {
@@ -122,6 +123,48 @@ export function createDataRouter(repository: DataRepository): Router {
     res.json({ success: true });
   });
 
+    /**
+   * GET /api/data/agents/with-activity
+   * 批量获取所有 agent 及其活动热力图数据（一次请求）
+   * Query: days - 返回最近 N 天的活动数据，默认 90，上限 365
+   */
+  router.get('/agents/with-activity', (req: Request, res: Response) => {
+    const days = Math.min(Math.max(parseInt(String(req.query.days ?? '90')), 1), 365);
+    const agentsWithActivity = repository.getAgentsWithActivity(days);
+
+    res.json({
+      count: agentsWithActivity.length,
+      agents: agentsWithActivity
+    });
+  });
+
+  /**
+   * GET /api/data/agents/token-summary
+   * 获取指定日期的 token 统计
+   * Query: agentId - 可选，不传则返回所有 agent
+   * Query: date - 可选，格式 YYYY-MM-DD，不传则返回所有日期
+   */
+  router.get('/agents/token-summary', (req: Request, res: Response) => {
+    const { agentId, date } = req.query as { agentId?: string; date?: string };
+    const summary = repository.getTokenSummary(agentId, date);
+    // 保持原有日期（getTokenSummary 已返回正确的 date 字段）
+    res.json({ summary });
+  });
+
+  /**
+   * POST /api/data/agents/token-summary/rebuild
+   * 重建 token_summary 表（从 admin_messages 全量聚合）
+   */
+  router.post('/agents/token-summary/rebuild', (_req: Request, res: Response) => {
+    try {
+      const result = repository.rebuildTokenSummary();
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      logger.error('[DataAPI] rebuildTokenSummary error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   /**
    * GET /api/data/agents/:id/activity
    * 获取指定 agent 的活动热力图数据
@@ -131,33 +174,6 @@ export function createDataRouter(repository: DataRepository): Router {
     const days = Math.min(Math.max(parseInt(String(req.query.days ?? '90')), 1), 365);
     const activity = repository.getAgentActivity(id, days);
     res.json({ agent_id: id, activity });
-  });
-
-  /**
-   * GET /api/data/agents/with-activity
-   * 批量获取所有 agent 及其活动热力图数据（一次请求）
-   * Query: days - 返回最近 N 天的活动数据，默认 90，上限 365
-   * 返回包含 token_stats 字段
-   */
-  router.get('/agents/with-activity', (req: Request, res: Response) => {
-    const days = Math.min(Math.max(parseInt(String(req.query.days ?? '90')), 1), 365);
-    const agentsWithActivity = repository.getAgentsWithActivity(days);
-
-    // 获取所有 agent 的 token 统计
-    const tokenStatsMap = new Map(
-      repository.getTokenSummary().map(s => [s.agent_id, s])
-    );
-
-    // 合并 token_stats 到每个 agent
-    const agentsWithStats = agentsWithActivity.map(agent => ({
-      ...agent,
-      token_stats: tokenStatsMap.get(agent.agent_id) || null
-    }));
-
-    res.json({
-      count: agentsWithStats.length,
-      agents: agentsWithStats
-    });
   });
 
   return router;

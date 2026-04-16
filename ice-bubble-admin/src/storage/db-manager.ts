@@ -599,6 +599,48 @@ export class DBManager {
         `);
         logger.info('Migration v9: created token_summary table');
         break;
+      case 10:
+        // 迁移：token_summary 从全局聚合改为每日聚合
+        // 1. 创建新表结构
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS token_summary_new (
+            agent_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            total_tokens_input INTEGER DEFAULT 0,
+            total_tokens_output INTEGER DEFAULT 0,
+            total_cost REAL DEFAULT 0,
+            cost_input REAL DEFAULT 0,
+            cost_output REAL DEFAULT 0,
+            message_count INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (agent_id, date)
+          );
+        `);
+        // 2. 从旧表迁移数据：按 agent_id 聚合，所有数据的 date 设为 '1970-01-01'（表示历史无日期数据）
+        this.db.exec(`
+          INSERT OR IGNORE INTO token_summary_new
+            (agent_id, date, total_tokens_input, total_tokens_output, total_cost, cost_input, cost_output, message_count, created_at, updated_at)
+          SELECT
+            agent_id,
+            '1970-01-01' as date,
+            total_input_tokens,
+            total_output_tokens,
+            total_cost,
+            cost_input,
+            cost_output,
+            message_count,
+            created_at,
+            updated_at
+          FROM token_summary;
+        `);
+        // 3. 删除旧表，重命名新表
+        this.db.exec(`
+          DROP TABLE token_summary;
+          ALTER TABLE token_summary_new RENAME TO token_summary;
+        `);
+        logger.info('Migration v10: token_summary migrated to daily aggregation schema');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

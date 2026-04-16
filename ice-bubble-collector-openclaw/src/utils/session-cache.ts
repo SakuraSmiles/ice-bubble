@@ -12,6 +12,7 @@
  */
 
 import { Logger } from './logger.js';
+import { SQLiteManager } from '../storage/sqlite-manager.js';
 
 const logger = new Logger('SessionCache');
 
@@ -56,12 +57,12 @@ export class SessionCache {
   private config: SessionCacheConfig;
   
   /** SQLite 管理器引用 */
-  private sqliteManager: any;
+  private sqliteManager: SQLiteManager;
   
   /** 清理定时器 */
   private cleanupTimer: NodeJS.Timeout | null = null;
 
-  constructor(sqliteManager: any, config?: Partial<SessionCacheConfig>) {
+  constructor(sqliteManager: SQLiteManager, config?: Partial<SessionCacheConfig>) {
     this.sqliteManager = sqliteManager;
     this.config = { ...DEFAULT_CONFIG, ...config };
     
@@ -164,13 +165,6 @@ export class SessionCache {
    */
   private async checkSessionInDb(sessionKey: string): Promise<boolean> {
     try {
-      // 这里需要根据实际的 SQLiteManager 接口调整
-      // 假设有 checkSessionExists 方法
-      if (this.sqliteManager.checkSessionExists) {
-        return await this.sqliteManager.checkSessionExists(sessionKey);
-      }
-      
-      // 如果没有对应方法，尝试查询
       const session = await this.sqliteManager.getSession(sessionKey);
       return !!session;
     } catch (error) {

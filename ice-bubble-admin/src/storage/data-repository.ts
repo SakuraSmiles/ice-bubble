@@ -7,6 +7,7 @@
 import type { Database } from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
+import { logger } from '../utils/index.js';
 import type { CollectorAgent } from '../data/collector-client.js';
 
 // ========== 类型定义 ==========
@@ -202,25 +203,75 @@ export class DataRepository {
   // ========== Token Summary ==========
 
   /**
-   * Token 统计聚合接口
+   * Token 统计聚合接口（从每日数据聚合）
+   * @param agentId 可选，按 agent_id 筛选
+   * @param date 可选，按日期筛选（格式 'YYYY-MM-DD'），不传则返回所有日期的汇总
    */
-  getTokenSummary(agentId?: string): Array<{
+  getTokenSummary(agentId?: string, date?: string): Array<{
     agent_id: string;
-    total_input_tokens: number;
-    total_output_tokens: number;
+    date: string;
+    total_tokens_input: number;
+    total_tokens_output: number;
     total_cost: number;
     cost_input: number;
     cost_output: number;
     message_count: number;
     updated_at: string;
   }> {
-    if (agentId) {
-      const row = this.db.prepare(
-        'SELECT * FROM token_summary WHERE agent_id = ?'
-      ).get(agentId) as {
+    // 有具体日期：返回该日期的数据（按 agent 分组）
+    if (date) {
+      const rows = this.db.prepare(`
+        SELECT
+          agent_id,
+          date,
+          SUM(total_tokens_input) as total_tokens_input,
+          SUM(total_tokens_output) as total_tokens_output,
+          SUM(total_cost) as total_cost,
+          SUM(cost_input) as cost_input,
+          SUM(cost_output) as cost_output,
+          SUM(message_count) as message_count,
+          MIN(created_at) as created_at,
+          MAX(updated_at) as updated_at
+        FROM token_summary
+        WHERE date = ?
+        GROUP BY agent_id, date
+        ORDER BY MAX(updated_at) DESC
+      `).all(date) as Array<{
         agent_id: string;
-        total_input_tokens: number;
-        total_output_tokens: number;
+        date: string;
+        total_tokens_input: number;
+        total_tokens_output: number;
+        total_cost: number;
+        cost_input: number;
+        cost_output: number;
+        message_count: number;
+        updated_at: string;
+      }>;
+      return rows;
+    }
+
+    // 无具体日期：返回每个 agent 的所有日期汇总（date='all'）
+    if (agentId) {
+      const row = this.db.prepare(`
+        SELECT
+          agent_id,
+          'all' as date,
+          SUM(total_tokens_input) as total_tokens_input,
+          SUM(total_tokens_output) as total_tokens_output,
+          SUM(total_cost) as total_cost,
+          SUM(cost_input) as cost_input,
+          SUM(cost_output) as cost_output,
+          SUM(message_count) as message_count,
+          MIN(created_at) as created_at,
+          MAX(updated_at) as updated_at
+        FROM token_summary
+        WHERE agent_id = ?
+        GROUP BY agent_id
+      `).get(agentId) as {
+        agent_id: string;
+        date: string;
+        total_tokens_input: number;
+        total_tokens_output: number;
         total_cost: number;
         cost_input: number;
         cost_output: number;
@@ -229,12 +280,28 @@ export class DataRepository {
       } | undefined;
       return row ? [row] : [];
     }
-    return this.db.prepare(
-      'SELECT * FROM token_summary ORDER BY updated_at DESC'
-    ).all() as Array<{
+
+    // 无 agentId 无 date：返回所有 agent 的所有日期汇总（每个 agent 一行，date='all'）
+    return this.db.prepare(`
+      SELECT
+        agent_id,
+        'all' as date,
+        SUM(total_tokens_input) as total_tokens_input,
+        SUM(total_tokens_output) as total_tokens_output,
+        SUM(total_cost) as total_cost,
+        SUM(cost_input) as cost_input,
+        SUM(cost_output) as cost_output,
+        SUM(message_count) as message_count,
+        MIN(created_at) as created_at,
+        MAX(updated_at) as updated_at
+      FROM token_summary
+      GROUP BY agent_id
+      ORDER BY MAX(updated_at) DESC
+    `).all() as Array<{
       agent_id: string;
-      total_input_tokens: number;
-      total_output_tokens: number;
+      date: string;
+      total_tokens_input: number;
+      total_tokens_output: number;
       total_cost: number;
       cost_input: number;
       cost_output: number;
@@ -244,7 +311,7 @@ export class DataRepository {
   }
 
   /**
-   * 批量更新 token_summary（在事务内执行）
+   * 批量更新 token_summary（在事务内执行，每日一条记录）
    */
   private batchUpdateTokenSummary(
     updates: Array<{
@@ -258,36 +325,47 @@ export class DataRepository {
   ): void {
     if (updates.length === 0) return;
 
+    // 使用本地时区（北京时间 UTC+8）
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const today = `${year}-${month}-${day}`;
+    const nowISO = now.toISOString();
+
     const upsertSQL = `
       INSERT INTO token_summary
-        (agent_id, total_input_tokens, total_output_tokens, total_cost, cost_input, cost_output, message_count)
-      VALUES (?, ?, ?, ?, ?, ?, 1)
-      ON CONFLICT(agent_id) DO UPDATE SET
-        total_input_tokens = total_input_tokens + excluded.total_input_tokens,
-        total_output_tokens = total_output_tokens + excluded.total_output_tokens,
+        (agent_id, date, total_tokens_input, total_tokens_output, total_cost, cost_input, cost_output, message_count, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      ON CONFLICT(agent_id, date) DO UPDATE SET
+        total_tokens_input = total_tokens_input + excluded.total_tokens_input,
+        total_tokens_output = total_tokens_output + excluded.total_tokens_output,
         total_cost = total_cost + excluded.total_cost,
         cost_input = cost_input + excluded.cost_input,
         cost_output = cost_output + excluded.cost_output,
         message_count = message_count + 1,
-        updated_at = CURRENT_TIMESTAMP
+        updated_at = excluded.updated_at
     `;
     const stmt = this.db.prepare(upsertSQL);
 
     for (const update of updates) {
       stmt.run(
         update.agentId,
+        today,
         update.tokensInput,
         update.tokensOutput,
         update.costTotal,
         update.costInput,
-        update.costOutput
+        update.costOutput,
+        nowISO,
+        nowISO
       );
     }
-    console.log(`[DataRepository] Batch updated token_summary for ${updates.length} agents`);
+    console.log(`[DataRepository] Batch updated token_summary for ${updates.length} agents on ${today}`);
   }
 
   /**
-   * 全量重建 token_summary（从 admin_messages 聚合）
+   * 全量重建 token_summary（从 admin_messages 按天聚合）
    * @returns 受影响的 agent 数量
    */
   rebuildTokenSummary(): { affected_agents: number; duration_ms: number } {
@@ -298,12 +376,13 @@ export class DataRepository {
       // 1. 清空 token_summary 表
       this.db.prepare('DELETE FROM token_summary').run();
 
-      // 2. 按 agent_id 聚合 admin_messages 的 token 数据
+      // 2. 按 agent_id 和 date 聚合 admin_messages 的 token 数据（使用北京时间 UTC+8）
       const rows = this.db.prepare(`
         SELECT
           s.agent_id,
-          COALESCE(SUM(CAST(m.tokens_input AS INTEGER)), 0) as total_input_tokens,
-          COALESCE(SUM(CAST(m.tokens_output AS INTEGER)), 0) as total_output_tokens,
+          DATE(datetime(m.created_at, '+8 hours')) as date,
+          COALESCE(SUM(CAST(m.tokens_input AS INTEGER)), 0) as total_tokens_input,
+          COALESCE(SUM(CAST(m.tokens_output AS INTEGER)), 0) as total_tokens_output,
           COALESCE(SUM(CAST(m.cost_total AS REAL)), 0) as total_cost,
           COALESCE(SUM(CAST(m.cost_input AS REAL)), 0) as cost_input,
           COALESCE(SUM(CAST(m.cost_output AS REAL)), 0) as cost_output,
@@ -317,37 +396,44 @@ export class DataRepository {
             m.tokens_output IS NOT NULL OR
             m.cost_total IS NOT NULL
           )
-        GROUP BY s.agent_id
+        GROUP BY s.agent_id, DATE(datetime(m.created_at, '+8 hours'))
       `).all() as Array<{
         agent_id: string;
-        total_input_tokens: number;
-        total_output_tokens: number;
+        date: string;
+        total_tokens_input: number;
+        total_tokens_output: number;
         total_cost: number;
         cost_input: number;
         cost_output: number;
         message_count: number;
       }>;
 
-      // 3. 重新插入
+      // 3. 重新插入（按 date 分组，每日一条）
       const insertSQL = `
         INSERT INTO token_summary
-          (agent_id, total_input_tokens, total_output_tokens, total_cost, cost_input, cost_output, message_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+          (agent_id, date, total_tokens_input, total_tokens_output, total_cost, cost_input, cost_output, message_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const stmt = this.db.prepare(insertSQL);
+      const now = new Date().toISOString();
       for (const row of rows) {
         stmt.run(
           row.agent_id,
-          row.total_input_tokens,
-          row.total_output_tokens,
+          row.date,
+          row.total_tokens_input,
+          row.total_tokens_output,
           row.total_cost,
           row.cost_input,
           row.cost_output,
-          row.message_count
+          row.message_count,
+          now,
+          now
         );
       }
 
-      return rows.length;
+      // 返回去重后的 agent 数量
+      const agentIds = new Set(rows.map(r => r.agent_id));
+      return agentIds.size;
     });
 
     const affected_agents = rebuild();
@@ -378,6 +464,9 @@ export class DataRepository {
     let inserted = 0;
 
     const insertMany = this.db.transaction((rows: AdminMessage[]) => {
+      // 记录每条消息是否新插入（用于 token 统计去重）
+      const newlyInserted: boolean[] = [];
+
       for (const row of rows) {
         const result = stmt.run(
           row.source_id ?? null,
@@ -395,7 +484,9 @@ export class DataRepository {
           now,
           row.source_created_at ?? null
         );
-        if (result.changes > 0) inserted++;
+        const isNew = result.changes > 0;
+        newlyInserted.push(isNew);
+        if (isNew) inserted++;
       }
 
       // 收集需要更新的 token 数据
@@ -403,7 +494,7 @@ export class DataRepository {
       const sessionKeys = [...new Set(rows.map(r => r.session_key))];
       const sessionAgentMap = this.getSessionAgentIds(sessionKeys);
 
-      // 2. 按 agentId 聚合 token 数据（只统计有 token 或 cost 的消息）
+      // 2. 按 agentId 聚合 token 数据（只统计新插入的消息）
       const tokenUpdates = new Map<string, {
         tokensInput: number;
         tokensOutput: number;
@@ -412,7 +503,11 @@ export class DataRepository {
         costOutput: number;
       }>();
 
-      for (const row of rows) {
+      for (let i = 0; i < rows.length; i++) {
+        // 只统计新插入的消息，避免重复计算
+        if (!newlyInserted[i]) continue;
+
+        const row = rows[i];
         const agentId = sessionAgentMap.get(row.session_key);
         if (!agentId) continue;
 
@@ -667,34 +762,41 @@ export class DataRepository {
    * 获取按 agent 分组的 sessions（用于 Desktop 下拉列表）
    * @param limitPerAgent 每个 agent 最多返回的 session 数量
    */
-  getGroupedSessions(limitPerAgent: number = 5): { agentId: string; totalCount: number; sessions: AdminSession[] }[] {
-    // 获取所有 sessions，按 agent_id 分组
+  getGroupedSessions(limitPerAgent: number = 5, offset: number = 0): { agentId: string; totalCount: number; sessions: AdminSession[] }[] {
+    // 使用 window function 实现分组后分页：每个 agent 内按 last_message_at DESC 编号，然后取前 limitPerAgent 条
     const allSessions = this.db.prepare(`
-      SELECT * FROM admin_sessions
-      ORDER BY agent_id, last_message_at DESC
-    `).all() as AdminSession[];
+      SELECT * FROM (
+        SELECT *, ROW_NUMBER() OVER (
+          PARTITION BY agent_id
+          ORDER BY last_message_at DESC
+        ) AS rn,
+        COUNT(*) OVER (PARTITION BY agent_id) AS total_in_group
+        FROM admin_sessions
+      ) ranked
+      WHERE rn <= ? AND agent_id IS NOT NULL
+      ORDER BY last_message_at DESC
+      LIMIT ? OFFSET ?
+    `).all(limitPerAgent, limitPerAgent, offset) as Array<AdminSession & { rn: number; total_in_group: number }>;
 
-    const groups: Record<string, AdminSession[]> = {};
-    for (const session of allSessions) {
-      if (!groups[session.agent_id]) {
-        groups[session.agent_id] = [];
+    // 按 agent_id 分组（agent_id 已在 SQL 中排除 null）
+    const groups: Record<string, { totalCount: number; sessions: AdminSession[] }> = {};
+    for (const row of allSessions) {
+      const agentId = row.agent_id as string; // 已保证非 null
+      if (!groups[agentId]) {
+        groups[agentId] = { totalCount: row.total_in_group, sessions: [] };
       }
-      groups[session.agent_id].push(session);
+      groups[agentId].sessions.push(row);
     }
 
-    // 转换为数组，每个 group 限制数量并保留总数
-    return Object.entries(groups)
-      .map(([agentId, sessions]) => ({
-        agentId,
-        totalCount: sessions.length,
-        sessions: sessions.slice(0, limitPerAgent),
-      }))
-      .sort((a, b) => {
-        // 按最新 session 的 last_message_at 倒序排列 groups
-        const aLatest = a.sessions[0]?.last_message_at ?? '';
-        const bLatest = b.sessions[0]?.last_message_at ?? '';
-        return bLatest.localeCompare(aLatest);
-      });
+    return Object.values(groups).map(g => ({
+      agentId: Object.keys(groups).find(k => groups[k] === g) ?? '',
+      totalCount: g.totalCount,
+      sessions: g.sessions,
+    })).sort((a, b) => {
+      const aLatest = a.sessions[0]?.last_message_at ?? '';
+      const bLatest = b.sessions[0]?.last_message_at ?? '';
+      return bLatest.localeCompare(aLatest);
+    });
   }
 
   // ========== Sync Progress ==========
@@ -765,25 +867,21 @@ export class DataRepository {
   upsertAgentActivityBatch(records: { agentId: string; date: string; count: number }[]): void {
     if (records.length === 0) return;
 
-    const deleteStmt = this.db.prepare(`
-      DELETE FROM agent_activity_daily WHERE agent_id = ? AND date = ?
-    `);
-
-    const insertStmt = this.db.prepare(`
-      INSERT INTO agent_activity_daily (agent_id, date, message_count) VALUES (?, ?, ?)
+    const upsertStmt = this.db.prepare(`
+      INSERT INTO agent_activity_daily (agent_id, date, message_count)
+      VALUES (?, ?, ?)
+      ON CONFLICT(agent_id, date) DO UPDATE SET
+        message_count = excluded.message_count
     `);
 
     const upsertMany = this.db.transaction((rows: typeof records) => {
       for (const row of rows) {
-        // 先删除旧记录（如果存在）
-        deleteStmt.run(row.agentId, row.date);
-        // 再插入新记录
-        insertStmt.run(row.agentId, row.date, row.count);
+        upsertStmt.run(row.agentId, row.date, row.count);
       }
     });
 
     upsertMany(records);
-    console.log(`[DataRepository] Replaced ${records.length} activity records`);
+    console.log(`[DataRepository] Upserted ${records.length} activity records`);
   }
 
   /**
@@ -974,7 +1072,7 @@ export class DataRepository {
    * @returns 重算影响的 session 数量
    */
   rebuildSessionMessageCounts(): number {
-    console.log('[DataRepository] 开始重建会话消息计数...');
+    logger.info('[DataRepository] Starting session message count rebuild...');
 
     // Step 1: 按实际消息数重算所有 session 的 message_count
     const updateSessionCounts = this.db.prepare(`
@@ -1002,7 +1100,7 @@ export class DataRepository {
     `);
 
     const sessionResult = updateSessionCounts.run();
-    console.log(`[DataRepository] 重算 ${sessionResult.changes} 个 session 的 message_count`);
+    logger.info(`[DataRepository] Recomputed message_count for ${sessionResult.changes} sessions`);
 
     // Step 2: 重算所有 agent 的汇总统计
     const updateAgentStats = this.db.prepare(`
@@ -1038,7 +1136,7 @@ export class DataRepository {
     `);
 
     const agentResult = updateAgentStats.run();
-    console.log(`[DataRepository] 重算 ${agentResult.changes} 个 agent 的汇总统计`);
+    logger.info(`[DataRepository] Recomputed agent stats for ${agentResult.changes} agents`);
 
     return sessionResult.changes;
   }
