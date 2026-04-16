@@ -80,12 +80,26 @@ function getSuccessRateType(rate: number): string {
 // 最大模块延迟（用于条形图）
 const maxModuleLatency = computed(() => {
   if (moduleList.value.length === 0) return 0;
-  return Math.max(...moduleList.value.map(m => m.status?.latencyMs || 0), 1);
+  // admin 用前端监控的延迟，其他模块用后端返回的延迟
+  const adminLatency = apiMonitor.getEndpointStats().find(e => e.endpoint.includes('/api/modules'))?.avgLatency || 0;
+  const moduleMax = Math.max(...moduleList.value
+    .filter(m => m.moduleKey !== 'admin')
+    .map(m => m.status?.latencyMs || 0), 1);
+  return Math.max(adminLatency, moduleMax);
 });
+
+// 获取模块延迟
+function getModuleLatency(mod: ModuleDTO): number {
+  if (mod.moduleKey === 'admin') {
+    // admin 用前端监控的平均延迟
+    return apiMonitor.getEndpointStats().find(e => e.endpoint.includes('/api/modules'))?.avgLatency || 0;
+  }
+  return mod.status?.latencyMs || 0;
+}
 
 // 获取模块延迟条形图宽度
 function getModuleLatencyWidth(mod: ModuleDTO): string {
-  const latency = mod.status?.latencyMs || 0;
+  const latency = getModuleLatency(mod);
   if (maxModuleLatency.value === 0) return '0%';
   return `${Math.min((latency / maxModuleLatency.value) * 100, 100)}%`;
 }
@@ -244,10 +258,10 @@ onUnmounted(() => {
         <div class="endpoint-item" v-for="mod in moduleList" :key="mod.moduleKey">
           <div class="endpoint-name">{{ mod.name }}</div>
           <div class="endpoint-bar-wrapper">
-            <div class="endpoint-bar" :style="{ width: getModuleLatencyWidth(mod), backgroundColor: getLatencyColor(mod.status?.latencyMs || 0) }"></div>
+            <div class="endpoint-bar" :style="{ width: getModuleLatencyWidth(mod), backgroundColor: getLatencyColor(getModuleLatency(mod)) }"></div>
           </div>
           <div class="endpoint-latency">
-            <span class="avg">{{ formatLatency(mod.status?.latencyMs || 0) }}</span>
+            <span class="avg">{{ formatLatency(getModuleLatency(mod)) }}</span>
           </div>
           <el-tag size="small" :type="mod.status?.state === 'running' ? 'success' : mod.status?.state === 'error' ? 'danger' : 'info'">
             {{ mod.status?.state || 'unknown' }}
