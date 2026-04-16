@@ -114,7 +114,9 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
     const path = url.pathname + url.search;
 
     console.log(`[Proxy] -> ${options.method} ${hostname}:${port}${path}`);
+    const startTs = Date.now();
 
+    console.log(`[Proxy] 开始连接 ${hostname}:${port}...`);
     const socket = net.createConnection({
       host: hostname,
       port: port,
@@ -142,6 +144,7 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
     let contentType: string | undefined;
 
     socket.on('connect', () => {
+      console.log(`[Proxy] Socket连接成功，耗时: ${Date.now() - startTs}ms`);
       if (options.body.length > 0) {
         socket.write(httpRequest, () => {
           socket.write(options.body);
