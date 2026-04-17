@@ -57,9 +57,11 @@ const apiProxy = {
   // 开发模式下 /api 请求代理到 Express 服务器
   // Express 服务器负责根据 modules.json 动态转发
   '/api': {
-    target: `http://localhost:14000`, // 默认端口，实际由 .server-port 文件决定
+    target: `http://localhost:14000`,
     changeOrigin: true,
-    // 不需要 rewrite，因为 Express 服务器的 /api 路由已经处理好了
+    // 调整代理超时设置
+    timeout: 30000,
+    proxyTimeout: 30000,
   }
 };
 
