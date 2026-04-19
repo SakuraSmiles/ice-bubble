@@ -99,7 +99,7 @@ export class CollectionPipeline extends EventEmitter {
   }
 
   private batchSize: number;
-  private configuredAgentIds: Set<string> | undefined;
+  private configuredAgentIds: Set<string> = new Set();
 
   // ========== 核心：处理事件管道 ==========
 

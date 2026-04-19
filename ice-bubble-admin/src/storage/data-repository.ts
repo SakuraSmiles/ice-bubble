@@ -361,7 +361,7 @@ export class DataRepository {
         nowISO
       );
     }
-    console.log(`[DataRepository] Batch updated token_summary for ${updates.length} agents on ${today}`);
+    logger.info(`[DataRepository] Batch updated token_summary for ${updates.length} agents on ${today}`);
   }
 
   /**
@@ -369,7 +369,7 @@ export class DataRepository {
    * @returns 受影响的 agent 数量
    */
   rebuildTokenSummary(): { affected_agents: number; duration_ms: number } {
-    console.log('[DataRepository] Starting token_summary rebuild...');
+    logger.info('[DataRepository] Starting token_summary rebuild...');
     const start = Date.now();
 
     const rebuild = this.db.transaction(() => {
@@ -438,7 +438,7 @@ export class DataRepository {
 
     const affected_agents = rebuild();
     const duration_ms = Date.now() - start;
-    console.log(`[DataRepository] Token summary rebuilt: ${affected_agents} agents in ${duration_ms}ms`);
+    logger.info(`[DataRepository] Token summary rebuilt: ${affected_agents} agents in ${duration_ms}ms`);
 
     return { affected_agents, duration_ms };
   }
@@ -545,7 +545,7 @@ export class DataRepository {
           this.batchUpdateTokenSummary(updates);
         } catch (error) {
           // token 更新失败不影响消息入库，记录错误
-          console.error('[DataRepository] Failed to update token_summary:', error);
+          logger.error('[DataRepository] Failed to update token_summary:', { error: String(error) });
         }
       }
     });
@@ -600,7 +600,7 @@ export class DataRepository {
    */
   refreshAgents(collectorAgents: CollectorAgent[], sourceModule: string = 'unknown'): void {
     if (collectorAgents.length === 0) {
-      console.log('[DataRepository] No collector agents to refresh');
+      logger.info('[DataRepository] No collector agents to refresh');
       return;
     }
 
@@ -684,10 +684,10 @@ export class DataRepository {
       });
 
       upsertAll();
-      console.log(`[DataRepository] Refreshed ${collectorAgents.length} configured agents`);
+      logger.info(`[DataRepository] Refreshed ${collectorAgents.length} configured agents`);
     } catch (error) {
-      console.error('[DataRepository] Failed to refresh agents:', error);
-      throw error;
+      logger.error('[DataRepository] refreshAgents failed:', { error: String(error) });
+      throw new Error(`Failed to refresh agents: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -722,9 +722,9 @@ export class DataRepository {
         map.set(row.agent_id, row.model);
       }
 
-      console.log(`[DataRepository] Loaded ${map.size} agent models from messages`);
+      logger.info(`[DataRepository] Loaded ${map.size} agent models from messages`);
     } catch (error) {
-      console.warn('[DataRepository] Failed to load agent models from messages:', error);
+      logger.warn('[DataRepository] Failed to load agent models from messages:', { error: String(error) });
     }
 
     return map;
@@ -780,16 +780,18 @@ export class DataRepository {
 
     // 按 agent_id 分组（agent_id 已在 SQL 中排除 null）
     const groups: Record<string, { totalCount: number; sessions: AdminSession[] }> = {};
+    const agentIdMap = new Map<object, string>(); // 修复: 不依赖 Object.keys 遍历顺序
     for (const row of allSessions) {
       const agentId = row.agent_id as string; // 已保证非 null
       if (!groups[agentId]) {
         groups[agentId] = { totalCount: row.total_in_group, sessions: [] };
       }
       groups[agentId].sessions.push(row);
+      agentIdMap.set(groups[agentId], agentId);
     }
 
     return Object.values(groups).map(g => ({
-      agentId: Object.keys(groups).find(k => groups[k] === g) ?? '',
+      agentId: agentIdMap.get(g) ?? '',
       totalCount: g.totalCount,
       sessions: g.sessions,
     })).sort((a, b) => {
@@ -881,7 +883,7 @@ export class DataRepository {
     });
 
     upsertMany(records);
-    console.log(`[DataRepository] Upserted ${records.length} activity records`);
+    logger.info(`[DataRepository] Upserted ${records.length} activity records`);
   }
 
   /**
@@ -941,7 +943,7 @@ export class DataRepository {
    * @returns 更新涉及的 session 数量
    */
   computeSessionStats(): number {
-    console.log('[DataRepository] Computing session stats from admin_messages...');
+    logger.info('[DataRepository] Computing session stats from admin_messages...');
 
     const computeAndUpsert = this.db.transaction(() => {
       // 获取所有 session_key
@@ -975,7 +977,7 @@ export class DataRepository {
     });
 
     const updated = computeAndUpsert();
-    console.log(`[DataRepository] Session stats computed: ${updated} sessions updated`);
+    logger.info(`[DataRepository] Session stats computed: ${updated} sessions updated`);
     return updated;
   }
 
@@ -989,7 +991,7 @@ export class DataRepository {
    * @returns 更新涉及的 agent 数量
    */
   computeAgentStats(): number {
-    console.log('[DataRepository] Computing agent stats from admin_messages...');
+    logger.info('[DataRepository] Computing agent stats from admin_messages...');
 
     const computeAndUpsert = this.db.transaction(() => {
       // 获取所有配置的 agent_id
@@ -1030,7 +1032,7 @@ export class DataRepository {
     });
 
     const updated = computeAndUpsert();
-    console.log(`[DataRepository] Agent stats computed: ${updated} agents updated`);
+    logger.info(`[DataRepository] Agent stats computed: ${updated} agents updated`);
     return updated;
   }
 
@@ -1130,7 +1132,7 @@ export class DataRepository {
           FROM admin_sessions 
           WHERE agent_id = aa.agent_id
             AND session_key NOT LIKE '%checkpoint%'
-            AND last_message_at IS NOT NOT NULL
+            AND last_message_at IS NOT NULL
         ),
         updated_at = CURRENT_TIMESTAMP
     `);

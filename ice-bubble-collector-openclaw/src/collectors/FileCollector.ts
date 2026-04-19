@@ -374,6 +374,12 @@ export class FileCollector extends BaseCollector implements Collector {
     error: Error,
     operation: () => Promise<void>
   ): Promise<void> {
+    // ENOENT（文件不存在）类错误不重试，立即失败
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      logger.error(`[FileCollector] File not found, no retry: ${filePath}`);
+      return;
+    }
+
     const existingError = this.fileErrors.get(filePath);
     const retryCount = existingError ? existingError.retryCount + 1 : 1;
 

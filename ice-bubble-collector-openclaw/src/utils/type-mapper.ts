@@ -13,6 +13,57 @@
 
 import { SessionMessage, Agent, Session, ToolCall } from '../types/index.js';
 
+// ==================== 数据库行类型 ====================
+
+/**
+ * UnifiedMessage 数据库行类型
+ */
+export interface UnifiedMessageRow {
+  message_id: string | null;
+  session_key: string;
+  message_type: string;
+  content: string | null;
+  model: string | null;
+  tokens_input: number | null;
+  tokens_output: number | null;
+  cost_total: number | null;
+  cost_input: number | null;
+  cost_output: number | null;
+  tools_json: string | null;
+  timestamp: string;
+  created_at: string | null;
+  [key: string]: unknown; // 允许按列名索引
+}
+
+/**
+ * UnifiedSession 数据库行类型
+ */
+export interface UnifiedSessionRow {
+  session_key: string;
+  agent_id: string;
+  channel: string;
+  account_id: string | null;
+  peer_id: string | null;
+  guild_id: string | null;
+  created_at: string;
+  updated_at: string;
+  [key: string]: unknown; // 允许按列名索引
+}
+
+/**
+ * UnifiedAgent 数据库行类型
+ */
+export interface UnifiedAgentRow {
+  agent_id: string;
+  agent_name: string | null;
+  config_json: string | null;
+  status: string;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+  [key: string]: unknown; // 允许按列名索引
+}
+
 // ==================== SessionMessage 映射 ====================
 
 /**
@@ -22,7 +73,7 @@ export class SessionMessageMapper {
   /**
    * TypeScript → 数据库行
    */
-  static toDb(message: SessionMessage): Record<string, any> {
+  static toDb(message: SessionMessage): UnifiedMessageRow {
     return {
       message_id: message.messageId || null,
       session_key: message.sessionKey,
@@ -65,7 +116,7 @@ export class SessionMessageMapper {
   /**
    * 批量转换：TypeScript → 数据库行
    */
-  static batchToDb(messages: SessionMessage[]): Record<string, any>[] {
+  static batchToDb(messages: SessionMessage[]): UnifiedMessageRow[] {
     return messages.map(msg => this.toDb(msg));
   }
 
@@ -86,7 +137,7 @@ export class SessionMapper {
   /**
    * TypeScript → 数据库行
    */
-  static toDb(session: Session): Record<string, any> {
+  static toDb(session: Session): UnifiedSessionRow {
     return {
       session_key: session.sessionKey,
       agent_id: session.agentId,
@@ -125,7 +176,7 @@ export class AgentMapper {
   /**
    * TypeScript → 数据库行
    */
-  static toDb(agent: Agent): Record<string, any> {
+  static toDb(agent: Agent): UnifiedAgentRow {
     return {
       agent_id: agent.agentId,
       agent_name: agent.agentName || null,

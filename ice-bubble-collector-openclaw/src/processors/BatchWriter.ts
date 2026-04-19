@@ -111,6 +111,9 @@ export class BatchWriter extends EventEmitter {
      */
     private failedMessages: SessionMessage[] = [];
 
+    /** 最大失败重试队列大小，防止 SQLite 持续失败时内存溢出 */
+    private static readonly MAX_RETRY_QUEUE = 1000;
+
     /** 定时刷新器 */
     private flushTimer: NodeJS.Timeout | null = null;
 
@@ -233,7 +236,13 @@ export class BatchWriter extends EventEmitter {
             this.emit('flush', { count: result.inserted, duplicates: result.duplicates });
         } catch (error) {
             // 失败消息移入专用队列，不与后续新消息混合，保持顺序
-            this.failedMessages = messages;
+            // 超限则丢弃最旧消息
+            const totalFailed = messages.length;
+            if (this.failedMessages.length + totalFailed > BatchWriter.MAX_RETRY_QUEUE) {
+                const excess = BatchWriter.MAX_RETRY_QUEUE - this.failedMessages.length;
+                this.failedMessages = this.failedMessages.slice(-Math.max(0, excess));
+            }
+            this.failedMessages.push(...messages);
             this.stats.buffered = this.buffer.length;
 
             // 发送错误事件

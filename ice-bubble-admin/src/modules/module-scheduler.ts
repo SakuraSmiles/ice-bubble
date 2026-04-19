@@ -35,15 +35,17 @@ export interface ModuleStatus {
 
 // 前向声明，避免循环依赖
 import type { ModuleRepository } from '../storage/module-repository.js';
+import { Logger } from '../utils/logger.js';
 
 export class ModuleScheduler {
   private modules: ModuleEndpointConfig[] = [];
   private timers: Map<string, NodeJS.Timeout> = new Map();
-  private logger = console;
+  private logger: Logger;
   private repository?: ModuleRepository;
   private adminStartTime: Date;
 
-  constructor(modules: ModuleEndpointConfig[], repository?: ModuleRepository) {
+  constructor(modules: ModuleEndpointConfig[], logger: Logger, repository?: ModuleRepository) {
+    this.logger = logger;
     this.modules = modules.filter(m => m.enabled).map(m => {
       // 优先使用配置中的注册时间，其次从数据库读取，最后才用当前时间
       let registeredTime = m.registeredTime;
@@ -73,21 +75,21 @@ export class ModuleScheduler {
    * 启动调度器
    */
   start(): void {
-    this.logger.log('[ModuleScheduler] 启动调度器');
+    this.logger.info('[ModuleScheduler] 启动调度器');
     for (const module of this.modules) {
       this.pollModule(module);
       const interval = module.pollInterval || 30000;
       const timer = setInterval(() => this.pollModule(module), interval);
       this.timers.set(module.moduleKey, timer);
     }
-    this.logger.log(`[ModuleScheduler] 已启动 ${this.modules.length} 个模块`);
+    this.logger.info(`[ModuleScheduler] 已启动 ${this.modules.length} 个模块`);
   }
 
   /**
    * 停止调度器
    */
   stop(): void {
-    this.logger.log('[ModuleScheduler] 停止调度器');
+    this.logger.info('[ModuleScheduler] 停止调度器');
     for (const timer of this.timers.values()) {
       clearInterval(timer);
     }
@@ -208,7 +210,7 @@ export class ModuleScheduler {
       }
       
       const data = await response.json() as unknown as ModuleStatus;
-      this.logger.log(`[ModuleScheduler] 获取到 ${module.moduleKey} 状态: ${data.status || 'unknown'}`);
+      this.logger.info(`[ModuleScheduler] 获取到 ${module.moduleKey} 状态: ${data.status || 'unknown'}`);
       const endTime = Date.now();
 
       // 存入数据库（成功：status=running, lastPollTime=now, lastError=undefined）
@@ -231,7 +233,7 @@ export class ModuleScheduler {
       return data;
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`[ModuleScheduler] 获取 ${module.moduleKey} 失败:`, error);
+      this.logger.error(`[ModuleScheduler] 获取 ${module.moduleKey} 失败:`, { error: String(error) });
       
       // 失败时：status=error/stopped, lastPollTime=now, lastError=错误信息
       if (this.repository) {
@@ -297,11 +299,11 @@ export class ModuleScheduler {
       }
       
       const data = await response.json() as Record<string, unknown>;
-      this.logger.log(`[ModuleScheduler] 获取到 ${module.moduleKey} 配置`);
+      this.logger.info(`[ModuleScheduler] 获取到 ${module.moduleKey} 配置`);
       
       return data;
     } catch (error) {
-      this.logger.error(`[ModuleScheduler] 获取 ${module.moduleKey} 配置失败:`, error);
+      this.logger.error(`[ModuleScheduler] 获取 ${module.moduleKey} 配置失败:`, { error: String(error) });
       return null;
     }
   }
@@ -327,7 +329,7 @@ export class ModuleScheduler {
       this.timers.set(module.moduleKey, timer);
     }
 
-    this.logger.log(`[ModuleScheduler] 热重载完成，当前 ${this.modules.length} 个模块`);
+    this.logger.info(`[ModuleScheduler] 热重载完成，当前 ${this.modules.length} 个模块`);
   }
 
   /**
@@ -432,7 +434,7 @@ export class ModuleScheduler {
         latencyMs: row.latencyMs,
       };
     } catch (error) {
-      this.logger.error(`[ModuleScheduler] 从数据库获取 ${moduleKey} 状态失败:`, error);
+      this.logger.error(`[ModuleScheduler] 从数据库获取 ${moduleKey} 状态失败:`, { error: String(error) });
       return null;
     }
   }

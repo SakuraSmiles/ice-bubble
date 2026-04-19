@@ -115,7 +115,7 @@ export async function startAdmin(): Promise<void> {
 
     // 初始化模块调度器
     const moduleConfigs = configData.modules || [];
-    const scheduler = new ModuleScheduler(moduleConfigs, repository);
+    const scheduler = new ModuleScheduler(moduleConfigs, logger, repository);
 
     logger.info('[Admin] 模块调度器初始化完成');
     logger.info(`[Admin] 已配置 ${moduleConfigs.length} 个模块`);
