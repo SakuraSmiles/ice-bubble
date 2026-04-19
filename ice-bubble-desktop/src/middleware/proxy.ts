@@ -92,10 +92,13 @@ interface ForwardResult {
  * 2. 收集所有响应数据
  * 3. 服务器关闭连接后返回完整响应
  */
+const MAX_RESPONSE_SIZE = 50 * 1024 * 1024; // 50MB
+
 function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
     const chunks: Buffer[] = [];
+    let totalSize = 0;
     
     const url = new URL(options.targetPath, options.targetUrl);
     const hostname = url.hostname;
@@ -126,6 +129,12 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
     });
 
     socket.on('data', (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_RESPONSE_SIZE) {
+        socket.destroy();
+        reject(new Error('Response too large'));
+        return;
+      }
       chunks.push(chunk);
     });
 

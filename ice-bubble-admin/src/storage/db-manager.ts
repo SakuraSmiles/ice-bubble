@@ -530,19 +530,8 @@ export class DBManager {
       case 1:
         // 初始版本，表已创建
         break;
-      case 5:
-        // 迁移：给 admin_agents 表添加 source 字段
-        this.db.exec(`
-          ALTER TABLE admin_agents ADD COLUMN source TEXT DEFAULT 'openclaw';
-        `);
-        logger.info('Migration v5: added source column to admin_agents');
-        break;
-      case 4:
-        // 迁移：给 admin_agents 表添加 avatar 字段
-        this.db.exec(`
-          ALTER TABLE admin_agents ADD COLUMN avatar TEXT;
-        `);
-        logger.info('Migration v4: added avatar column to admin_agents');
+      case 2:
+        // 迁移 v2（保留位置兼容性）
         break;
       case 3:
         // 迁移：给 admin_agents 表添加 model 字段
@@ -551,8 +540,19 @@ export class DBManager {
         `);
         logger.info('Migration v3: added model column to admin_agents');
         break;
-      case 2:
-        // 迁移 v2（保留位置兼容性）
+      case 4:
+        // 迁移：给 admin_agents 表添加 avatar 字段
+        this.db.exec(`
+          ALTER TABLE admin_agents ADD COLUMN avatar TEXT;
+        `);
+        logger.info('Migration v4: added avatar column to admin_agents');
+        break;
+      case 5:
+        // 迁移：给 admin_agents 表添加 source 字段
+        this.db.exec(`
+          ALTER TABLE admin_agents ADD COLUMN source TEXT DEFAULT 'openclaw';
+        `);
+        logger.info('Migration v5: added source column to admin_agents');
         break;
       // 可以添加更多版本的迁移逻辑
       case 6:

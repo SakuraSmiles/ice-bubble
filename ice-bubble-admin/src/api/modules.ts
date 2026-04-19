@@ -5,7 +5,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync } from 'fs';
 import { join } from 'path';
 import { ModuleScheduler } from '../modules/module-scheduler.js';
 
@@ -19,7 +19,10 @@ function readConfig(): Record<string, unknown> {
 }
 
 function writeConfig(config: Record<string, unknown>): void {
-  writeFileSync(getConfigPath(), JSON.stringify(config, null, 2), 'utf-8');
+  const path = getConfigPath();
+  const tmp = path + '.tmp.' + Date.now();
+  writeFileSync(tmp, JSON.stringify(config, null, 2), 'utf-8');
+  renameSync(tmp, path); // 原子替换
 }
 
 /**
@@ -211,6 +214,16 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       return;
     }
 
+    const INVALID_KEY_CHARS = /[\/\\.\0\n\r]/;
+    if (INVALID_KEY_CHARS.test(moduleKey)) {
+      res.status(400).json({ error: 'Invalid moduleKey' });
+      return;
+    }
+    if (INVALID_KEY_CHARS.test(baseUrl)) {
+      res.status(400).json({ error: 'Invalid baseUrl' });
+      return;
+    }
+
     const existing = scheduler.getModule(moduleKey);
     if (existing) {
       res.status(409).json({ error: '模块已存在', moduleKey });
@@ -316,11 +329,12 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
 
     modules.splice(idx, 1);
     config.modules = modules;
-    writeConfig(config);
 
     scheduler.removeModule(key);
 
     await scheduler.deleteModule(key);
+
+    writeConfig(config);
 
     res.json({ message: '模块删除成功', moduleKey: key });
   });

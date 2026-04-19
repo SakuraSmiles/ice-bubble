@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { apiMonitor, type MonitorStats, type EndpointStats, type LatencyRecord } from '../utils/monitor';
+import { ref, onMounted, onUnmounted } from 'vue';
+import { apiMonitor, type MonitorStats } from '../utils/monitor';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
@@ -18,14 +18,8 @@ const stats = ref<MonitorStats>({
   maxLatency: 0
 });
 
-// 各端点统计
-const endpointStats = ref<EndpointStats[]>([]);
-
 // 模块列表
 const moduleList = ref<ModuleDTO[]>([]);
-
-// 延迟趋势数据（用于图表）
-const trendData = ref<LatencyRecord[]>([]);
 
 // 定时器
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -35,8 +29,6 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
  */
 function refreshData(): void {
   stats.value = apiMonitor.getStats();
-  endpointStats.value = apiMonitor.getEndpointStats();
-  trendData.value = apiMonitor.getRecentRecords(30);
 }
 
 /**
@@ -77,80 +69,30 @@ function getSuccessRateType(rate: number): string {
   return 'danger';
 }
 
-// 最大模块延迟（用于条形图）
-const maxModuleLatency = computed(() => {
-  // 只计算非admin模块的延迟
-  const modules = moduleList.value.filter(m => m.moduleKey !== 'admin');
-  if (modules.length === 0) return 0;
-  return Math.max(...modules.map(m => m.status?.latencyMs || 0), 1);
-});
-
 // 获取模块延迟（排除admin）
 function getModuleLatency(mod: ModuleDTO): number {
   return mod.status?.latencyMs || 0;
 }
 
+// 最大模块延迟（用于条形图）
+const maxModuleLatency = ref(1);
+
 // 获取模块延迟条形图宽度
 function getModuleLatencyWidth(mod: ModuleDTO): string {
   const latency = getModuleLatency(mod);
-  if (maxModuleLatency.value === 0) return '0%';
   return `${Math.min((latency / maxModuleLatency.value) * 100, 100)}%`;
 }
 
-
-
-
-// 延迟趋势SVG路径
-const trendPath = computed(() => {
-  if (trendData.value.length < 2) return '';
-
-  const data = trendData.value;
-  const maxLatency = Math.max(...data.map(d => d.latency), 100);
-  const width = 100;
-  const height = 100;
-  const padding = 5;
-
-  const points = data.map((d, i) => {
-    const x = padding + (i / (data.length - 1)) * (width - padding * 2);
-    const y = height - padding - (d.latency / maxLatency) * (height - padding * 2);
-    return `${x},${y}`;
-  });
-
-  return `M ${points.join(' L ')}`;
-});
-
-// 延迟趋势面积路径
-const trendAreaPath = computed(() => {
-  if (trendData.value.length < 2) return '';
-
-  const data = trendData.value;
-  const maxLatency = Math.max(...data.map(d => d.latency), 100);
-  const width = 100;
-  const height = 100;
-  const padding = 5;
-
-  const points = data.map((d, i) => {
-    const x = padding + (i / (data.length - 1)) * (width - padding * 2);
-    const y = height - padding - (d.latency / maxLatency) * (height - padding * 2);
-    return `${x},${y}`;
-  });
-
-  const lastX = padding + (width - padding * 2);
-  const firstX = padding;
-
-  return `M ${firstX},${height - padding} L ${points.join(' L ')} L ${lastX},${height - padding} Z`;
-});
+// 过滤掉admin模块
+const filteredModules = ref<ModuleDTO[]>([]);
 
 onMounted(() => {
   refreshData();
   refreshModules();
-  // 每秒刷新API监控数据，每30秒刷新模块数据
   refreshTimer = setInterval(() => {
     refreshData();
-  }, 1000);
-  setInterval(() => {
     refreshModules();
-  }, 30000);
+  }, 5000);
 });
 
 onUnmounted(() => {
@@ -159,98 +101,98 @@ onUnmounted(() => {
     refreshTimer = null;
   }
 });
+
+// 监听模块列表变化，更新maxModuleLatency
+import { watch } from 'vue';
+watch(moduleList, (newList) => {
+  const filtered = newList.filter((m: ModuleDTO) => m.moduleKey !== 'admin');
+  filteredModules.value = filtered;
+  if (filtered.length > 0) {
+    const max = Math.max(...filtered.map((m: ModuleDTO) => getModuleLatency(m)), 1);
+    maxModuleLatency.value = max;
+  }
+}, { immediate: true });
 </script>
 
 <template>
   <div class="overview-page">
-    <PageHeader title="工作台" subtitle="系统监控" />
+    <PageHeader title="工作台" subtitle="系统概览" />
 
-    <!-- 统计卡片 -->
-    <el-card class="content-area">
-      <el-row :gutter="16" class="stats-row">
-        <!-- 前端→Admin 延迟 -->
-        <el-col :span="6">
-          <div class="stat-card">
-            <div class="stat-label">前端→Admin</div>
-            <div class="stat-value" :style="{ color: getLatencyColor(stats.avgLatency) }">
-              {{ formatLatency(stats.avgLatency) }}
+    <el-card class="content-area" shadow="never">
+      <!-- 左右分栏布局 -->
+      <div class="main-layout">
+        <!-- 左侧：延迟监控卡片（窄） -->
+        <div class="left-panel">
+          <el-card class="latency-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span>延迟监控</span>
+                <el-tag size="small" type="info">实时</el-tag>
+              </div>
+            </template>
+            
+            <div class="latency-stats">
+              <div class="latency-stat">
+                <span class="label">前端→Admin</span>
+                <span class="value" :style="{ color: getLatencyColor(stats.avgLatency) }">
+                  {{ formatLatency(stats.avgLatency) }}
+                </span>
+              </div>
+              
+              <div class="latency-stat">
+                <span class="label">延迟范围</span>
+                <span class="value small">
+                  {{ formatLatency(stats.minLatency) }} ~ {{ formatLatency(stats.maxLatency) }}
+                </span>
+              </div>
+              
+              <div class="latency-stat">
+                <span class="label">成功率</span>
+                <el-tag :type="getSuccessRateType(stats.successRate)" size="small">
+                  {{ stats.successRate }}%
+                </el-tag>
+              </div>
             </div>
-          </div>
-        </el-col>
 
-        <!-- 延迟范围 -->
-        <el-col :span="6">
-          <div class="stat-card">
-            <div class="stat-label">延迟范围</div>
-            <div class="stat-value small">
-              {{ formatLatency(stats.minLatency) }} ~ {{ formatLatency(stats.maxLatency) }}
+            <el-divider style="margin: 12px 0" />
+
+            <div class="module-section">
+              <div class="section-title">模块延迟</div>
+              <div class="module-list" v-if="filteredModules.length > 0">
+                <div class="module-item" v-for="mod in filteredModules" :key="mod.moduleKey">
+                  <span class="module-name">{{ mod.name }}</span>
+                  <div class="module-bar-wrapper">
+                    <div 
+                      class="module-bar" 
+                      :style="{ 
+                        width: getModuleLatencyWidth(mod), 
+                        backgroundColor: getLatencyColor(getModuleLatency(mod))
+                      }"
+                    ></div>
+                  </div>
+                  <span class="module-latency" :style="{ color: getLatencyColor(getModuleLatency(mod)) }">
+                    {{ formatLatency(getModuleLatency(mod)) }}
+                  </span>
+                </div>
+              </div>
+              <el-empty v-else description="暂无数据" :image-size="30" />
             </div>
-          </div>
-        </el-col>
-
-        <!-- 成功率 -->
-        <el-col :span="6">
-          <div class="stat-card">
-            <div class="stat-label">成功率</div>
-            <div class="stat-value">
-              <el-tag :type="getSuccessRateType(stats.successRate)" size="large">
-                {{ stats.successRate }}%
-              </el-tag>
-            </div>
-          </div>
-        </el-col>
-      </el-row>
-
-      <!-- 请求统计 -->
-      <div class="request-stats">
-        <span>总请求: {{ stats.totalRequests }}</span>
-        <span class="divider">|</span>
-        <span class="success">成功: {{ stats.successCount }}</span>
-        <span class="divider">|</span>
-        <span class="failure">失败: {{ stats.failureCount }}</span>
-      </div>
-
-      <!-- 延迟趋势图 -->
-      <div class="section-title">延迟趋势（最近30次）</div>
-      <div class="trend-chart" v-if="trendData.length >= 2">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="trend-svg">
-          <defs>
-            <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="var(--el-color-primary)" stop-opacity="0.3" />
-              <stop offset="100%" stop-color="var(--el-color-primary)" stop-opacity="0" />
-            </linearGradient>
-          </defs>
-          <path :d="trendAreaPath" fill="url(#trendGradient)" />
-          <path :d="trendPath" fill="none" stroke="var(--el-color-primary)" stroke-width="2" vector-effect="non-scaling-stroke" />
-        </svg>
-        <div class="trend-labels">
-          <span>{{ trendData[0]?.timestamp ? new Date(trendData[0].timestamp).toLocaleTimeString() : '' }}</span>
-          <span>{{ trendData[trendData.length - 1]?.timestamp ? new Date(trendData[trendData.length - 1].timestamp).toLocaleTimeString() : '' }}</span>
+          </el-card>
         </div>
-      </div>
-      <div class="empty-chart" v-else>
-        <el-empty description="暂无延迟数据" :image-size="60" />
-      </div>
 
-      <!-- Admin→模块延迟 -->
-      <div class="section-title">Admin→模块 延迟</div>
-      <div class="module-list" v-if="moduleList.length > 0">
-        <div class="endpoint-item" v-for="mod in moduleList" :key="mod.moduleKey">
-          <div class="endpoint-name">{{ mod.name }}</div>
-          <div class="endpoint-bar-wrapper">
-            <div class="endpoint-bar" :style="{ width: getModuleLatencyWidth(mod), backgroundColor: getLatencyColor(getModuleLatency(mod)) }"></div>
-          </div>
-          <div class="endpoint-latency">
-            <span class="avg">{{ formatLatency(getModuleLatency(mod)) }}</span>
-          </div>
-          <el-tag size="small" :type="mod.status?.state === 'running' ? 'success' : mod.status?.state === 'error' ? 'danger' : 'info'">
-            {{ mod.status?.state || 'unknown' }}
-          </el-tag>
-
+        <!-- 右侧：主内容区 -->
+        <div class="right-panel">
+          <el-card class="main-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span>概览</span>
+              </div>
+            </template>
+            <div class="placeholder-content">
+              <el-empty description="功能开发中..." :image-size="60" />
+            </div>
+          </el-card>
         </div>
-      </div>
-      <div class="empty-chart" v-else>
-        <el-empty description="暂无模块数据" :image-size="60" />
       </div>
     </el-card>
 
@@ -274,106 +216,96 @@ onUnmounted(() => {
   margin-bottom: 20px;
 }
 
-.stats-row {
-  margin-bottom: 16px;
+.content-area :deep(.el-card__body) {
+  padding: 16px;
 }
 
-.stat-card {
-  padding: 12px;
-  text-align: center;
+/* 左右分栏布局 */
+.main-layout {
+  display: flex;
+  gap: 16px;
+  height: 100%;
 }
 
-.stat-label {
-  font-size: 13px;
+/* 左侧：延迟监控（窄） */
+.left-panel {
+  width: 280px;
+  flex-shrink: 0;
+}
+
+.latency-card {
+  height: 100%;
+}
+
+.latency-card :deep(.el-card__header) {
+  padding: 12px 16px;
+}
+
+.latency-card :deep(.el-card__body) {
+  padding: 12px 16px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+
+/* 延迟统计 */
+.latency-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.latency-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.latency-stat .label {
+  font-size: 12px;
   color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
 }
 
-.stat-value {
-  font-size: 28px;
+.latency-stat .value {
+  font-size: 16px;
   font-weight: 600;
   font-family: 'Monaco', 'Menlo', monospace;
 }
 
-.stat-value.small {
-  font-size: 18px;
+.latency-stat .value.small {
+  font-size: 12px;
 }
 
-.request-stats {
-  text-align: center;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 24px;
-}
-
-.request-stats .divider {
-  margin: 0 12px;
-  color: var(--el-border-color);
-}
-
-.request-stats .success {
-  color: var(--el-color-success);
-}
-
-.request-stats .failure {
-  color: var(--el-color-danger);
-}
-
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  margin: 20px 0 12px;
-}
-
-/* 延迟趋势图 */
-.trend-chart {
-  height: 120px;
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
-  padding: 12px;
-  position: relative;
-}
-
-.trend-svg {
-  width: 100%;
-  height: 90px;
-}
-
-.trend-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
+/* 模块列表 */
+.module-section {
   margin-top: 4px;
 }
 
-.empty-chart {
-  height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
+.section-title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
 }
 
-/* 各端点延迟 */
-.endpoint-list {
+.module-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
-.endpoint-item {
+.module-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.endpoint-name {
-  width: 160px;
-  font-size: 13px;
-  font-family: monospace;
+.module-name {
+  width: 80px;
+  font-size: 11px;
   color: var(--el-text-color-primary);
   flex-shrink: 0;
   overflow: hidden;
@@ -381,49 +313,47 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.endpoint-bar-wrapper {
+.module-bar-wrapper {
   flex: 1;
-  height: 8px;
+  height: 4px;
   background: var(--el-fill-color);
-  border-radius: 4px;
+  border-radius: 2px;
   overflow: hidden;
 }
 
-.endpoint-bar {
+.module-bar {
   height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s ease;
+  border-radius: 2px;
+  transition: width 0.3s ease, background-color 0.3s ease;
 }
 
-.endpoint-latency {
-  width: 120px;
+.module-latency {
+  width: 50px;
   text-align: right;
-  font-size: 12px;
-  font-family: monospace;
+  font-size: 10px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-weight: 500;
   flex-shrink: 0;
 }
 
-.endpoint-latency .avg {
-  color: var(--el-text-color-primary);
-  font-weight: 500;
+/* 右侧：主内容（宽） */
+.right-panel {
+  flex: 1;
+  min-width: 0;
 }
 
-.endpoint-latency .detail {
-  color: var(--el-text-color-secondary);
-  margin-left: 4px;
+.main-card {
+  height: 100%;
 }
 
-.count {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-  width: 40px;
-  text-align: right;
+.main-card :deep(.el-card__body) {
+  padding: 0;
 }
 
-.endpoint-source {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-  width: 80px;
-  text-align: right;
+.placeholder-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
 }
 </style>
