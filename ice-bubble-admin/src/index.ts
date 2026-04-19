@@ -17,6 +17,8 @@ import { ModuleRepository } from './storage/module-repository.js';
 import { DataRepository } from './storage/data-repository.js';
 import { createResourcesRouter } from './api/resources.js';
 import { DataSync } from './data/data-sync.js';
+import { AgentOverviewService } from './data/agent-overview.js';
+import { CollectorClient } from './data/collector-client.js';
 
 // 加载环境变量
 config();
@@ -142,7 +144,13 @@ export async function startAdmin(): Promise<void> {
     logger.info('[Admin] 数据同步调度器初始化完成');
 
     // 注册 API 路由
-    app.use('/api', createDataRouter(dataRepository));
+    app.use('/api', createDataRouter({
+      repository: dataRepository,
+      agentOverviewService: new AgentOverviewService(
+        dataRepository,
+        new CollectorClient({ baseUrl: dataSyncConfig.collectorBaseUrl || 'http://localhost:13100' })
+      ),
+    }));
     app.use('/api/modules', createModulesRouter(scheduler));
     app.use('/api/resources', createResourcesRouter(dataRepository));
     
