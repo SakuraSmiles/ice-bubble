@@ -1,35 +1,83 @@
-/* 字体声明 - Eurostile (英文) + 思源宋体 (中文) */
-/* 字体文件放在 src/assets/fonts/ 目录下 */
+/* 字体声明 */
+
+/* === 英文/数字字体 === */
 
 @font-face {
   font-family: 'Eurostile';
-  src: url('/src/assets/fonts/Eurostile-ExtendedTwo.otf') format('opentype');
+  src: url('/fonts/Eurostile-ExtendedTwo.otf') format('opentype');
   font-weight: normal;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: 'SourceHanSerifCN';
-  src: url('/src/assets/fonts/SourceHanSerifCN-Regular.otf') format('opentype');
-  font-weight: normal;
+  font-family: 'Exo2';
+  src: url('/fonts/Exo2-Regular.woff2') format('woff2');
+  font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 
-/* 全局字体设置 - 英文字体 Eurostile，中文字体思源宋体 */
-:root {
-  --font-family-base: 'Eurostile', 'SourceHanSerifCN', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-family-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, 'Courier New', monospace;
-  --font-family-en: 'Eurostile', sans-serif;
-  --font-family-zh: 'SourceHanSerifCN', serif;
+@font-face {
+  font-family: 'Orbitron';
+  src: url('/fonts/Orbitron-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
+
+@font-face {
+  font-family: 'Montserrat';
+  src: url('/fonts/Montserrat-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* === 中文字体 === */
+
+@font-face {
+  font-family: 'NotoSansSC';
+  src: url('/src/assets/fonts/NotoSansSC-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* === CSS 变量（字体方案切换） === */
+
+:root {
+  /* 字体栈变量 */
+  --font-eurostile: 'Eurostile', 'NotoSansSC', sans-serif;
+  --font-exo2: 'Exo2', 'NotoSansSC', sans-serif;
+  --font-orbitron: 'Orbitron', 'NotoSansSC', sans-serif;
+  --font-montserrat: 'Montserrat', 'NotoSansSC', sans-serif;
+  --font-fallback: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Element Plus 全局字体（切换字体时只需改这里） */
+  /* 方案 A: Eurostile *//*
+  --el-font-family: 'Eurostile', 'NotoSansSC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+*/
+
+  /* 方案 B: Exo 2（当前默认） */
+  --el-font-family: 'Exo2', 'NotoSansSC', -apple-system, BlinkMacSystemFont, sans-serif;
+
+/* 方案 C: Orbitron *//*
+  --el-font-family: 'Orbitron', 'NotoSansSC', -apple-system, BlinkMacSystemFont, sans-serif;
+*/
+
+/* 方案 D: Montserrat *//*
+  --el-font-family: 'Montserrat', 'NotoSansSC', -apple-system, BlinkMacSystemFont, sans-serif;
+*/
+}
+
+/* === 全局字体继承 === */
 
 html, body, #app {
-  font-family: var(--font-family-base);
+  font-family: var(--el-font-family) !important;
 }
 
-/* 代码使用等宽字体 */
-code, pre, .mono {
-  font-family: var(--font-family-mono);
+/* 等宽字体 */
+code, pre, .mono, .el-code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, 'Courier New', monospace !important;
 }

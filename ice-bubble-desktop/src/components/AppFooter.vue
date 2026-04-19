@@ -16,5 +16,11 @@ const version = '1.0.0';
   color: var(--color-text-secondary);
   padding: 20px 0;
   margin-top: auto;
+  font-family: var(--font-eurostile), var(--font-fallback);
+}
+
+.copyright div {
+  font-family: inherit;
+  line-height: 1.8;
 }
 </style>

@@ -300,7 +300,7 @@ onUnmounted(() => {
 
 .option-key {
   font-size: 12px;
-  font-family: monospace;
+  font-family: var(--font-exo2);
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;

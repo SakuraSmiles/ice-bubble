@@ -1,7 +1,7 @@
 {
   "name": "@ice-bubble/desktop",
   "version": "1.0.0",
-  "description": "ice-bubble \u684c\u9762\u7aef\u5c55\u793a\u5e94\u7528",
+  "description": "ice-bubble 桌面端展示应用",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,7 @@
     "start": "tsx src/server/index.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:server": "esbuild src/server/index.ts --platform=node --format=esm --outfile=dist-server/index.js"
+    "build:server": "esbuild src/server/index.ts --platform=node --format=esm --outfile=dist-server/index.js && esbuild src/config.server.ts --platform=node --format=esm --outfile=config.server.js && esbuild src/middleware/proxy.ts --platform=node --format=esm --outfile=middleware/proxy.js"
   },
   "keywords": [
     "ice-bubble",
@@ -22,6 +22,10 @@
   "license": "MIT",
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
+    "@fontsource/exo-2": "^5.2.8",
+    "@fontsource/montserrat": "^5.2.8",
+    "@fontsource/noto-sans-sc": "^5.2.9",
+    "@fontsource/orbitron": "^5.2.8",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "element-plus": "^2.13.6",

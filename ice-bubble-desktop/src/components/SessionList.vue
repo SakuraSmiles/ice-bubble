@@ -250,7 +250,7 @@ onMounted(() => {
 
 .session-key {
   font-size: 12px;
-  font-family: monospace;
+  font-family: var(--font-exo2);
   color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;

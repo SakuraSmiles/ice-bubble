@@ -21,7 +21,7 @@ const menuItems = [
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="logo">IceBubble</div>
-        <div class="subtitle">Topdesk</div>
+        <div class="subtitle">DESKTOP</div>
       </div>
 
       <nav class="sidebar-nav">
@@ -84,6 +84,7 @@ const menuItems = [
   font-weight: 700;
   color: var(--color-text);
   letter-spacing: 0.3px;
+  font-family: 'Eurostile', 'NotoSansSC', sans-serif;
 }
 
 .subtitle {

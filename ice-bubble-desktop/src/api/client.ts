@@ -63,6 +63,8 @@ export interface ModulesResponseDTO {
   modules: ModuleDTO[];
 }
 
+export type AgentStatus = '失联' | '工作' | '活跃' | '休假' | '离线';
+
 export interface AgentDTO {
   agent_id: string;
   agent_name: string | null;
@@ -75,6 +77,8 @@ export interface AgentDTO {
   avatar: string | null;
   model: string | null;
   source: string;
+  /** 统一状态，由 admin 层 calculateAgentStatus 计算 */
+  status: AgentStatus;
 }
 
 export interface AgentsResponseDTO {

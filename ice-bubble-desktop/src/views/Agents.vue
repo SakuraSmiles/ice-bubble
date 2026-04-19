@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
-import { formatTime, formatRelativeTime, getActivityStatus, truncatePath, formatNumber } from '../utils/format.ts';
+import { formatTime, formatRelativeTime, truncatePath, formatNumber } from '../utils/format.ts';
 import { api, AgentWithActivityDTO } from '../api/client.ts';
 import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
@@ -18,6 +18,17 @@ const totalSessions = ref(0);
 const totalMessages = ref(0);
 // agentId → ActivityDay[]
 const activityMap = ref<Record<string, ActivityDay[]>>({});
+
+/** 将统一状态映射为 el-tag type */
+function getStatusTagType(status: string): string {
+  switch (status) {
+    case '工作':
+    case '活跃': return 'success';
+    case '休假':  return 'warning';
+    case '失联':  return 'danger';
+    default:     return 'info';
+  }
+}
 
 
 function getTokenTrend(agent: AgentWithActivityDTO): { text: string; class: string } {
@@ -344,8 +355,8 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
                 </el-avatar>
               </div>
               <!-- GitHub 风格状态指示器 -->
-              <el-tag :type="getActivityStatus(agent.last_active_at).type" size="small" effect="plain" class="avatar-status">
-                {{ getActivityStatus(agent.last_active_at).label }}
+              <el-tag :type="getStatusTagType(agent.status)" size="small" effect="plain" class="avatar-status">
+                {{ agent.status }}
               </el-tag>
             </div>
             <div class="agent-name">
@@ -567,7 +578,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .model-value {
   font-size: 12px;
   color: var(--color-accent-blue);
-  font-family: monospace;
+  font-family: var(--font-exo2);
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -609,7 +620,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 
 .workspace-value {
   font-size: 16px;
-  font-family: monospace;
+  font-family: var(--font-exo2);
   color: var(--color-accent-blue);
   max-width: 350px;
   overflow: hidden;
@@ -639,7 +650,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .source-value {
   font-size: 12px;
   color: var(--color-accent-blue);
-  font-family: monospace;
+  font-family: var(--font-exo2);
 }
 
 .stat-row {
@@ -671,7 +682,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   font-size: 22px;
   font-weight: 600;
   color: var(--color-text);
-  font-family: monospace;
+  font-family: var(--font-exo2);
   line-height: 1;
 }
 
@@ -729,7 +740,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 .time-value {
   font-size: 13px;
   color: var(--color-text);
-  font-family: monospace;
+  font-family: var(--font-exo2);
 }
 
 .time-value.highlight {
@@ -775,7 +786,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 }
 
 .token-value {
-  font-family: monospace;
+  font-family: var(--font-exo2);
   color: var(--color-text);
   font-weight: 500;
 }
@@ -792,13 +803,13 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 }
 
 .token-cost {
-  font-family: monospace;
+  font-family: var(--font-exo2);
   color: var(--color-text-secondary);
   font-size: 11px;
 }
 
 .token-cost-value {
-  font-family: monospace;
+  font-family: var(--font-exo2);
   font-weight: 600;
 }
 

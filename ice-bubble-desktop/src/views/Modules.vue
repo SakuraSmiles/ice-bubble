@@ -644,7 +644,7 @@ onUnmounted(() => {
 .module-key {
   font-size: 13px;
   color: var(--color-text-secondary);
-  font-family: monospace;
+  font-family: var(--font-exo2);
   opacity: 0.8;
 }
 
@@ -689,13 +689,13 @@ onUnmounted(() => {
 }
 
 .info-value.url {
-  font-family: monospace;
+  font-family: var(--font-exo2);
   font-size: 12px;
   color: var(--color-accent-green);
 }
 
 .info-value.time {
-  font-family: monospace;
+  font-family: var(--font-exo2);
   font-size: 12px;
   color: var(--color-text-secondary);
 }
@@ -725,14 +725,6 @@ onUnmounted(() => {
   font-size: 14px;
   text-align: center;
   padding: 48px 0;
-}
-
-.copyright {
-  text-align: center;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  padding: 20px 0;
-  margin-top: auto;
 }
 
 .dialog-tip {

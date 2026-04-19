@@ -52,11 +52,18 @@ export function formatNumber(n: number): string {
 /**
  * 根据最后活跃时间获取状态标签
  */
+/**
+ * 活跃阈值（毫秒）：2 分钟 = data-sync 同步周期(60s) + 安全缓冲(60s)
+ * 与 AgentOverviewService 保持一致
+ */
+const ACTIVE_THRESHOLD_MS = 2 * 60 * 1000;
+
 export function getActivityStatus(lastActiveAt: string | null): { label: string; type: string } {
   if (!lastActiveAt) return { label: '失联', type: 'danger' };
   const now = Date.now();
   const date = new Date(lastActiveAt).getTime();
   const diff = now - date;
+  if (diff < ACTIVE_THRESHOLD_MS) return { label: '工作', type: 'success' };
   const hours = diff / 3600000;
   if (hours < 24) return { label: '活跃', type: 'success' };
   if (hours < 72) return { label: '休假', type: 'warning' };

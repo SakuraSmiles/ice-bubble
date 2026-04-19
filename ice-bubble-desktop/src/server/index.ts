@@ -60,11 +60,11 @@ if (isDev) {
 app.use('/api', createProxyMiddleware());
 
 // 静态文件服务 - 开发环境使用 Vite，生产环境使用 dist
-app.use(express.static(join(__dirname, '../../dist')));
+app.use(express.static(join(__dirname, '../dist')));
 
 // 处理 SPA 路由 - 确保 index.html 被正确返回
 app.get('/{*path}', (_req: Request, res: Response) => {
-  const indexPath = join(__dirname, '../../dist/index.html');
+  const indexPath = join(__dirname, '../dist/index.html');
   
   if (existsSync(indexPath)) {
     res.sendFile(indexPath);
