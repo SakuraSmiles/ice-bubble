@@ -379,14 +379,9 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
         normalizedUrl = 'http://' + normalizedUrl;
       }
-      const urlObj = new URL(normalizedUrl);
-      
-      if (urlObj.port === '13000' || normalizedUrl.includes('localhost:13000')) {
-        res.json({ success: true, moduleKey: 'admin', moduleType: 'admin', status: 'running', version: '1.0.0' });
-        return;
-      }
-      
-      let url = normalizedUrl.replace(/\/$/, '') + '/api/meta/status';
+
+      // 通过 /api/meta/status 返回的 moduleType 字段判断是否为 admin 模块，不再使用端口硬编码
+      const url = normalizedUrl.replace(/\/$/, '') + '/api/meta/status';
       const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
       
       if (!response.ok) {

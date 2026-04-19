@@ -236,11 +236,11 @@ export class BatchWriter extends EventEmitter {
             this.emit('flush', { count: result.inserted, duplicates: result.duplicates });
         } catch (error) {
             // 失败消息移入专用队列，不与后续新消息混合，保持顺序
-            // 超限则丢弃最旧消息
+            // 超限则精确丢弃最旧消息
             const totalFailed = messages.length;
             if (this.failedMessages.length + totalFailed > BatchWriter.MAX_RETRY_QUEUE) {
-                const excess = BatchWriter.MAX_RETRY_QUEUE - this.failedMessages.length;
-                this.failedMessages = this.failedMessages.slice(-Math.max(0, excess));
+                const overflow = (this.failedMessages.length + totalFailed) - BatchWriter.MAX_RETRY_QUEUE;
+                this.failedMessages.splice(0, overflow);
             }
             this.failedMessages.push(...messages);
             this.stats.buffered = this.buffer.length;

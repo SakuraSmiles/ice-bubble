@@ -98,6 +98,10 @@ export function convertOpenClawEvent(
  * 3. 扁平化格式：{ type: 'message', role: 'user', content: [...] } （message 字段提升到顶层）
  */
 function normalizeEventFormat(event: unknown): Record<string, unknown> {
+  // 类型守卫：确保 event 是非 null 对象
+  if (event === null || typeof event !== 'object') {
+    return {};
+  }
   const e = event as Record<string, unknown>;
   // 如果已经是标准格式，直接返回
   if (e.type === 'message' && e.message && typeof e.message === 'object' && (e.message as Record<string, unknown>).role) {

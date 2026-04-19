@@ -244,46 +244,7 @@ export class ModuleRepository {
 
   // ========== 模块运行时状态操作 ==========
 
-  /**
-   * 更新模块运行时状态
-   */
-  async upsertModuleRuntimeStatus(status: ModuleRuntimeStatus): Promise<void> {
-    try {
-      const stmt = this.db.prepare(`
-        INSERT INTO module_runtime_status (
-          module_key, is_running, start_time, uptime_seconds, 
-          last_heartbeat, messages_collected, errors_count, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(module_key) DO UPDATE SET
-          is_running = excluded.is_running,
-          start_time = excluded.start_time,
-          uptime_seconds = excluded.uptime_seconds,
-          last_heartbeat = excluded.last_heartbeat,
-          messages_collected = excluded.messages_collected,
-          errors_count = excluded.errors_count,
-          updated_at = excluded.updated_at
-      `);
 
-      const now = new Date().toISOString();
-      stmt.run(
-        status.moduleKey,
-        status.isRunning ? 1 : 0,
-        status.startTime?.toISOString() || null,
-        status.uptimeSeconds,
-        status.lastHeartbeat?.toISOString() || null,
-        status.messagesCollected,
-        status.errorsCount,
-        status.createdAt?.toISOString() || now,
-        now
-      );
-    } catch (error) {
-      throw new SQLiteError(
-        'Failed to upsert module runtime status',
-        'SQLITE_UPSERT_RUNTIME_STATUS_FAILED',
-        error
-      );
-    }
-  }
 
   /**
    * 获取模块运行时状态

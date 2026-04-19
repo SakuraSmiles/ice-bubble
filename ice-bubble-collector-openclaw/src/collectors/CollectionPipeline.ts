@@ -119,6 +119,11 @@ export class CollectionPipeline extends EventEmitter {
   async processEvents(events: OpenClawEvent[], sessionKey: string): Promise<void> {
     if (events.length === 0) return;
 
+    // 校验 sessionKey 格式
+    if (!sessionKey || typeof sessionKey !== 'string' || sessionKey.length < 8) {
+      throw new Error(`Invalid sessionKey format: ${sessionKey}`);
+    }
+
     logger.debug(`批量处理 ${events.length} 个事件`);
 
     // 注意：Session 创建已在 FileCollector.processFile() 中处理
@@ -203,8 +208,7 @@ export class CollectionPipeline extends EventEmitter {
     // 解析 sessionKey
     const parts = sessionKey.split(':');
     if (parts.length !== 6 || parts[0] !== 'agent') {
-      logger.warn(`无效的 SessionKey 格式: ${sessionKey}`);
-      return;
+      throw new Error(`Invalid sessionKey format: ${sessionKey}`);
     }
 
     const [, agentId, channel, accountId, sessionType, peerId] = parts;

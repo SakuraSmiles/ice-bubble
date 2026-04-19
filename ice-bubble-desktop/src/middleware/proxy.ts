@@ -112,6 +112,8 @@ function forwardRequest(options: ForwardOptions): Promise<ForwardResult> {
       port: port
     }, () => {
       console.log(`[Proxy] 🔌 TCP连接成功`);
+      // 30秒超时，防止 target 无响应时永久挂起
+      socket.setTimeout(30000);
       
       // 构建请求头，强制关闭连接
       const reqHeaders = { ...options.headers, 'Connection': 'close' };

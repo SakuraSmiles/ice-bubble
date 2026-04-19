@@ -842,6 +842,8 @@ export class DataRepository {
 
   /**
    * 批量获取 session_key → agent_id 映射
+   * @param sessionKeys - session key 列表
+   * @returns Map<sessionKey, agentId>
    */
   getSessionAgentIds(sessionKeys: string[]): Map<string, string> {
     if (sessionKeys.length === 0) return new Map();
@@ -863,6 +865,7 @@ export class DataRepository {
 
   /**
    * 批量更新 agent 活动计数（用于批量同步）
+   * @param records - 活动记录数组 [{agentId, date, count}]
    * 策略：先删除旧记录，再插入新记录（保证幂等性）
    * 配合 DataSync 的全量聚合，确保每次同步结果一致
    */
@@ -888,6 +891,9 @@ export class DataRepository {
 
   /**
    * 获取指定 agent 的活动数据（最近 N 天）
+   * @param agentId - agent ID
+   * @param days - 查询天数（默认 90 天）
+   * @returns 每日活动计数数组 [{date, count}]
    */
   getAgentActivity(agentId: string, days: number = 90): { date: string; count: number }[] {
     const rows = this.db.prepare(`
@@ -903,6 +909,8 @@ export class DataRepository {
 
   /**
    * 批量获取所有 agent 的活动数据（最近 N 天）
+   * @param days - 查询天数（默认 90 天）
+   * @returns 各 agent 及其活动热力图数组 [AdminAgent & {activity: [{date, count}]}]
    * 一次查询返回所有数据，避免 N+1 问题
    */
   getAgentsWithActivity(days: number = 90): (AdminAgent & { activity: { date: string; count: number }[] })[] {
