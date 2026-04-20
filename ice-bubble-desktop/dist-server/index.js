@@ -37,9 +37,9 @@ if (isDev) {
   enableHotReload();
 }
 app.use("/api", createProxyMiddleware());
-app.use(express.static(join(__dirname, "../../dist")));
+app.use(express.static(join(__dirname, "../dist")));
 app.get("/{*path}", (_req, res) => {
-  const indexPath = join(__dirname, "../../dist/index.html");
+  const indexPath = join(__dirname, "../dist/index.html");
   if (existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {

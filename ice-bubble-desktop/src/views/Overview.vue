@@ -12,6 +12,7 @@ import type { ModuleDTO } from '../api/client';
 interface AgentOverview {
   agent_id: string;
   agent_name: string;
+  avatar: string | null;
   workspace: string | null;
   status: string;
   last_active_at: string;
@@ -38,70 +39,29 @@ async function fetchAgentOverview() {
  * Agent 统计数据（由 agentOverviewData 计算得出）
  *
  * online: 有活动的 agent（工作 + 活跃）
- * running: 正在执行任务的 agent（工作，即有活跃 sessions）
- */
-const agentStats = computed(() => {
-  const agents = agentOverviewData.value?.agents ?? [];
-  return {
-    online: agents.filter((a) => a.status === '工作' || a.status === '活跃').length,
-    running: agents.filter((a) => a.status === '工作').length,
-    total: agents.length,
-  };
-});
+/** 仅展示在线 agent（工作 + 活跃） */
+const onlineAgents = computed(() =>
+  (agentOverviewData.value?.agents ?? []).filter(
+    (a) => a.status === '工作' || a.status === '活跃'
+  )
+);
 
-/**
- * 当前任务列表（由 agentOverviewData 计算得出，取每个 Agent 的前 3 个任务）
- */
-const mockTasks = computed(() => {
-  const tasks: Array<{ agentId: string; title: string; status: string }> = [];
-  const agents = agentOverviewData.value?.agents ?? [];
-  for (const agent of agents) {
-    for (const task of agent.current_tasks.slice(0, 3)) {
-      tasks.push({
-        agentId: agent.agent_id,
-        title: task.session_key.split(':').pop() ?? task.session_key,
-        status: '工作',
-      });
-    }
-  }
-  return tasks;
-});
-
-// 获取状态文本和颜色（与 AgentOverviewService.calculateAgentStatus 共用同一语义）
-function getAgentStatusInfo(status: string): { text: string; color: string } {
+/** 状态标签类型映射（与 Agents.vue 共用同一逻辑） */
+function getStatusTagType(status: string): string {
   switch (status) {
-    case '工作':
-      return { text: '工作', color: 'var(--el-color-success)' };
-    case '活跃':
-      return { text: '活跃', color: 'var(--el-color-success-light)' };
-    case '休假':
-      return { text: '休假', color: 'var(--el-color-warning)' };
-    case '离线':
-      return { text: '离线', color: 'var(--el-color-info)' };
-    case '失联':
-      return { text: '失联', color: 'var(--el-color-danger)' };
-    default:
-      return { text: '未知', color: 'var(--el-text-color-secondary)' };
+    case '工作': return 'success';
+    case '活跃': return 'success';
+    case '休假': return 'warning';
+    case '离线': return 'info';
+    case '失联': return 'danger';
+    default: return 'info';
   }
 }
 
-// 获取任务状态图标
-function getTaskStatusIcon(status: string): string {
-  switch (status) {
-    case 'running':
-      return '🔄';
-    case 'done':
-      return '✅';
-    case 'paused':
-      return '⏸️';
-    default:
-      return '🔄';
-  }
-}
-
-// 获取在线 Agent 数量
-function getOnlineCount(): number {
-  return agentStats.value.online;
+/** 头像 URL 构造（与 Agents.vue 共用同一逻辑） */
+function getAvatarUrl(avatar: string | null): string | null {
+  if (!avatar) return null;
+  return `/api/resources/avatars/${avatar}`;
 }
 
 // 统计数据
@@ -292,36 +252,37 @@ watch(moduleList, (newList) => {
             <template #header>
               <div class="card-header">
                 <span>Agent 概览</span>
-                <el-tag size="small" type="success">{{ getOnlineCount() }} 个在线</el-tag>
+                <el-tag size="small" type="success">{{ onlineAgents.length }} 个在线</el-tag>
               </div>
             </template>
 
             <div class="agent-list">
-              <div class="agent-item" v-for="agent in (agentOverviewData?.agents ?? [])" :key="agent.agent_id">
-                <div class="agent-info">
-                  <span class="agent-name">{{ agent.agent_name }}</span>
-                  <span class="agent-status" :style="{ color: getAgentStatusInfo(agent.status).color }">
-                    {{ getAgentStatusInfo(agent.status).text }}
-                  </span>
-                </div>
-                <div class="agent-tasks">
-                  <span class="task-count" v-if="agent.current_tasks.length > 0">任务: {{ agent.current_tasks.length }}</span>
-                  <span class="msg-count" v-if="agent.messages_today > 0">消息: {{ agent.messages_today }}</span>
-                </div>
+              <div class="agent-item" v-for="agent in onlineAgents" :key="agent.agent_id">
+                <el-avatar v-if="getAvatarUrl(agent.avatar)"
+                  :size="36"
+                  :src="getAvatarUrl(agent.avatar)!"
+                  fit="cover"
+                  class="agent-avatar"
+                />
+                <el-avatar v-else
+                  :size="36"
+                  fit="cover"
+                  class="agent-avatar"
+                  style="color: var(--color-accent-blue); font-size: 14px;"
+                >
+                  {{ agent.agent_id.substring(0, 1).toUpperCase() }}
+                </el-avatar>
+                <span class="agent-name">{{ agent.agent_name || agent.agent_id }}</span>
+                <el-tag
+                  :type="getStatusTagType(agent.status)"
+                  size="small"
+                  effect="plain"
+                  class="agent-status-tag"
+                >
+                  {{ agent.status }}
+                </el-tag>
               </div>
-            </div>
-
-            <el-divider style="margin: 12px 0" />
-
-            <div class="tasks-section">
-              <div class="section-title">当前任务</div>
-              <div class="task-list">
-                <div class="task-item" v-for="task in mockTasks" :key="task.title">
-                  <span class="task-icon">{{ getTaskStatusIcon(task.status) }}</span>
-                  <span class="task-agent">{{ task.agentId }}:</span>
-                  <span class="task-title">{{ task.title }}</span>
-                </div>
-              </div>
+              <el-empty v-if="onlineAgents.length === 0" description="暂无在线 Agent" :image-size="40" />
             </div>
           </el-card>
         </div>
@@ -399,85 +360,38 @@ watch(moduleList, (newList) => {
 .agent-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .agent-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 6px 8px;
   background: var(--el-fill-color-light);
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--el-border-color-extra-light);
 }
 
-.agent-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.agent-item .agent-avatar {
+  flex-shrink: 0;
+  border-radius: 50%;
 }
 
-.agent-name {
-  font-size: 14px;
+.agent-item .agent-name {
+  flex: 1;
+  font-size: 13px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.agent-status {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.agent-tasks {
-  text-align: right;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: flex-end;
-}
-
-.task-count {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-}
-
-.msg-count {
-  font-size: 11px;
-  color: var(--el-color-primary);
-}
-
-.tasks-section {
-  margin-top: 4px;
-}
-
-.task-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.task-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  padding-left: 8px;
-}
-
-.task-icon {
-  font-size: 12px;
+.agent-item .agent-status-tag {
   flex-shrink: 0;
-}
-
-.task-agent {
-  font-weight: 500;
-  color: var(--el-color-primary);
-}
-
-.task-title {
-  color: var(--el-text-color-regular);
+  font-family: var(--font-exo2);
 }
 
 .latency-card {
