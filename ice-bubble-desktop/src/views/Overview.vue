@@ -7,7 +7,8 @@ import { api } from '../api/client';
 import type { ModuleDTO } from '../api/client';
 
 /**
- * Agent 概览接口，对接 Admin API /api/data/agents/overview
+ * Agent 概览接口，对接 Admin API /api/agents
+ * （/api/agents/overview 不返回 avatar，改用 /api/agents）
  */
 interface AgentOverview {
   agent_id: string;
@@ -16,20 +17,20 @@ interface AgentOverview {
   workspace: string | null;
   status: string;
   last_active_at: string;
-  current_tasks: Array<{ session_key: string; updated_at: string }>;
-  messages_today: number;
 }
 
-// Agent 概览数据（来自真实 API）
+// Agent 概览数据（来自 /api/agents，过滤工作/活跃）
 const agentOverviewData = ref<{ agents: AgentOverview[] } | null>(null);
 
 /**
- * 获取 Agent 概览数据
+ * 获取 Agent 概览数据（使用 /api/agents 以获得 avatar 字段）
  */
 async function fetchAgentOverview() {
   try {
-    const res = await fetch('/api/agents/overview');
-    agentOverviewData.value = await res.json();
+    const res = await fetch('/api/agents');
+    const data = await res.json();
+    // /api/agents 返回 { agents: [...] }
+    agentOverviewData.value = data;
   } catch (e) {
     console.error('获取 Agent 概览失败', e);
   }
