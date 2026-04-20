@@ -600,11 +600,16 @@ export class DataRepository {
     const conditions = agentIds.map(() => `session_key LIKE ?`).join(' OR ');
     const params = agentIds.map((id) => `agent:${id}:%`);
 
+    // 过滤掉无意义的内部信号内容
     const rows = this.db.prepare(`
       SELECT m.content, m.session_key
       FROM admin_messages m
       WHERE (${conditions})
         AND m.message_type = 'agent'
+        AND LENGTH(COALESCE(m.content, '')) > 0
+        AND m.content NOT IN ('NO_REPLY', 'HEARTBEAT_OK')
+        AND m.content NOT LIKE '[non-text content:%'
+        AND m.content NOT LIKE '[[reply_to:%'
       ORDER BY m.timestamp DESC
     `).all(...params) as Array<{ content: string | null; session_key: string }>;
 
