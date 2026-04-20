@@ -123,6 +123,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
           return {
             ...a,
             status: ov ? ov.status : '离线',
+            latest_message: ov ? ov.latest_message : null,
           };
         });
       } else {

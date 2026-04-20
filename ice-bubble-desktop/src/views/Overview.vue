@@ -17,6 +17,7 @@ interface AgentOverview {
   workspace: string | null;
   status: string;
   last_active_at: string;
+  latest_message: string | null;
 }
 
 // Agent 概览数据（来自 /api/agents，过滤工作/活跃）
@@ -63,6 +64,13 @@ function getStatusTagType(status: string): string {
 function getAvatarUrl(avatar: string | null): string | null {
   if (!avatar) return null;
   return `/api/resources/avatars/${avatar}`;
+}
+
+/** 截断消息内容用于卡片展示（去除多余空白，取前 N 字） */
+function truncateMessage(msg: string | null, maxLen = 80): string {
+  if (!msg) return '';
+  const cleaned = msg.replace(/\s+/g, ' ').trim();
+  return cleaned.length > maxLen ? cleaned.substring(0, maxLen) + '…' : cleaned;
 }
 
 // 统计数据
@@ -259,29 +267,35 @@ watch(moduleList, (newList) => {
 
             <div class="agent-list">
               <div class="agent-item" v-for="agent in onlineAgents" :key="agent.agent_id">
-                <el-avatar v-if="getAvatarUrl(agent.avatar)"
-                  :size="36"
-                  :src="getAvatarUrl(agent.avatar)!"
-                  fit="cover"
-                  class="agent-avatar"
-                />
-                <el-avatar v-else
-                  :size="36"
-                  fit="cover"
-                  class="agent-avatar"
-                  style="color: var(--color-accent-blue); font-size: 14px;"
-                >
-                  {{ agent.agent_id.substring(0, 1).toUpperCase() }}
-                </el-avatar>
-                <span class="agent-name">{{ agent.agent_name || agent.agent_id }}</span>
-                <el-tag
-                  :type="getStatusTagType(agent.status)"
-                  size="small"
-                  effect="plain"
-                  class="agent-status-tag"
-                >
-                  {{ agent.status }}
-                </el-tag>
+                <div class="agent-top">
+                  <el-avatar v-if="getAvatarUrl(agent.avatar)"
+                    :size="36"
+                    :src="getAvatarUrl(agent.avatar)!"
+                    fit="cover"
+                    class="agent-avatar"
+                  />
+                  <el-avatar v-else
+                    :size="36"
+                    fit="cover"
+                    class="agent-avatar"
+                    style="color: var(--color-accent-blue); font-size: 14px;"
+                  >
+                    {{ agent.agent_id.substring(0, 1).toUpperCase() }}
+                  </el-avatar>
+                  <span class="agent-name">{{ agent.agent_name || agent.agent_id }}</span>
+                  <el-tag
+                    :type="getStatusTagType(agent.status)"
+                    size="small"
+                    effect="plain"
+                    class="agent-status-tag"
+                  >
+                    {{ agent.status }}
+                  </el-tag>
+                </div>
+                <div v-if="truncateMessage(agent.latest_message, 80)" class="agent-msg">
+                  {{ truncateMessage(agent.latest_message, 80) }}
+                </div>
+                <div v-else class="agent-msg agent-msg--empty">暂无输出</div>
               </div>
               <el-empty v-if="onlineAgents.length === 0" description="暂无在线 Agent" :image-size="40" />
             </div>
@@ -366,12 +380,18 @@ watch(moduleList, (newList) => {
 
 .agent-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
   background: var(--el-fill-color-light);
   border-radius: 8px;
   border: 1px solid var(--el-border-color-extra-light);
+}
+
+.agent-item .agent-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .agent-item .agent-avatar {
@@ -393,6 +413,21 @@ watch(moduleList, (newList) => {
 .agent-item .agent-status-tag {
   flex-shrink: 0;
   font-family: var(--font-exo2);
+}
+
+.agent-item .agent-msg {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+  padding-left: 46px;  /* 对齐文字，与头像右侧平齐 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-item .agent-msg--empty {
+  color: var(--el-text-color-placeholder);
+  font-style: italic;
 }
 
 .latency-card {

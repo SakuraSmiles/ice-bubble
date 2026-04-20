@@ -586,6 +586,46 @@ export class DataRepository {
     return { messages: rows, total: countRow.total };
   }
 
+  /**
+   * 获取指定 agents 的最新 agent-type 消息内容
+   * 用于 Overview 卡片展示每个 agent 的最新输出
+   *
+   * @param agentIds - 要查询的 agent ID 列表
+   * @returns Map（agentId → 最新消息内容，没有则 null）
+   */
+  getLatestAgentMessages(agentIds: string[]): Map<string, string | null> {
+    if (agentIds.length === 0) return new Map();
+
+    // session_key 格式：agent:{agentId}:...，用 LIKE 匹配
+    const conditions = agentIds.map(() => `session_key LIKE ?`).join(' OR ');
+    const params = agentIds.map((id) => `agent:${id}:%`);
+
+    const rows = this.db.prepare(`
+      SELECT m.content, m.session_key
+      FROM admin_messages m
+      WHERE (${conditions})
+        AND m.message_type = 'agent'
+      ORDER BY m.timestamp DESC
+    `).all(...params) as Array<{ content: string | null; session_key: string }>;
+
+    // 按 agent 分组，每组只取第一条（最新）
+    const result = new Map<string, string | null>();
+    for (const row of rows) {
+      // 从 session_key 提取 agent_id：agent:{agentId}:...
+      const match = row.session_key.match(/^agent:([^:]+):/);
+      if (!match) continue;
+      const agentId = match[1];
+      if (result.has(agentId)) continue; // 已记录过，跳过
+      result.set(agentId, row.content);
+    }
+
+    // 没有消息的 agent 补 null
+    for (const id of agentIds) {
+      if (!result.has(id)) result.set(id, null);
+    }
+    return result;
+  }
+
   // ========== Agents ==========
 
   /**
