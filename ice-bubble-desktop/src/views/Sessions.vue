@@ -120,8 +120,6 @@ function formatRelativeTime(dateString: string | null): string {
 
 async function fetchAllSessions() {
   loading.value = true;
-  // 确保 loading 状态可见（请求太快需要模拟延迟）
-  await new Promise(r => setTimeout(r, 500));
   try {
     const data = await api.getSessions({ limit: 50 });
     allSessions.value = data.sessions || [];
@@ -143,6 +141,7 @@ function handleSelectSession(key: string) {
   const session = allSessions.value.find(s => s.session_key === key) ?? null;
   selectedSession.value = session;
   selectedSessionKey.value = key;
+  // fetchMessages 由 ChatPanel watch(props.session) 处理，避免重复调用
 }
 
 async function handleRefresh() {
@@ -184,7 +183,6 @@ onUnmounted(() => {
         v-model="selectedSessionKey"
         placeholder="选择会话"
         filterable
-        :filter-method="(val: string) => { searchQuery = val; }"
         @change="(key: string) => handleSelectSession(key)"
         class="session-selector"
         no-data-text="无匹配会话"

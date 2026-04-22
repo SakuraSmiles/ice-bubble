@@ -3,6 +3,7 @@ import { ref, watch, nextTick } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../api/client.ts';
+import type { MessageDTO } from '../api/client.ts';
 import type { Session } from './SessionList.vue';
 
 export interface ChatMessage {
@@ -22,6 +23,7 @@ const loading = ref(false);
 const loadingMore = ref(false);
 const hasMore = ref(true);
 const error = ref('');
+const chatContainerRef = ref<HTMLElement | null>(null);
 
 function formatTime(dateString: string): string {
   const d = new Date(dateString);
@@ -55,9 +57,21 @@ async function fetchMessages(reset = false) {
 
     let msgs: ChatMessage[] = [];
     if (Array.isArray(data)) {
-      msgs = data;
+      // 旧版兼容：直接返回数组
+      msgs = (data as MessageDTO[]).map(m => ({
+        id: m.id,
+        sender: m.role === 'user' ? 'user' : m.role === 'assistant' ? 'agent' : m.role,
+        content: m.content,
+        timestamp: m.created_at,
+      }));
     } else if (data.messages && Array.isArray(data.messages)) {
-      msgs = data.messages as unknown as ChatMessage[];
+      // 标准格式：{ messages: MessageDTO[] }
+      msgs = (data.messages as MessageDTO[]).map(m => ({
+        id: m.id,
+        sender: m.role === 'user' ? 'user' : m.role === 'assistant' ? 'agent' : m.role,
+        content: m.content,
+        timestamp: m.created_at,
+      }));
     }
 
     if (reset) {
@@ -69,7 +83,7 @@ async function fetchMessages(reset = false) {
       messages.value = [...newMsgs, ...messages.value];
     }
 
-    hasMore.value = msgs.length >= 20;
+    hasMore.value = msgs.length === 20;
   } catch (e: any) {
     error.value = e.message || '获取消息失败';
     ElMessage.error('获取消息失败: ' + (e.message || e));
@@ -99,15 +113,13 @@ watch(() => props.session, (newSession) => {
   fetchMessages(true);
 });
 
-const chatContainerRef = ref<HTMLElement | null>(null);
-
 // Scroll to bottom when messages change
 watch(messages, async () => {
   await nextTick();
   if (chatContainerRef.value) {
     chatContainerRef.value.scrollTop = chatContainerRef.value.scrollHeight;
   }
-}, { deep: false });
+}, { deep: true });
 
 defineExpose({ fetchMessages });
 </script>

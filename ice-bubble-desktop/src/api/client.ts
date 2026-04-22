@@ -53,9 +53,11 @@ export interface ModuleDTO {
   version?: string;
   registeredTime?: string;
   status?: {
-    state?: string;
+    state?: 'running' | 'stopped' | 'error' | string;
     runtime?: { startTime?: string };
     latencyMs?: number | null;
+    lastPollTime?: string;
+    lastError?: string;
   };
 }
 

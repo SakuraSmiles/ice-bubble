@@ -7,6 +7,7 @@ import AppFooter from '../components/AppFooter.vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { formatTime } from '../utils/format.ts';
 import { api } from '../api/client.ts';
+import type { ModuleDTO } from '../api/client.ts';
 
 interface ModuleStatus {
   state: 'running' | 'stopped' | 'error' | null;
@@ -31,7 +32,7 @@ const loading = ref(false);
 // 卡片级别的 loading 状态
 const cardLoading = ref<Record<string, boolean>>({});
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
-const REFRESH_INTERVAL = 10000; // 30秒刷新一次，10秒刷新
+const REFRESH_INTERVAL = 10000; // 10秒刷新一次
 const error = ref('');
 
 // 弹窗相关
@@ -119,21 +120,24 @@ async function fetchModules(showLoading = true) {
     const listData = await api.getModules();
 
     // API 已返回完整数据（包括状态），直接使用
-    modules.value = listData.modules.map((m: any) => ({
-      moduleKey: m.moduleKey,
-      name: m.name,
-      baseUrl: m.baseUrl,
-      enabled: m.enabled,
-      pollInterval: m.pollInterval,
-      version: m.version || '-',
-      status: m.status || { state: null, lastPollTime: null, lastError: null },
-      registeredAt: m.registeredTime
-        ? formatTime(m.registeredTime)
-        : '-',
-      runtimeStartTime: m.status?.runtime?.startTime
-        ? formatTime(m.status.runtime.startTime)
-        : '-',
-    }));
+    modules.value = listData.modules.map((m: ModuleDTO) => {
+      const modStatus: ModuleStatus = {
+        state: (m.status?.state as ModuleStatus['state']) ?? null,
+        lastPollTime: m.status?.lastPollTime,
+        lastError: m.status?.lastError,
+      };
+      return {
+        moduleKey: m.moduleKey,
+        name: m.name,
+        baseUrl: m.baseUrl,
+        enabled: m.enabled,
+        pollInterval: m.pollInterval,
+        version: m.version || '-',
+        status: modStatus,
+        registeredAt: m.registeredTime ? formatTime(m.registeredTime) : '-',
+        runtimeStartTime: m.status?.runtime?.startTime ? formatTime(m.status.runtime.startTime) : '-',
+      };
+    });
   } catch (e: any) {
     error.value = e.message || '获取模块列表失败';
   } finally {
