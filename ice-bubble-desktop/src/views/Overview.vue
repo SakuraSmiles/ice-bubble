@@ -535,8 +535,8 @@ watch(moduleList, (newList) => {
 .main-layout {
   display: flex;
   gap: 16px;
-  flex: 1;
-  min-height: 0;
+  flex-shrink: 0;
+  height: 600px;
 }
 
 /* 左侧面板 */
@@ -820,6 +820,7 @@ watch(moduleList, (newList) => {
 /* 右侧：主内容区 */
 .right-panel {
   width: 420px;
+  height: 600px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
