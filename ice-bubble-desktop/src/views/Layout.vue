@@ -194,6 +194,6 @@ const menuItems = [
   display: flex;
   flex-direction: column;
   background: var(--color-bg-subtle);
-  overflow-y: auto;
+  overflow: hidden;
 }
 </style>
