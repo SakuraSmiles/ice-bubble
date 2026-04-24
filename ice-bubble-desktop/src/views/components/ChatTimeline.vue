@@ -43,6 +43,8 @@ const atBottom = ref(true);
 const containerRef = ref<HTMLElement | null>(null);
 
 const PAGE_SIZE = 50;
+/** 初始加载量（更大，减少首次撑不满概率） */
+const INITIAL_LIMIT = 100;
 let knownIds = new Set<number>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -70,10 +72,12 @@ function scrollToBottom(smooth = true) {
 async function loadLatest() {
   loading.value = true;
   try {
-    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&${DEFAULT_FILTERS}`);
+    const res = await fetch(`/api/messages/timeline?limit=${INITIAL_LIMIT}&${DEFAULT_FILTERS}`);
     const data: TimelineResponse = await res.json();
     setMessages(data.messages);
     hasMore.value = data.has_more;
+    // 如果初始加载后内容没撑满容器，继续加载更多直到撑满或耗尽
+    await fillScrollable();
   } catch (e) {
     console.error('加载聊天记录失败', e);
   } finally {
@@ -81,23 +85,29 @@ async function loadLatest() {
   }
 }
 
-/** 加载更多历史（滚动到顶部时触发） */
+/** 加载更多历史 —— 追加到列表前面，然后恢复滚动位置 */
 async function loadMore() {
   if (loadingMore.value || !hasMore.value || messages.value.length === 0) return;
   loadingMore.value = true;
+
+  // 记录加载前的第一个消息 id，用于恢复滚动位置
+  const anchorId = messages.value[0]?.id;
+  const el = containerRef.value;
+  if (el && anchorId !== undefined) {
+    // 找到锚点元素在当前滚动中的相对位置
+  }
+
   try {
     const oldest = messages.value[0].timestamp;
     const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${DEFAULT_FILTERS}`);
     const data: TimelineResponse = await res.json();
     if (data.messages.length > 0) {
-      // 去重后追加到前面
       const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
       if (newMsgs.length > 0) {
         messages.value = [...newMsgs, ...messages.value];
         newMsgs.forEach(m => knownIds.add(m.id));
       }
       hasMore.value = data.has_more;
-      // 如果返回不足量，说明没有了
       if (data.messages.length < PAGE_SIZE) {
         hasMore.value = false;
       }
@@ -108,6 +118,15 @@ async function loadMore() {
     console.error('加载更多失败', e);
   } finally {
     loadingMore.value = false;
+  }
+
+  // 恢复滚动位置：等 DOM 更新后，让锚点元素回到之前的位置
+  await nextTick();
+  if (el && anchorId !== undefined) {
+    const anchorEl = el.querySelector(`[data-msg-id="${anchorId}"]`);
+    if (anchorEl) {
+      anchorEl.scrollIntoView({ block: 'nearest' });
+    }
   }
 }
 
@@ -144,21 +163,18 @@ function goToBottom() {
 
 /**
  * 如果内容未撑满容器，持续加载更多历史直到撑满或耗尽
- * 解决初始加载消息太少时没有滚动条的问题
  */
 async function fillScrollable() {
   const el = containerRef.value;
   if (!el) return;
 
-  // 最多尝试加载 10 批
-  let tries = 0;
-  while (tries < 10 && hasMore.value) {
-    if (el.scrollHeight > el.clientHeight + 10) break; // 已有滚动条
+  while (hasMore.value) {
+    if (el.scrollHeight > el.clientHeight + 10) break;
 
-    const oldest = messages.value.length > 0 ? messages.value[0].timestamp : undefined;
-    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}` +
-      (oldest ? `&before=${encodeURIComponent(oldest)}&` : '?') +
-      DEFAULT_FILTERS);
+    const oldest = messages.value[0]?.timestamp;
+    if (!oldest) break;
+
+    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${DEFAULT_FILTERS}`);
     const data: TimelineResponse = await res.json();
     if (!data.messages || data.messages.length === 0) break;
 
@@ -170,7 +186,6 @@ async function fillScrollable() {
     hasMore.value = data.messages.length >= PAGE_SIZE;
 
     await nextTick();
-    tries++;
   }
 }
 
@@ -184,12 +199,9 @@ function setMessages(msgs: TimelineMessage[]) {
 }
 
 // =========== 滚动事件 ===========
+/** 仅用于检测是否在底部（新消息自动滚） */
 function onScroll() {
   checkBottom();
-  // 滚动到顶部附近时加载更多
-  const el = containerRef.value;
-  if (!el || el.scrollTop > 100) return;
-  loadMore();
 }
 
 // =========== 生命周期 ===========
@@ -291,8 +303,12 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 
     <!-- 消息列表 -->
     <div ref="containerRef" class="chat-scroll" @scroll="onScroll">
-      <!-- 加载更多 -->
-      <div v-if="loadingMore" class="load-tip">加载更多...</div>
+      <!-- 加载更多按钮（在列表顶部显示） -->
+      <div v-if="hasMore && !loading" class="load-more-bar">
+        <button class="load-more-btn" @click="loadMore" :disabled="loadingMore">
+          {{ loadingMore ? '加载中...' : '↑ 加载更早消息' }}
+        </button>
+      </div>
 
       <!-- 首加载 -->
       <div v-if="loading && messages.length === 0" class="empty-tip">加载中...</div>
@@ -301,7 +317,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
       <!-- 消息组 -->
       <template v-for="(grp, gi) in groupedMessages" :key="gi">
         <!-- 用户消息 -->
-        <div v-if="grp.type === 'user'" class="msg-row msg-row--user">
+        <div v-if="grp.type === 'user'" class="msg-row msg-row--user" :data-msg-id="grp.messages[0].id">
           <div class="msg-header msg-header--user">
             <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
             <span v-if="grp.messages[0]?.source_channel" class="channel-tag">{{ grp.messages[0].source_channel }}</span>
@@ -312,7 +328,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
         </div>
 
         <!-- Agent 消息 -->
-        <div v-else class="msg-row msg-row--agent">
+        <div v-else class="msg-row msg-row--agent" :data-msg-id="grp.messages[0].id">
           <div class="msg-header msg-header--agent">
             <img
               v-if="grp.avatar"
@@ -381,6 +397,31 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   gap: 14px;
   scroll-behavior: smooth;
   background: #fff;
+}
+
+/* 加载更多按钮 */
+.load-more-bar {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+.load-more-btn {
+  background: transparent;
+  border: 1px solid #e0e0e0;
+  border-radius: 16px;
+  padding: 5px 20px;
+  font-size: 12px;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.load-more-btn:hover {
+  border-color: #5a7fb5;
+  color: #5a7fb5;
+  background: #f0f4fc;
+}
+.load-more-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .load-tip, .empty-tip {
