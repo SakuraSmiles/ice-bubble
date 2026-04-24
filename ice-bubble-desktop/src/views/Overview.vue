@@ -61,6 +61,7 @@ interface TaskItem {
   task_id: string;
   title: string;
   status: TaskStatus;
+  updated_at?: string;
 }
 
 interface AgentTasks {
@@ -110,7 +111,21 @@ async function fetchLatestTask(): Promise<void> {
   }
 }
 
-/** 获取 Agent 的任务数据 */
+/** 获取 Agent 的活跃任务（最新非已完成，最多2条） */
+function getAgentActiveTasks(agentId: string): TaskItem[] {
+  const at = agentTasksMap.value[agentId];
+  if (!at?.tasks?.length) return [];
+  return at.tasks
+    .filter(t => t.status !== 'DONE')
+    .sort((a, b) => {
+      const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return tb - ta; // 最新的排前面
+    })
+    .slice(0, 2);
+}
+
+/** 获取 Agent 的任务数据（原始完整列表） */
 function getAgentTasks(agentId: string): AgentTasks {
   if (!agentTasksMap.value[agentId]) {
     agentTasksMap.value[agentId] = { tasks: [], loading: false, error: null };
@@ -132,7 +147,7 @@ async function fetchAgentTasks(agentId: string): Promise<void> {
       pending: 'TODO', in_progress: 'IN_PROGRESS', completed: 'DONE', blocked: 'TODO'
     };
     at.tasks = rawTasks.map(t => ({
-      task_id: t.id, title: t.title || t.task_id, status: statusMap[t.status] ?? 'TODO'
+      task_id: t.id, title: t.title || t.task_id, status: statusMap[t.status] ?? 'TODO', updated_at: t.updated_at
     }));
   } catch (e) {
     console.error(`获取 Agent ${agentId} 任务失败`, e);
@@ -468,17 +483,13 @@ watch(moduleList, (newList) => {
 
               <!-- 任务 TODO 列表 -->
               <div class="agent-todo-list">
-                <template v-if="getAgentTasks(agent.agent_id).tasks.length > 0">
+                <template v-if="getAgentActiveTasks(agent.agent_id).length > 0">
                   <div
                     class="todo-item"
-                    :class="{ 'todo-item--done': task.status === 'DONE' }"
-                    v-for="task in getAgentTasks(agent.agent_id).tasks"
+                    v-for="task in getAgentActiveTasks(agent.agent_id)"
                     :key="task.task_id"
                   >
-                    <span class="todo-icon">
-                      <template v-if="task.status === 'DONE'">✅</template>
-                      <template v-else>⚪</template>
-                    </span>
+                    <span class="todo-icon">⚪</span>
                     <span class="todo-title">{{ task.title }}</span>
                   </div>
                 </template>
