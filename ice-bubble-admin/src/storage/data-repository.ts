@@ -749,14 +749,6 @@ export class DataRepository {
       values.push(`%${params.search}%`);
     }
 
-    // 把噪音/cron 过滤下移到 SQL 中
-    if (params.exclude_system_noise) {
-      conditions.push("(m.content NOT IN ('HEARTBEAT_OK', 'NO_REPLY') AND m.content NOT LIKE 'System[ :(]%' AND m.content NOT LIKE 'System ([%')");
-    }
-    if (params.exclude_cron) {
-      conditions.push("m.content NOT LIKE '[cron%'");
-    }
-
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
     // Query
@@ -818,6 +810,10 @@ export class DataRepository {
         content: row.content,
         agent_name: agentName,
       });
+
+      // 应用噪音/定时任务过滤
+      if (params.exclude_system_noise && meta.is_system_noise) continue;
+      if (params.exclude_cron && meta.is_cron) continue;
 
       let content = row.content;
       if (row.message_type === 'tool' && content && content.length > 300) {
