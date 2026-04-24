@@ -489,7 +489,7 @@ watch(moduleList, (newList) => {
                     v-for="task in getAgentActiveTasks(agent.agent_id)"
                     :key="task.task_id"
                   >
-                    <span class="todo-icon">⚪</span>
+                    <span class="todo-dot" :class="'todo-dot--' + task.status.toLowerCase()"></span>
                     <span class="todo-title">{{ task.title }}</span>
                   </div>
                 </template>
@@ -735,15 +735,28 @@ watch(moduleList, (newList) => {
   color: var(--el-text-color-secondary);
 }
 
-.agent-item .todo-item--done .todo-title {
-  text-decoration: line-through;
-  color: var(--el-text-color-placeholder);
+/* Task status dots */
+.agent-item .todo-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
 }
 
-.agent-item .todo-icon {
-  font-size: 10px;
-  flex-shrink: 0;
-  margin-top: 1px;
+.agent-item .todo-dot--todo,
+.agent-item .todo-dot--pending {
+  background: var(--el-text-color-placeholder);
+}
+
+.agent-item .todo-dot--in_progress,
+.agent-item .todo-dot--in-progress {
+  background: var(--el-color-primary);
+}
+
+.agent-item .todo-dot--done,
+.agent-item .todo-dot--completed {
+  background: var(--el-color-success);
 }
 
 .agent-item .todo-title {
