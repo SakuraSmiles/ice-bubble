@@ -54,6 +54,9 @@ function checkBottom() {
   atBottom.value = gap < 60;
 }
 
+/** 默认过滤参数：排除系统噪音和定时任务 */
+const DEFAULT_FILTERS = 'exclude_system_noise=true&exclude_cron=true';
+
 /** 滚到底部 */
 function scrollToBottom(smooth = true) {
   const el = containerRef.value;
@@ -65,7 +68,7 @@ function scrollToBottom(smooth = true) {
 async function loadLatest() {
   loading.value = true;
   try {
-    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}`);
+    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&${DEFAULT_FILTERS}`);
     const data: TimelineResponse = await res.json();
     setMessages(data.messages);
     hasMore.value = data.has_more;
@@ -82,7 +85,7 @@ async function loadMore() {
   loadingMore.value = true;
   try {
     const oldest = messages.value[0].timestamp;
-    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}`);
+    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${DEFAULT_FILTERS}`);
     const data: TimelineResponse = await res.json();
     if (data.messages.length > 0) {
       // 去重后追加到前面
@@ -108,7 +111,7 @@ async function loadMore() {
 
 /** 轮询最新消息 */
 async function pollLatest() {
-  const res = await fetch(`/api/messages/timeline?limit=20`);
+  const res = await fetch(`/api/messages/timeline?limit=20&${DEFAULT_FILTERS}`);
   const data: TimelineResponse = await res.json();
   if (!data.messages || data.messages.length === 0) return;
 

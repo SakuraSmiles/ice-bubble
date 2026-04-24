@@ -117,8 +117,8 @@ function analyzeMessageMeta(msg: {
       const afterCron = cronEnd > 0 ? content.substring(cronEnd + 1).trim() : content;
       meta.clean_content = afterCron || content;
     }
-    // 检测系统执行通知
-    else if (content.startsWith('System') && content.includes('untrusted')) {
+    // 检测系统执行通知（System: / System(...) 格式）
+    else if (/^System[ :(]/.test(content) && content.length > 10) {
       meta.is_system_noise = true;
       meta.clean_content = content.substring(0, 150);
     }
