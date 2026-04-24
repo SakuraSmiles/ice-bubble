@@ -4,7 +4,7 @@ import { apiMonitor, type MonitorStats } from '../utils/monitor';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
-import type { ModuleDTO, TimelineMessageDTO } from '../api/client';
+import type { ModuleDTO } from '../api/client';
 import ChatTimeline from './components/ChatTimeline.vue';
 
 // =========== 接口定义 ===========
@@ -149,38 +149,8 @@ async function fetchAllAgentTasks(): Promise<void> {
 }
 
 // =========== ChatTimeline 消息引用 ===========
+// =========== ChatTimeline 消息引用 ===========
 const chatTimelineRef = ref<InstanceType<typeof ChatTimeline> | null>(null);
-
-/** 定时任务消息列表 */
-const cronMessages = ref<TimelineMessageDTO[]>([]);
-
-/** 监听 ChatTimeline 暴露的过滤消息 */
-watch(
-  () => chatTimelineRef.value?.cronMessages,
-  (msgs) => { if (msgs) cronMessages.value = msgs; },
-  { deep: true }
-);
-
-/** 按时间分组的 cron 消息 */
-const cronMessagesByTime = computed(() => {
-  const groups: Array<{ date: string; messages: TimelineMessageDTO[] }> = [];
-  const sorted = [...cronMessages.value].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
-  for (const msg of sorted) {
-    const date = new Date(msg.timestamp).toLocaleDateString('zh-CN');
-    const lastGroup = groups[groups.length - 1];
-    if (!lastGroup || lastGroup.date !== date) {
-      groups.push({ date, messages: [msg] });
-    } else {
-      lastGroup.messages.push(msg);
-    }
-  }
-  return groups;
-});
-
-/** 定时任务卡片折叠状态 */
-const cronCardExpanded = ref(false);
 
 // =========== 核心功能函数 ===========
 
@@ -521,26 +491,6 @@ watch(moduleList, (newList) => {
             <el-empty v-if="onlineAgents.length === 0" description="暂无在线 Agent" :image-size="40" />
           </div>
 
-          <!-- 定时任务通知卡片 -->
-          <div class="cron-card" v-if="cronMessages.length > 0">
-            <div class="cron-header" @click="cronCardExpanded = !cronCardExpanded">
-              <span>⏰ 定时任务通知</span>
-              <span class="cron-count">{{ cronMessages.length }}</span>
-              <span class="cron-arrow" :class="{ 'cron-arrow--expanded': cronCardExpanded }">▼</span>
-            </div>
-            <div v-show="cronCardExpanded" class="cron-body">
-              <div v-for="group in cronMessagesByTime" :key="group.date" class="cron-date-group">
-                <div class="cron-date-label">{{ group.date }}</div>
-                <div class="cron-msg-item" v-for="msg in group.messages" :key="msg.timestamp">
-                  <div class="cron-msg-agent">{{ msg.agent_name }}</div>
-                  <div class="cron-msg-preview">{{ (msg.content || '').substring(0, 120) }}...</div>
-                  <div class="cron-msg-time">
-                    {{ new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- 右侧：ChatTimeline -->
@@ -864,96 +814,6 @@ watch(moduleList, (newList) => {
 @keyframes border-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
-}
-
-/* 定时任务卡片 */
-.cron-card {
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
-  border: 1px solid var(--el-border-color-extra-light);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.cron-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  user-select: none;
-}
-
-.cron-header:hover {
-  background: var(--el-fill-color);
-}
-
-.cron-count {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color);
-  padding: 1px 6px;
-  border-radius: 10px;
-}
-
-.cron-arrow {
-  font-size: 10px;
-  transition: transform 0.2s;
-  color: var(--el-text-color-placeholder);
-}
-
-.cron-arrow--expanded {
-  transform: rotate(180deg);
-}
-
-.cron-body {
-  max-height: 240px;
-  overflow-y: auto;
-  border-top: 1px solid var(--el-border-color-extra-light);
-}
-
-.cron-date-group {
-  padding: 6px 12px;
-}
-
-.cron-date-label {
-  font-size: 10px;
-  color: var(--el-text-color-placeholder);
-  margin-bottom: 4px;
-}
-
-.cron-msg-item {
-  padding: 6px 8px;
-  border-radius: 4px;
-  margin-bottom: 4px;
-  background: var(--el-fill-color);
-}
-
-.cron-msg-agent {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--el-color-primary);
-}
-
-.cron-msg-preview {
-  font-size: 10px;
-  color: var(--el-text-color-secondary);
-  margin-top: 2px;
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.cron-msg-time {
-  font-size: 9px;
-  color: var(--el-text-color-placeholder);
-  margin-top: 2px;
 }
 
 /* 右侧：主内容区 */
