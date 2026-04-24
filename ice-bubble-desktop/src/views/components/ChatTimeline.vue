@@ -301,11 +301,13 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
       <template v-for="(grp, gi) in groupedMessages" :key="gi">
         <!-- 用户消息 -->
         <div v-if="grp.type === 'user'" class="msg-row msg-row--user">
-          <div class="bubble bubble--user">
-            {{ grp.messages[0]?.clean_content || grp.messages[0]?.content }}
+          <div class="msg-header msg-header--user">
+            <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
             <span v-if="grp.messages[0]?.source_channel" class="channel-tag">{{ grp.messages[0].source_channel }}</span>
           </div>
-          <div class="meta meta--user">{{ formatTime(grp.timestamp) }}</div>
+          <div class="bubble bubble--user">
+            {{ grp.messages[0]?.clean_content || grp.messages[0]?.content }}
+          </div>
         </div>
 
         <!-- Agent 消息 -->
@@ -317,19 +319,23 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
           />
           <div class="avatar-placeholder" v-else>{{ grp.agentName[0] }}</div>
 
-          <div class="bubble bubble--agent">
-            <div class="bubble-agent-name">{{ grp.agentName }}</div>
-            <div class="bubble-text" v-for="(m, mi) in grp.messages" :key="mi">
-              {{ m.content }}
+          <div class="agent-content">
+            <div class="msg-header msg-header--agent">
+              <span class="agent-label-name">{{ grp.agentName }}</span>
+              <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
             </div>
-            <!-- 工具消息折叠 -->
-            <details v-if="grp.toolMsgs.length > 0" class="tool-details">
-              <summary>{{ toolSummary(grp.toolMsgs) }}</summary>
-              <div v-for="(tm, ti) in grp.toolMsgs" :key="ti" class="tool-item">
-                {{ tm.content?.substring(0, 300) }}...
+            <div class="bubble bubble--agent">
+              <div class="bubble-text" v-for="(m, mi) in grp.messages" :key="mi">
+                {{ m.content }}
               </div>
-            </details>
-            <div class="bubble-time">{{ formatTime(grp.timestamp) }}</div>
+              <!-- 工具消息折叠 -->
+              <details v-if="grp.toolMsgs.length > 0" class="tool-details">
+                <summary>{{ toolSummary(grp.toolMsgs) }}</summary>
+                <div v-for="(tm, ti) in grp.toolMsgs" :key="ti" class="tool-item">
+                  {{ tm.content?.substring(0, 300) }}...
+                </div>
+              </details>
+            </div>
           </div>
         </div>
       </template>
@@ -411,6 +417,36 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   font-weight: 600;
 }
 
+/* Agent 内容包裹（用于对齐头部+气泡） */
+.agent-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 消息头顶部（时间 + 名称/渠道） */
+.msg-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  padding: 0 4px;
+}
+.msg-header--user {
+  justify-content: flex-end;
+}
+
+.msg-time {
+  white-space: nowrap;
+}
+
+.agent-label-name {
+  font-weight: 600;
+  color: var(--el-color-primary);
+  font-size: 12px;
+}
+
 /* 气泡 */
 .bubble {
   padding: 8px 14px;
@@ -431,43 +467,14 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   max-width: 100%;
 }
 
-.bubble-agent-name {
-  font-weight: 600;
-  font-size: 12px;
-  margin-bottom: 4px;
-  color: var(--el-color-primary);
-}
-
 .bubble-text {
   margin-bottom: 2px;
 }
 
-.meta {
-  font-size: 10px;
-  color: var(--el-text-color-placeholder);
-  align-self: flex-end;
-  padding-bottom: 4px;
-  white-space: nowrap;
-}
-.meta--user { margin-right: 4px; }
-
-.bubble-time {
-  font-size: 10px;
-  color: var(--el-text-color-placeholder);
-  margin-top: 4px;
-}
-
 /* 消息渠道标签 */
 .channel-tag {
-  display: inline-block;
-  font-size: 9px;
-  background: rgba(0, 0, 0, 0.08);
+  font-size: 10px;
   color: var(--el-text-color-secondary);
-  padding: 0 5px;
-  border-radius: 3px;
-  margin-left: 6px;
-  vertical-align: middle;
-  line-height: 1.6;
 }
 
 /* 工具折叠 */
