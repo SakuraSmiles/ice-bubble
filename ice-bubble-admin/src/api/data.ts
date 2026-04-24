@@ -111,22 +111,42 @@ export function createDataRouter(config: DataRouterConfig): Router {
    *
    * Query params:
    *   - limit: 每页数量（默认50，最大200）
-   *   - before: cursor 时间戳，返回此时间之前的消息
-   *   - agent_ids: 逗号分隔的 agent_id 列表（可选，不传则返回所有）
+   *   - before: cursor 时间戳，返回此时间之前的消息（翻页）
+   *   - since: 时间戳，返回此时间之后的消息（增量轮询）
+   *   - agent_ids: 逗号分隔的 agent_id 列表
+   *   - message_types: 逗号分隔的消息类型（默认 user,agent,tool）
+   *   - search: 内容关键词搜索
+   *   - exclude_system_noise: 是否过滤系统噪音
+   *   - exclude_cron: 是否过滤定时任务
    */
   router.get('/messages/timeline', (req: Request, res: Response) => {
     const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
     const before = req.query.before ? String(req.query.before) : undefined;
+    const since = req.query.since ? String(req.query.since) : undefined;
     const agentIdsRaw = req.query.agent_ids ? String(req.query.agent_ids) : undefined;
     const agent_ids = agentIdsRaw
       ? agentIdsRaw.split(',').map(s => s.trim()).filter(Boolean)
       : undefined;
+    const message_types = req.query.message_types ? String(req.query.message_types) : undefined;
+    const search = req.query.search ? String(req.query.search) : undefined;
+    const exclude_system_noise = req.query.exclude_system_noise === 'true' || req.query.exclude_system_noise === '1';
+    const exclude_cron = req.query.exclude_cron === 'true' || req.query.exclude_cron === '1';
 
-    const result = repository.getMessagesTimeline({ limit, before, agent_ids });
+    const result = repository.getMessagesTimeline({
+      limit,
+      before,
+      since,
+      agent_ids,
+      message_types,
+      search,
+      exclude_system_noise,
+      exclude_cron,
+    });
     res.json({
       messages: result.messages,
       has_more: result.has_more,
-      oldest_timestamp: result.oldest_timestamp,
+      pagination: result.pagination,
+      meta: result.meta,
     });
   });
 

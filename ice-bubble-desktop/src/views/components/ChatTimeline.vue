@@ -10,14 +10,25 @@ interface TimelineMessage {
   avatar: string | null;
   message_type: 'user' | 'agent' | 'tool';
   content: string | null;
-  is_summary: boolean;
+  clean_content: string | null;
+  content_summary: string | null;
+  is_cron: boolean;
+  is_system_noise: boolean;
   timestamp: string;
 }
 
 interface TimelineResponse {
   messages: TimelineMessage[];
   has_more: boolean;
-  oldest_timestamp: string | null;
+  pagination: {
+    oldest: string | null;
+    newest: string | null;
+    total_in_range: number;
+  };
+  meta: {
+    agents_in_range: string[];
+    filter_applied: Record<string, unknown>;
+  };
 }
 
 // =========== 数据 ===========
@@ -253,7 +264,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
         <!-- 用户消息 -->
         <div v-if="grp.type === 'user'" class="msg-row msg-row--user">
           <div class="bubble bubble--user">
-            {{ grp.messages[0]?.content }}
+            {{ grp.messages[0]?.clean_content || grp.messages[0]?.content }}
           </div>
           <div class="meta meta--user">{{ formatTime(grp.timestamp) }}</div>
         </div>

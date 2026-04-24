@@ -74,9 +74,79 @@ export interface TimelineMessage {
   avatar: string | null;
   message_type: 'user' | 'agent' | 'tool';
   content: string | null;
-  /** tool 消息为 true（内容是摘要） */
-  is_summary?: boolean;
+  /** 清洗后的用户内容（去掉 metadata/json 前缀等） */
+  clean_content: string | null;
+  /** 用于列表预览的简短摘要 */
+  content_summary: string | null;
+  /** 是否是定时任务 */
+  is_cron: boolean;
+  /** 是否是系统噪音（执行通知/heartbeat等） */
+  is_system_noise: boolean;
   timestamp: string;
+}
+
+/**
+ * 消息元信息（不存储在 DB，运行时计算）
+ */
+interface MessageMeta {
+  is_cron: boolean;
+  is_system_noise: boolean;
+  clean_content: string;
+  content_summary: string;
+}
+
+function analyzeMessageMeta(msg: {
+  message_type: string;
+  content: string | null;
+  agent_name: string;
+}): MessageMeta {
+  const content = msg.content || '';
+  const meta: MessageMeta = {
+    is_cron: false,
+    is_system_noise: false,
+    clean_content: content,
+    content_summary: '',
+  };
+
+  if (msg.message_type === 'user') {
+    // 检测定时任务
+    if (content.startsWith('[cron:')) {
+      meta.is_cron = true;
+      // 提取 cron 描述部分
+      const cronEnd = content.indexOf(']');
+      const afterCron = cronEnd > 0 ? content.substring(cronEnd + 1).trim() : content;
+      meta.clean_content = afterCron || content;
+    }
+    // 检测系统执行通知
+    else if (content.startsWith('System') && content.includes('untrusted')) {
+      meta.is_system_noise = true;
+      meta.clean_content = content.substring(0, 150);
+    }
+    // 检测 Sender metadata 块（webchat 消息编码）
+    else if (content.startsWith('Sender (untrusted metadata)')) {
+      // 去掉开头的 Sender metadata json 块
+      const pattern = /^Sender \(untrusted metadata\):\n```json\n[\s\S]*?\n```\n*\n*/;
+      const afterMeta = content.replace(pattern, '').trim();
+      // 再去掉时间头（如 [Sat 2026-04-11 23:04 GMT+8] 或 [Fri 22:42]）
+      const afterTime = afterMeta.replace(/^\[[^\]]+\]\s*/, '').trim();
+      meta.clean_content = afterTime || content;
+    }
+    // 检测 HEARTBEAT_OK / NO_REPLY
+    else if (content === 'HEARTBEAT_OK' || content === 'NO_REPLY') {
+      meta.is_system_noise = true;
+    }
+  }
+
+  // 生成 content_summary
+  if (meta.clean_content) {
+    if (msg.message_type === 'tool') {
+      meta.content_summary = meta.clean_content.substring(0, 60) + (meta.clean_content.length > 60 ? '...' : '');
+    } else {
+      meta.content_summary = meta.clean_content.substring(0, 120);
+    }
+  }
+
+  return meta;
 }
 
 // ========== 数据仓库 ==========
@@ -605,18 +675,33 @@ export class DataRepository {
    * 获取消息时间线（群聊风格）
    * - 合并 user/agent/tool 所有消息，按时间 DESC 排序
    * - 关联 agent 信息（name/avatar）
-   * - tool 消息只返回摘要
-   * - cursor 分页（WHERE timestamp < ?）
+   * - 支持多维度过滤和数据治理
+   * - 支持 cursor 分页（before）和增量轮询（since）
    *
    * @param params.limit 每页数量（默认50，最大200）
    * @param params.before cursor 时间戳，返回此时间之前的消息
-   * @param params.agent_ids 只查指定 agent 的消息（可选）
+   * @param params.since 时间戳，返回此时间之后的消息（增量轮询）
+   * @param params.agent_ids 只查指定 agent 的消息
+   * @param params.message_types 消息类型过滤（逗号分隔，默认 user,agent,tool）
+   * @param params.search 内容关键词搜索
+   * @param params.exclude_system_noise 过滤系统噪音
+   * @param params.exclude_cron 过滤定时任务
    */
   getMessagesTimeline(params: {
     limit?: number;
     before?: string;
+    since?: string;
     agent_ids?: string[];
-  } = {}): { messages: TimelineMessage[]; has_more: boolean; oldest_timestamp: string | null } {
+    message_types?: string;
+    search?: string;
+    exclude_system_noise?: boolean;
+    exclude_cron?: boolean;
+  } = {}): {
+    messages: TimelineMessage[];
+    has_more: boolean;
+    pagination: { oldest: string | null; newest: string | null; total_in_range: number };
+    meta: { agents_in_range: string[]; filter_applied: Record<string, unknown> };
+  } {
     const limit = Math.min(params.limit ?? 50, 200);
     const messages: TimelineMessage[] = [];
 
@@ -624,22 +709,38 @@ export class DataRepository {
     const conditions: string[] = ["m.message_type IN ('user', 'agent', 'tool')"];
     const values: unknown[] = [];
 
+    if (params.message_types) {
+      const types = params.message_types.split(',').map(s => s.trim()).filter(Boolean);
+      if (types.length > 0 && types.length < 3) {
+        conditions[0] = `m.message_type IN (${types.map(() => '?').join(', ')})`;
+        values.push(...types);
+      }
+    }
+
     if (params.before) {
       conditions.push('m.timestamp < ?');
       values.push(params.before);
     }
 
+    if (params.since) {
+      conditions.push('m.timestamp > ?');
+      values.push(params.since);
+    }
+
     if (params.agent_ids && params.agent_ids.length > 0) {
-      // Filter by agent_ids via admin_sessions.agent_id
       const agentPlaceholders = params.agent_ids.map(() => '?').join(', ');
       conditions.push(`s.agent_id IN (${agentPlaceholders})`);
       values.push(...params.agent_ids);
     }
 
+    if (params.search) {
+      conditions.push('m.content LIKE ?');
+      values.push(`%${params.search}%`);
+    }
+
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
-    // Query: join admin_messages + admin_sessions (for agent_id) + admin_agents (for name/avatar)
-    // For user messages, also extract agent_id from session_key as fallback
+    // Query
     const rows = this.db.prepare(`
       SELECT
         m.id,
@@ -668,10 +769,19 @@ export class DataRepository {
     }>;
 
     const has_more = rows.length > limit;
-    if (has_more) rows.pop(); // Remove the extra one used for has_more detection
+    if (has_more) rows.pop();
+
+    // 统计范围内的 agent
+    const agentSet = new Set<string>();
+    // 总行数（近似）
+    let totalInRange = 0;
+    try {
+      const countRow = this.db.prepare(`SELECT COUNT(*) as cnt FROM admin_messages m LEFT JOIN admin_sessions s ON m.session_key = s.session_key ${whereClause}`).get(...values) as { cnt: number };
+      totalInRange = countRow.cnt;
+    } catch { /* ignore */ }
 
     for (const row of rows) {
-      // Determine agent_id: prefer s.agent_id, fallback to extracting from session_key for user messages
+      // Determine agent_id
       let agentId = row.agent_id;
       if (!agentId && row.message_type === 'user') {
         const match = row.session_key.match(/^agent:([^:]+):/);
@@ -679,17 +789,22 @@ export class DataRepository {
       }
 
       const agentName = row.agent_name || agentId || '未知';
+      if (agentId) agentSet.add(agentId);
 
-      let content: string | null = row.content;
-      let isSummary = false;
+      // 分析消息元信息
+      const meta = analyzeMessageMeta({
+        message_type: row.message_type,
+        content: row.content,
+        agent_name: agentName,
+      });
 
-      if (row.message_type === 'tool') {
-        // tool 消息返回截断内容（前300字符），前端做展示
-        content = content ? content.substring(0, 300) : null;
-        isSummary = true;
-      } else if (row.message_type === 'user' && content && content.length > 500) {
-        // user 消息 content 截断
-        content = content.substring(0, 500) + '...';
+      // 应用噪音/定时任务过滤
+      if (params.exclude_system_noise && meta.is_system_noise) continue;
+      if (params.exclude_cron && meta.is_cron) continue;
+
+      let content = row.content;
+      if (row.message_type === 'tool' && content && content.length > 300) {
+        content = content.substring(0, 300);
       }
 
       messages.push({
@@ -700,14 +815,39 @@ export class DataRepository {
         avatar: row.avatar,
         message_type: row.message_type as 'user' | 'agent' | 'tool',
         content,
-        is_summary: isSummary,
+        clean_content: meta.clean_content || null,
+        content_summary: meta.content_summary || null,
+        is_cron: meta.is_cron,
+        is_system_noise: meta.is_system_noise,
         timestamp: row.timestamp,
       });
     }
 
-    const oldestTimestamp = messages.length > 0 ? messages[messages.length - 1].timestamp : null;
+    const oldest = messages.length > 0 ? messages[messages.length - 1].timestamp : null;
+    const newest = messages.length > 0 ? messages[0].timestamp : null;
 
-    return { messages, has_more, oldest_timestamp: oldestTimestamp };
+    const filterApplied: Record<string, unknown> = {};
+    if (params.message_types) filterApplied.message_types = params.message_types;
+    if (params.since) filterApplied.since = params.since;
+    if (params.before) filterApplied.before = params.before;
+    if (params.agent_ids) filterApplied.agent_ids = params.agent_ids;
+    if (params.search) filterApplied.search = params.search;
+    if (params.exclude_system_noise) filterApplied.exclude_system_noise = true;
+    if (params.exclude_cron) filterApplied.exclude_cron = true;
+
+    return {
+      messages,
+      has_more,
+      pagination: {
+        oldest,
+        newest,
+        total_in_range: totalInRange,
+      },
+      meta: {
+        agents_in_range: Array.from(agentSet).sort(),
+        filter_applied: filterApplied,
+      },
+    };
   }
 
   /**

@@ -73,14 +73,33 @@ export interface TimelineMessageDTO {
   avatar: string | null;
   message_type: 'user' | 'agent' | 'tool';
   content: string | null;
-  is_summary?: boolean;
+  /** 清洗后的用户内容（去掉 metadata/json 前缀等） */
+  clean_content: string | null;
+  /** 用于列表预览的简短摘要 */
+  content_summary: string | null;
+  /** 是否是定时任务 */
+  is_cron: boolean;
+  /** 是否是系统噪音 */
+  is_system_noise: boolean;
   timestamp: string;
+}
+
+export interface TimelinePaginationDTO {
+  oldest: string | null;
+  newest: string | null;
+  total_in_range: number;
+}
+
+export interface TimelineMetaDTO {
+  agents_in_range: string[];
+  filter_applied: Record<string, unknown>;
 }
 
 export interface TimelineResponseDTO {
   messages: TimelineMessageDTO[];
   has_more: boolean;
-  oldest_timestamp: string | null;
+  pagination: TimelinePaginationDTO;
+  meta: TimelineMetaDTO;
 }
 
 export type AgentStatus = '失联' | '工作' | '活跃' | '休假' | '离线';
@@ -208,11 +227,25 @@ export const api = {
     return fetchJson<{ messages: MessageDTO[] }>(`/messages${query}`);
   },
 
-  getMessagesTimeline: (params?: { limit?: number; before?: string; agent_ids?: string[] }) => {
-    const entries = Object.entries(params ?? {}).reduce((acc: Record<string, string>, [k, v]) => {
-      if (v !== undefined && v !== null) acc[k] = String(v);
-      return acc;
-    }, {});
+  getMessagesTimeline: (params?: {
+    limit?: number;
+    before?: string;
+    since?: string;
+    agent_ids?: string[];
+    message_types?: string;
+    search?: string;
+    exclude_system_noise?: boolean;
+    exclude_cron?: boolean;
+  }) => {
+    const entries: Record<string, string> = {};
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null) {
+          if (Array.isArray(v)) entries[k] = v.join(',');
+          else entries[k] = String(v);
+        }
+      }
+    }
     const query = Object.keys(entries).length > 0 ? '?' + new URLSearchParams(entries).toString() : '';
     return fetchJson<TimelineResponseDTO>(`/messages/timeline${query}`);
   },
