@@ -118,6 +118,7 @@ function analyzeMessageMeta(msg: {
     // 检测定时任务
     if (content.startsWith('[cron:')) {
       meta.is_cron = true;
+      meta.is_system_noise = true;
       // 提取 cron 描述部分
       const cronEnd = content.indexOf(']');
       const afterCron = cronEnd > 0 ? content.substring(cronEnd + 1).trim() : content;
@@ -126,7 +127,8 @@ function analyzeMessageMeta(msg: {
     // 检测系统执行通知（System: / System(...) 格式）
     else if (/^System[ :(]/.test(content) && content.length > 10) {
       meta.is_system_noise = true;
-      meta.clean_content = content.substring(0, 150);
+      // 去掉 System 前缀，保留实际内容
+      meta.clean_content = content.replace(/^System[ :]\([^)]*\)/g, '').replace(/^System[ :]/g, '').trim() || content.substring(0, 150);
     }
     // 检测 Sender metadata 块（webchat 消息编码）
     else if (content.startsWith('Sender (untrusted metadata)')) {
