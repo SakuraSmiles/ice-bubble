@@ -716,7 +716,7 @@ watch(moduleList, (newList) => {
   background: var(--el-fill-color-light);
   border-radius: 8px;
   border: 1px solid var(--el-border-color-extra-light);
-  height: 160px;
+  min-height: 100px;
   overflow: hidden;
   position: relative;
 }
@@ -760,7 +760,6 @@ watch(moduleList, (newList) => {
 .agent-item .agent-todo-list {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
