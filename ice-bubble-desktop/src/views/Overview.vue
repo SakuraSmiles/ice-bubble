@@ -499,16 +499,6 @@ watch(moduleList, (newList) => {
                 </el-tag>
               </div>
 
-              <!-- 任务状态 -->
-              <div class="agent-tasks" v-if="getAgentTasks(agent.agent_id).tasks.length > 0">
-                <span class="task-label">任务</span>
-                <span class="task-value">
-                  {{ getAgentTasks(agent.agent_id).tasks.filter(t => t.status === 'TODO').length }}待 /
-                  {{ getAgentTasks(agent.agent_id).tasks.filter(t => t.status === 'IN_PROGRESS').length }}中 /
-                  {{ getAgentTasks(agent.agent_id).tasks.filter(t => t.status === 'DONE').length }}完
-                </span>
-              </div>
-
               <!-- 任务 TODO 列表 -->
               <div class="agent-todo-list">
                 <template v-if="getAgentTasks(agent.agent_id).tasks.length > 0">
@@ -766,23 +756,7 @@ watch(moduleList, (newList) => {
 }
 
 /* 任务状态 */
-.agent-tasks {
-  font-size: 11px;
-  padding-left: 8px;
-  margin-top: 4px;
-  flex-shrink: 0;
-}
-
-.task-label {
-  color: var(--el-text-color-placeholder);
-  margin-right: 4px;
-}
-
-.task-value {
-  color: var(--el-text-color-secondary);
-}
-
-/* 消息区域 */
+/* 任务列表 */
 .agent-item .agent-todo-list {
   flex: 1;
   min-height: 0;
