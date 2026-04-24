@@ -108,9 +108,6 @@ async function loadMore() {
         newMsgs.forEach(m => knownIds.add(m.id));
       }
       hasMore.value = data.has_more;
-      if (data.messages.length < PAGE_SIZE) {
-        hasMore.value = false;
-      }
     } else {
       hasMore.value = false;
     }
@@ -162,13 +159,14 @@ function goToBottom() {
 }
 
 /**
- * 如果内容未撑满容器，持续加载更多历史直到撑满或耗尽
+ * 如果内容未撑满容器，最多加载 2 批历史直到撑满或耗尽
  */
 async function fillScrollable() {
   const el = containerRef.value;
   if (!el) return;
 
-  while (hasMore.value) {
+  let batches = 0;
+  while (batches < 2 && hasMore.value) {
     if (el.scrollHeight > el.clientHeight + 10) break;
 
     const oldest = messages.value[0]?.timestamp;
@@ -176,16 +174,20 @@ async function fillScrollable() {
 
     const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${DEFAULT_FILTERS}`);
     const data: TimelineResponse = await res.json();
-    if (!data.messages || data.messages.length === 0) break;
+    if (!data.messages || data.messages.length === 0) {
+      hasMore.value = false;
+      break;
+    }
 
     const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
     if (newMsgs.length === 0) break;
 
     newMsgs.forEach(m => knownIds.add(m.id));
     messages.value = [...newMsgs, ...messages.value];
-    hasMore.value = data.messages.length >= PAGE_SIZE;
+    hasMore.value = data.has_more;
 
     await nextTick();
+    batches++;
   }
 }
 
