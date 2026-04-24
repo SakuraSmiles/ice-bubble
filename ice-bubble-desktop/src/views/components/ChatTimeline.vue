@@ -140,6 +140,38 @@ function goToBottom() {
   newMsgCount.value = 0;
 }
 
+/**
+ * 如果内容未撑满容器，持续加载更多历史直到撑满或耗尽
+ * 解决初始加载消息太少时没有滚动条的问题
+ */
+async function fillScrollable() {
+  const el = containerRef.value;
+  if (!el) return;
+
+  // 最多尝试加载 10 批
+  let tries = 0;
+  while (tries < 10 && hasMore.value) {
+    if (el.scrollHeight > el.clientHeight + 10) break; // 已有滚动条
+
+    const oldest = messages.value.length > 0 ? messages.value[0].timestamp : undefined;
+    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}` +
+      (oldest ? `&before=${encodeURIComponent(oldest)}&` : '?') +
+      DEFAULT_FILTERS);
+    const data: TimelineResponse = await res.json();
+    if (!data.messages || data.messages.length === 0) break;
+
+    const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
+    if (newMsgs.length === 0) break;
+
+    newMsgs.forEach(m => knownIds.add(m.id));
+    messages.value = [...newMsgs, ...messages.value];
+    hasMore.value = data.messages.length >= PAGE_SIZE;
+
+    await nextTick();
+    tries++;
+  }
+}
+
 /** 设置消息 & 更新已知 ID 集合 */
 function setMessages(msgs: TimelineMessage[]) {
   knownIds.clear();
@@ -162,6 +194,8 @@ function onScroll() {
 onMounted(async () => {
   await loadLatest();
   await nextTick();
+  // 如果初始加载后内容没撑满容器，继续加载更多直到撑满或耗尽
+  await fillScrollable();
   scrollToBottom(false);
   checkBottom();
 
