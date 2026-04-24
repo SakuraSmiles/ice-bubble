@@ -97,15 +97,14 @@ async function loadMore() {
 
   try {
     const oldest = messages.value[0].timestamp;
-    console.log('[loadMore] oldest:', oldest, 'knownIds size:', knownIds.size);
     const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${DEFAULT_FILTERS}`);
     const data: TimelineResponse = await res.json();
-    console.log('[loadMore] response count:', data.messages.length, 'has_more:', data.has_more);
     if (data.messages.length > 0) {
       const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
-      console.log('[loadMore] newMsgs count:', newMsgs.length, 'filtered:', data.messages.length - newMsgs.length);
       if (newMsgs.length > 0) {
-        messages.value = [...newMsgs, ...messages.value];
+        messages.value = [...newMsgs, ...messages.value].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
         newMsgs.forEach(m => knownIds.add(m.id));
       }
       hasMore.value = data.has_more;
@@ -183,7 +182,9 @@ async function fillScrollable() {
     if (newMsgs.length === 0) break;
 
     newMsgs.forEach(m => knownIds.add(m.id));
-    messages.value = [...newMsgs, ...messages.value];
+    messages.value = [...newMsgs, ...messages.value].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
     hasMore.value = data.has_more;
 
     await nextTick();
