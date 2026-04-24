@@ -148,6 +148,17 @@ function analyzeMessageMeta(msg: {
     }
   }
 
+  // 检测 agent 空回复（NO_REPLY / silent 模式）
+  if (msg.message_type === 'agent' && (!content || content === 'NULL' || content === '')) {
+    meta.is_system_noise = true;
+    meta.clean_content = '';
+  }
+  // 检测 tool 空回复
+  if (msg.message_type === 'tool' && (!content || content === 'NULL' || content === '' || content === '{}')) {
+    meta.is_system_noise = true;
+    meta.clean_content = '';
+  }
+
   // 生成 content_summary
   if (meta.clean_content) {
     if (msg.message_type === 'tool') {
