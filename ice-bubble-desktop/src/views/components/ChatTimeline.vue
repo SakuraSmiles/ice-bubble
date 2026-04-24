@@ -368,23 +368,24 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 }
 .new-msg-banner:hover { opacity: 0.9; }
 
-/* 滚动区域 */
+/* 滚动区域 - 类微信聊天背景 */
 .chat-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   scroll-behavior: smooth;
+  background: #f5f5f5;
 }
 
 .load-tip, .empty-tip {
   text-align: center;
-  color: var(--el-text-color-placeholder);
+  color: #999;
   font-size: 12px;
-  padding: 16px 0;
+  padding: 20px 0;
 }
 
 /* 消息行 */
@@ -422,8 +423,8 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--el-text-color-placeholder);
-  padding: 0 4px;
+  color: #999;
+  padding: 0 6px;
 }
 .msg-header--user {
   justify-content: flex-end;
@@ -435,26 +436,27 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 
 .agent-label-name {
   font-weight: 600;
-  color: var(--el-color-primary);
+  color: #5a7fb5;
   font-size: 12px;
 }
 
 /* 气泡 */
 .bubble {
-  padding: 8px 14px;
+  padding: 10px 16px;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 .bubble--user {
-  background: #e3f2fd;
-  color: var(--el-text-color-primary);
+  background: #95ec69;
+  color: #222;
   border-radius: 14px 14px 4px 14px;
 }
 .bubble--agent {
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
+  background: #fff;
+  color: #222;
   border-radius: 14px 14px 14px 4px;
   max-width: 100%;
 }
@@ -466,24 +468,24 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 /* 消息渠道标签 */
 .channel-tag {
   font-size: 10px;
-  color: var(--el-text-color-secondary);
+  color: #aaa;
 }
 
 /* 工具折叠 */
 .tool-details {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--el-border-color-lighter);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e8e8e8;
 }
 .tool-details summary {
   cursor: pointer;
-  color: var(--el-text-color-secondary);
+  color: #888;
   font-size: 11px;
 }
 .tool-item {
   margin-top: 4px;
-  padding: 6px;
-  background: var(--el-fill-color);
+  padding: 6px 8px;
+  background: #f7f7f7;
   border-radius: 4px;
   font-size: 11px;
   font-family: monospace;
