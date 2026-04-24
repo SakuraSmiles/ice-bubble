@@ -83,6 +83,8 @@ export interface TimelineMessageDTO {
   is_system_noise: boolean;
   /** 消息来源渠道 */
   source_channel: string | null;
+  /** 消息使用的模型 */
+  model: string | null;
   timestamp: string;
 }
 

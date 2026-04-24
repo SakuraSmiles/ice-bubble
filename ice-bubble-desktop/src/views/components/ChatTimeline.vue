@@ -15,6 +15,7 @@ interface TimelineMessage {
   is_cron: boolean;
   is_system_noise: boolean;
   source_channel: string | null;
+  model: string | null;
   timestamp: string;
 }
 
@@ -320,6 +321,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
             />
             <div class="avatar-placeholder" v-else>{{ grp.agentName[0] }}</div>
             <span class="agent-label-name">{{ grp.agentName }}</span>
+            <span v-if="grp.messages[0]?.model" class="model-tag">{{ grp.messages[0].model }}</span>
             <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
           </div>
           <div class="bubble bubble--agent">
@@ -443,8 +445,8 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 /* 气泡 */
 .bubble {
   padding: 10px 16px;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.65;
   word-break: break-word;
   white-space: pre-wrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -474,6 +476,16 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   padding: 1px 6px;
   border-radius: 3px;
   letter-spacing: 0.3px;
+}
+
+/* 模型标签 */
+.model-tag {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 9px;
+  color: #8ab4f8;
+  background: #e8f0fe;
+  padding: 1px 6px;
+  border-radius: 3px;
 }
 
 /* 工具折叠 */

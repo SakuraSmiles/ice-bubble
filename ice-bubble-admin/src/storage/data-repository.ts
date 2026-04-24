@@ -84,6 +84,8 @@ export interface TimelineMessage {
   is_system_noise: boolean;
   /** 消息来源渠道（从 Sender metadata 解析，如 openclaw-control-ui） */
   source_channel: string | null;
+  /** 消息使用的模型 */
+  model: string | null;
   timestamp: string;
 }
 
@@ -757,6 +759,7 @@ export class DataRepository {
         m.message_type,
         m.content,
         m.timestamp,
+        m.model,
         s.agent_id,
         a.agent_name,
         a.avatar
@@ -772,6 +775,7 @@ export class DataRepository {
       message_type: string;
       content: string | null;
       timestamp: string;
+      model: string | null;
       agent_id: string | null;
       agent_name: string | null;
       avatar: string | null;
@@ -829,6 +833,7 @@ export class DataRepository {
         is_cron: meta.is_cron,
         is_system_noise: meta.is_system_noise,
         source_channel: meta.source_channel,
+        model: row.model ?? null,
         timestamp: row.timestamp,
       });
     }
