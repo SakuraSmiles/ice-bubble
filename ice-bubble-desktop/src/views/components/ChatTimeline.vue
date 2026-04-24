@@ -378,7 +378,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   flex-direction: column;
   gap: 14px;
   scroll-behavior: smooth;
-  background: #f5f5f5;
+  background: #fff;
 }
 
 .load-tip, .empty-tip {
@@ -450,8 +450,8 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 .bubble--user {
-  background: #95ec69;
-  color: #222;
+  background: #e8eaf6;
+  color: #333;
   border-radius: 14px 14px 4px 14px;
 }
 .bubble--agent {
@@ -465,10 +465,15 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   margin-bottom: 2px;
 }
 
-/* 消息渠道标签 */
+/* 消息渠道标签 - 代码风格 */
 .channel-tag {
-  font-size: 10px;
-  color: #aaa;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 9px;
+  color: #9aa0a6;
+  background: #f0f1f3;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
 }
 
 /* 工具折叠 */
