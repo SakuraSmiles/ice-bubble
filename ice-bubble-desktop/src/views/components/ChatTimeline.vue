@@ -90,22 +90,10 @@ async function loadMore() {
   if (loadingMore.value || !hasMore.value || messages.value.length === 0) return;
   loadingMore.value = true;
 
-  // 记录加载前可视区域顶部的消息 id，用于恢复滚动位置
-  let anchorId: number | undefined;
+  // 记录加载前的滚动高度和第一条消息 id
   const el = containerRef.value;
-  if (el) {
-    // 取滚动容器内第一个完整可见的消息行
-    const rows = el.querySelectorAll('[data-msg-id]');
-    for (const row of rows) {
-      const rect = row.getBoundingClientRect();
-      const containerRect = el.getBoundingClientRect();
-      // 如果消息的顶部在容器顶部下方（可见区域），用它做锚点
-      if (rect.top >= containerRect.top - 10) {
-        anchorId = Number((row as HTMLElement).dataset.msgId);
-        break;
-      }
-    }
-  }
+  const prevScrollTop = el?.scrollTop ?? 0;
+  const prevScrollHeight = el?.scrollHeight ?? 0;
 
   try {
     const oldest = messages.value[0].timestamp;
@@ -127,13 +115,12 @@ async function loadMore() {
     loadingMore.value = false;
   }
 
-  // 恢复滚动位置：等 DOM 更新后，让锚点消息回到加载前的位置
+  // 恢复滚动位置：新内容加到顶部后，把滚动条往上推 delta 高度
+  // 这样用户看到的内容保持不变（浏览器默认 scrollTop 不变）
   await nextTick();
-  if (el && anchorId !== undefined) {
-    const anchorEl = el.querySelector(`[data-msg-id="${anchorId}"]`);
-    if (anchorEl) {
-      anchorEl.scrollIntoView({ block: 'nearest' });
-    }
+  if (el) {
+    const delta = el.scrollHeight - prevScrollHeight;
+    el.scrollTop = prevScrollTop + delta;
   }
 }
 
