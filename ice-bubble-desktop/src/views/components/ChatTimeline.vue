@@ -1,49 +1,93 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
-import type { TimelineMessageDTO } from '../../api/client';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 
-// =========== 数据加载 ===========
-const messages = ref<TimelineMessageDTO[]>([]);
+// =========== 类型定义 ===========
+interface TimelineMessage {
+  id: number;
+  session_key: string;
+  agent_id: string;
+  agent_name: string;
+  avatar: string | null;
+  message_type: 'user' | 'agent' | 'tool';
+  content: string | null;
+  is_summary: boolean;
+  timestamp: string;
+}
+
+interface TimelineResponse {
+  messages: TimelineMessage[];
+  has_more: boolean;
+  oldest_timestamp: string | null;
+}
+
+// =========== 数据 ===========
+const messages = ref<TimelineMessage[]>([]);
 const loading = ref(false);
 const loadingMore = ref(false);
-const error = ref<string | null>(null);
 const hasMore = ref(true);
-const newMessageCount = ref(0);
-const isAtBottom = ref(true);
+const newMsgCount = ref(0);
+const atBottom = ref(true);
 const containerRef = ref<HTMLElement | null>(null);
 
 const PAGE_SIZE = 50;
+let knownIds = new Set<number>();
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-async function loadMessages() {
+// =========== 加载逻辑 ===========
+
+/** 检查当前是否在底部 */
+function checkBottom() {
+  const el = containerRef.value;
+  if (!el) return;
+  const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+  atBottom.value = gap < 60;
+}
+
+/** 滚到底部 */
+function scrollToBottom(smooth = true) {
+  const el = containerRef.value;
+  if (!el) return;
+  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
+}
+
+/** 初始加载：最新 N 条 */
+async function loadLatest() {
+  loading.value = true;
   try {
-    loading.value = true;
-    error.value = null;
-    const res = await fetch('/api/messages/timeline?limit=' + PAGE_SIZE);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    messages.value = data.messages || [];
-    hasMore.value = messages.value.length >= PAGE_SIZE;
-    newMessageCount.value = 0;
+    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}`);
+    const data: TimelineResponse = await res.json();
+    setMessages(data.messages);
+    hasMore.value = data.has_more;
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败';
+    console.error('加载聊天记录失败', e);
   } finally {
     loading.value = false;
   }
 }
 
+/** 加载更多历史（滚动到顶部时触发） */
 async function loadMore() {
-  if (loadingMore.value || !hasMore.value) return;
+  if (loadingMore.value || !hasMore.value || messages.value.length === 0) return;
+  loadingMore.value = true;
   try {
-    loadingMore.value = true;
-    const before = messages.value[0]?.timestamp;
-    const res = await fetch('/api/messages/timeline?limit=' + PAGE_SIZE + '&before=' + encodeURIComponent(before));
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const older = data.messages || [];
-    if (older.length > 0) {
-      messages.value = [...older, ...messages.value];
+    const oldest = messages.value[0].timestamp;
+    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}`);
+    const data: TimelineResponse = await res.json();
+    if (data.messages.length > 0) {
+      // 去重后追加到前面
+      const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
+      if (newMsgs.length > 0) {
+        messages.value = [...newMsgs, ...messages.value];
+        newMsgs.forEach(m => knownIds.add(m.id));
+      }
+      hasMore.value = data.has_more;
+      // 如果返回不足量，说明没有了
+      if (data.messages.length < PAGE_SIZE) {
+        hasMore.value = false;
+      }
+    } else {
+      hasMore.value = false;
     }
-    hasMore.value = older.length >= PAGE_SIZE;
   } catch (e) {
     console.error('加载更多失败', e);
   } finally {
@@ -51,231 +95,200 @@ async function loadMore() {
   }
 }
 
-function checkAtBottom() {
-  const el = containerRef.value;
-  if (!el) return;
-  isAtBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+/** 轮询最新消息 */
+async function pollLatest() {
+  const res = await fetch(`/api/messages/timeline?limit=20`);
+  const data: TimelineResponse = await res.json();
+  if (!data.messages || data.messages.length === 0) return;
+
+  // 过滤出真正的新消息
+  const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
+  if (newMsgs.length === 0) return;
+
+  // 加到列表末尾
+  // 按时间排序插入（新消息可能比现有最新消息更早）
+  newMsgs.forEach(m => knownIds.add(m.id));
+  messages.value = [...messages.value, ...newMsgs].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+
+  if (atBottom.value) {
+    await nextTick();
+    scrollToBottom(false);
+  } else {
+    newMsgCount.value += newMsgs.length;
+  }
 }
 
-function scrollToBottom(smooth = true) {
-  const el = containerRef.value;
-  if (!el) return;
-  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
-  newMessageCount.value = 0;
+/** 点击新消息提示跳到底部 */
+function goToBottom() {
+  scrollToBottom();
+  newMsgCount.value = 0;
 }
 
+/** 设置消息 & 更新已知 ID 集合 */
+function setMessages(msgs: TimelineMessage[]) {
+  knownIds.clear();
+  messages.value = msgs.sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+  msgs.forEach(m => knownIds.add(m.id));
+}
+
+// =========== 滚动事件 ===========
 function onScroll() {
-  checkAtBottom();
+  checkBottom();
+  // 滚动到顶部附近时加载更多
   const el = containerRef.value;
-  if (!el) return;
-  if (el.scrollTop < 80) {
-    loadMore();
-  }
+  if (!el || el.scrollTop > 100) return;
+  loadMore();
 }
 
-// 自动刷新
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
-let lastTimestamp = '';
-
-watch(messages, (newMsgs) => {
-  if (newMsgs.length > 0) {
-    const latest = newMsgs[newMsgs.length - 1].timestamp;
-    if (lastTimestamp && latest !== lastTimestamp) {
-      // 有新消息
-      if (!isAtBottom.value) {
-        newMessageCount.value++;
-      } else {
-        nextTick(() => scrollToBottom());
-      }
-    }
-    lastTimestamp = latest;
-  }
-}, { deep: true });
-
+// =========== 生命周期 ===========
 onMounted(async () => {
-  await loadMessages();
+  await loadLatest();
   await nextTick();
   scrollToBottom(false);
-  checkAtBottom();
+  checkBottom();
 
-  refreshTimer = setInterval(async () => {
-    if (isAtBottom.value) {
-      await loadMessages();
-      await nextTick();
-      scrollToBottom(false);
-    }
-  }, 5000);
+  // 每 5 秒轮询
+  pollTimer = setInterval(pollLatest, 5000);
 });
 
 onUnmounted(() => {
-  if (refreshTimer) clearInterval(refreshTimer);
+  if (pollTimer) clearInterval(pollTimer);
 });
 
-// =========== 对外暴露 ===========
-defineExpose({
-  getMessages: () => messages.value,
-});
+defineExpose({ getMessages: () => messages.value });
 
 // =========== 消息分组 ===========
+type MsgGroup = {
+  type: 'user' | 'agent';
+  agentId: string;
+  agentName: string;
+  avatar: string | null;
+  timestamp: string;
+  messages: TimelineMessage[];
+  toolMsgs: TimelineMessage[];
+};
+
 const groupedMessages = computed(() => {
-  const groups: Array<{
-    type: 'user' | 'agent' | 'tool';
-    agentName: string;
-    agentAvatar: string | null;
-    messages: TimelineMessageDTO[];
-    timestamp: string;
-  }> = [];
+  const groups: MsgGroup[] = [];
+  let current: MsgGroup | null = null;
 
-  const allMessages = [...messages.value]
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-
-  let currentGroup: TimelineMessageDTO[] = [];
-  let currentAgentName = '';
-  let currentType = '';
-
-  for (const msg of allMessages) {
-    const isUserMsg = msg.message_type === 'user';
-    const isAgentMsg = msg.message_type === 'agent';
-
-    if (
-      currentGroup.length === 0 ||
-      (isAgentMsg && (currentType === 'user' || currentType === 'tool')) ||
-      (isAgentMsg && currentAgentName !== msg.agent_name) ||
-      isUserMsg
-    ) {
-      if (currentGroup.length > 0) {
-        const first = currentGroup[0];
-        groups.push({
-          type: first.message_type as 'user' | 'agent' | 'tool',
-          agentName: first.agent_name,
-          agentAvatar: first.avatar,
-          messages: currentGroup,
-          timestamp: first.timestamp,
-        });
+  for (const msg of messages.value) {
+    const role = msg.message_type === 'tool' ? 'agent' : msg.message_type;
+    if (role === 'user') {
+      // 用户消息独立成组
+      if (current) { groups.push(current); current = null; }
+      groups.push({
+        type: 'user',
+        agentId: '',
+        agentName: '',
+        avatar: null,
+        timestamp: msg.timestamp,
+        messages: [msg],
+        toolMsgs: [],
+      });
+    } else if (role === 'agent') {
+      // 同 agent 连续 agent 消息合并
+      if (current && current.type === 'agent' && current.agentId === msg.agent_id) {
+        if (msg.message_type === 'tool') {
+          current.toolMsgs.push(msg);
+        } else {
+          current.messages.push(msg);
+        }
+      } else {
+        if (current) groups.push(current);
+        current = {
+          type: 'agent',
+          agentId: msg.agent_id,
+          agentName: msg.agent_name,
+          avatar: msg.avatar,
+          timestamp: msg.timestamp,
+          messages: msg.message_type === 'tool' ? [] : [msg],
+          toolMsgs: msg.message_type === 'tool' ? [msg] : [],
+        };
       }
-      currentGroup = [msg];
-      currentAgentName = msg.agent_name;
-      currentType = msg.message_type;
-    } else {
-      currentGroup.push(msg);
     }
   }
-
-  if (currentGroup.length > 0) {
-    const first = currentGroup[0];
-    groups.push({
-      type: first.message_type as 'user' | 'agent' | 'tool',
-      agentName: first.agent_name,
-      agentAvatar: first.avatar,
-      messages: currentGroup,
-      timestamp: first.timestamp,
-    });
-  }
-
+  if (current) groups.push(current);
   return groups;
 });
 
-// =========== 工具概览 ===========
-function getToolSummary(groupMessages: TimelineMessageDTO[]): string {
-  const toolCalls = groupMessages.filter(m => m.message_type === 'tool');
-  const types = new Set<string>();
-  toolCalls.forEach(m => {
-    const content = m.content || '';
-    if (content.includes('file') || content.includes('write') || content.includes('edit')) {
-      types.add('📝 文件编辑');
-    } else if (content.includes('shell') || content.includes('exec') || content.includes('command')) {
-      types.add('💻 Shell');
-    } else if (content.includes('api') || content.includes('http') || content.includes('fetch')) {
-      types.add('📡 API响应');
-    } else {
-      types.add('🔧 工具调用');
-    }
-  });
-  return `🔧 调用了 ${toolCalls.length} 次工具 ${Array.from(types).join(' ')}`;
+// =========== 工具函数 ===========
+function formatTime(ts: string) {
+  const d = new Date(ts);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) {
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  }
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function toolSummary(toolMsgs: TimelineMessage[]): string {
+  return `🛠 调用了 ${toolMsgs.length} 次工具`;
 }
 </script>
 
 <template>
-  <div class="chat-container">
-    <!-- 加载状态 -->
-    <div v-if="loading && messages.length === 0" class="timeline-loading">
-      <span>加载中...</span>
+  <div class="chat-wrap">
+    <!-- 新消息提示 -->
+    <div v-if="newMsgCount > 0" class="new-msg-banner" @click="goToBottom">
+      ↓ {{ newMsgCount }} 条新消息
     </div>
 
-    <div v-else-if="error && messages.length === 0" class="timeline-error">
-      <span>{{ error }}</span>
-      <button @click="loadMessages">重试</button>
-    </div>
+    <!-- 消息列表 -->
+    <div ref="containerRef" class="chat-scroll" @scroll="onScroll">
+      <!-- 加载更多 -->
+      <div v-if="loadingMore" class="load-tip">加载更多...</div>
 
-    <template v-else>
-      <!-- 新消息提示 -->
-      <div v-if="newMessageCount > 0" class="new-message-banner" @click="scrollToBottom()">
-        <span>↓ {{ newMessageCount }} 条新消息</span>
-      </div>
+      <!-- 首加载 -->
+      <div v-if="loading && messages.length === 0" class="empty-tip">加载中...</div>
+      <div v-else-if="messages.length === 0" class="empty-tip">暂无消息</div>
 
-      <!-- 消息列表 -->
-      <div
-        ref="containerRef"
-        class="chat-body"
-        @scroll="onScroll"
-      >
-        <!-- 加载历史 -->
-        <div v-if="loadingMore" class="load-more-tip">加载更多...</div>
-
-        <div
-          v-for="(group, gi) in groupedMessages"
-          :key="gi"
-          :class="['message-group', `group-${group.type}`]"
-        >
-          <!-- 用户消息 -->
-          <div v-if="group.type === 'user'" class="user-message">
-            <div class="user-bubble">
-              <div v-for="(msg, mi) in group.messages" :key="mi" class="user-text">
-                {{ msg.content }}
-              </div>
-            </div>
+      <!-- 消息组 -->
+      <template v-for="(grp, gi) in groupedMessages" :key="gi">
+        <!-- 用户消息 -->
+        <div v-if="grp.type === 'user'" class="msg-row msg-row--user">
+          <div class="bubble bubble--user">
+            {{ grp.messages[0]?.content }}
           </div>
+          <div class="meta meta--user">{{ formatTime(grp.timestamp) }}</div>
+        </div>
 
-          <!-- Agent 消息 -->
-          <div v-else-if="group.type === 'agent'" class="agent-message">
-            <img
-              v-if="group.agentAvatar"
-              :src="`/api/resources/avatars/${group.agentAvatar}`"
-              :alt="group.agentName"
-              class="agent-avatar"
-            />
-            <div class="agent-bubble">
-              <div class="agent-name">{{ group.agentName }}</div>
-              <div class="agent-content">
-                <div v-for="(msg, mi) in group.messages.filter(m => m.message_type === 'agent')" :key="mi">
-                  {{ msg.content }}
-                </div>
-              </div>
-              <div v-if="group.messages.some(m => m.message_type === 'tool')" class="tool-summary">
-                <details>
-                  <summary>{{ getToolSummary(group.messages) }}</summary>
-                  <div
-                    v-for="(msg, mi) in group.messages.filter(m => m.message_type === 'tool')"
-                    :key="mi"
-                    class="tool-detail"
-                  >
-                    <div class="tool-content">{{ msg.content?.substring(0, 300) }}</div>
-                  </div>
-                </details>
-              </div>
-              <div class="message-time">
-                {{ new Date(group.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}
-              </div>
+        <!-- Agent 消息 -->
+        <div v-else class="msg-row msg-row--agent">
+          <img
+            v-if="grp.avatar"
+            :src="`/api/resources/avatars/${grp.avatar}`"
+            class="avatar"
+          />
+          <div class="avatar-placeholder" v-else>{{ grp.agentName[0] }}</div>
+
+          <div class="bubble bubble--agent">
+            <div class="bubble-agent-name">{{ grp.agentName }}</div>
+            <div class="bubble-text" v-for="(m, mi) in grp.messages" :key="mi">
+              {{ m.content }}
             </div>
+            <!-- 工具消息折叠 -->
+            <details v-if="grp.toolMsgs.length > 0" class="tool-details">
+              <summary>{{ toolSummary(grp.toolMsgs) }}</summary>
+              <div v-for="(tm, ti) in grp.toolMsgs" :key="ti" class="tool-item">
+                {{ tm.content?.substring(0, 300) }}...
+              </div>
+            </details>
+            <div class="bubble-time">{{ formatTime(grp.timestamp) }}</div>
           </div>
         </div>
-      </div>
-    </template>
+      </template>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.chat-container {
+.chat-wrap {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -284,148 +297,135 @@ function getToolSummary(groupMessages: TimelineMessageDTO[]): string {
   overflow: hidden;
 }
 
-.timeline-loading,
-.timeline-error {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  color: var(--el-text-color-secondary);
-}
-
-.timeline-error {
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* 新消息提示条 */
-.new-message-banner {
+/* 新消息提示 */
+.new-msg-banner {
   position: absolute;
   top: 8px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--el-color-primary);
   color: #fff;
-  padding: 6px 16px;
+  padding: 6px 18px;
   border-radius: 20px;
   font-size: 12px;
   cursor: pointer;
   z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
   white-space: nowrap;
 }
+.new-msg-banner:hover { opacity: 0.9; }
 
-.new-message-banner:hover {
-  opacity: 0.9;
-}
-
-/* 消息列表 */
-.chat-body {
+/* 滚动区域 */
+.chat-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   scroll-behavior: smooth;
 }
 
-.load-more-tip {
+.load-tip, .empty-tip {
   text-align: center;
   color: var(--el-text-color-placeholder);
   font-size: 12px;
-  padding: 8px;
+  padding: 16px 0;
 }
 
-/* 消息组 */
-.message-group {
+/* 消息行 */
+.msg-row {
   display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 90%;
 }
+.msg-row--user { align-self: flex-end; flex-direction: row-reverse; }
+.msg-row--agent { align-self: flex-start; }
 
-.user-message {
-  display: flex;
-  justify-content: flex-end;
-  width: 100%;
-}
-
-.user-bubble {
-  max-width: 70%;
-  background: var(--el-color-primary);
-  color: white;
-  padding: 10px 16px;
-  border-radius: 16px 16px 4px 16px;
-}
-
-.user-text {
-  line-height: 1.5;
-  font-size: 14px;
-}
-
-.agent-message {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-}
-
-.agent-avatar {
-  width: 32px;
-  height: 32px;
+.avatar, .avatar-placeholder {
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
 }
-
-.agent-bubble {
-  flex: 1;
-  background: var(--el-fill-color-light);
-  padding: 10px 14px;
-  border-radius: 16px 16px 16px 4px;
-  max-width: 80%;
+.avatar-placeholder {
+  background: var(--el-color-primary-light-3);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.agent-name {
+/* 气泡 */
+.bubble {
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.bubble--user {
+  background: var(--el-color-primary);
+  color: #fff;
+  border-radius: 14px 14px 4px 14px;
+}
+.bubble--agent {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+  border-radius: 14px 14px 14px 4px;
+  max-width: 100%;
+}
+
+.bubble-agent-name {
   font-weight: 600;
   font-size: 12px;
   margin-bottom: 4px;
   color: var(--el-color-primary);
 }
 
-.agent-content {
-  line-height: 1.5;
-  font-size: 13px;
-  margin-bottom: 6px;
+.bubble-text {
+  margin-bottom: 2px;
 }
 
-.tool-summary {
+.meta {
+  font-size: 10px;
+  color: var(--el-text-color-placeholder);
+  align-self: flex-end;
+  padding-bottom: 4px;
+  white-space: nowrap;
+}
+.meta--user { margin-right: 4px; }
+
+.bubble-time {
+  font-size: 10px;
+  color: var(--el-text-color-placeholder);
+  margin-top: 4px;
+}
+
+/* 工具折叠 */
+.tool-details {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--el-border-color-lighter);
 }
-
-.tool-summary summary {
+.tool-details summary {
   cursor: pointer;
   color: var(--el-text-color-secondary);
   font-size: 11px;
 }
-
-.tool-detail {
+.tool-item {
   margin-top: 4px;
   padding: 6px;
   background: var(--el-fill-color);
   border-radius: 4px;
   font-size: 11px;
-}
-
-.tool-content {
   font-family: monospace;
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-.message-time {
-  margin-top: 4px;
-  font-size: 10px;
-  color: var(--el-text-color-placeholder);
 }
 </style>

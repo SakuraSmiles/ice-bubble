@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
 import type { ModuleDTO } from '../api/client';
+import ChatTimeline from './components/ChatTimeline.vue';
 
 
 // =========== 接口定义 ===========
@@ -489,18 +490,9 @@ watch(moduleList, (newList) => {
 
         </div>
 
-        <!-- 右侧：主内容区 -->
+        <!-- 右侧：ChatTimeline -->
         <div class="right-panel">
-          <el-card class="main-card" shadow="hover">
-            <template #header>
-              <div class="card-header">
-                <span>概览</span>
-              </div>
-            </template>
-            <div class="placeholder-content">
-              <el-empty description="功能开发中..." :image-size="60" />
-            </div>
-          </el-card>
+          <ChatTimeline />
         </div>
       </div>
     </el-card>
