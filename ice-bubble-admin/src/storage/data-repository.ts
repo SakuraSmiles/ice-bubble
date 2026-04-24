@@ -82,6 +82,8 @@ export interface TimelineMessage {
   is_cron: boolean;
   /** 是否是系统噪音（执行通知/heartbeat等） */
   is_system_noise: boolean;
+  /** 消息来源渠道（从 Sender metadata 解析，如 openclaw-control-ui） */
+  source_channel: string | null;
   timestamp: string;
 }
 
@@ -93,6 +95,7 @@ interface MessageMeta {
   is_system_noise: boolean;
   clean_content: string;
   content_summary: string;
+  source_channel: string | null;
 }
 
 function analyzeMessageMeta(msg: {
@@ -106,6 +109,7 @@ function analyzeMessageMeta(msg: {
     is_system_noise: false,
     clean_content: content,
     content_summary: '',
+    source_channel: null,
   };
 
   if (msg.message_type === 'user') {
@@ -124,6 +128,11 @@ function analyzeMessageMeta(msg: {
     }
     // 检测 Sender metadata 块（webchat 消息编码）
     else if (content.startsWith('Sender (untrusted metadata)')) {
+      // 提取 Sender metadata 中的 label 作为渠道
+      const senderMatch = content.match(/```json\s*\{[\s\S]*?"label"\s*:\s*"([^"]+)"[\s\S]*?\}\s*```/);
+      if (senderMatch) {
+        meta.source_channel = senderMatch[1];
+      }
       // 去掉开头的 Sender metadata json 块
       const pattern = /^Sender \(untrusted metadata\):\n```json\n[\s\S]*?\n```\n*\n*/;
       const afterMeta = content.replace(pattern, '').trim();
@@ -819,6 +828,7 @@ export class DataRepository {
         content_summary: meta.content_summary || null,
         is_cron: meta.is_cron,
         is_system_noise: meta.is_system_noise,
+        source_channel: meta.source_channel,
         timestamp: row.timestamp,
       });
     }

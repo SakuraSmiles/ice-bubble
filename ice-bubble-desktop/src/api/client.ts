@@ -81,6 +81,8 @@ export interface TimelineMessageDTO {
   is_cron: boolean;
   /** 是否是系统噪音 */
   is_system_noise: boolean;
+  /** 消息来源渠道 */
+  source_channel: string | null;
   timestamp: string;
 }
 

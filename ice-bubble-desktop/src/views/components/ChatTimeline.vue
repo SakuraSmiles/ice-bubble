@@ -14,6 +14,7 @@ interface TimelineMessage {
   content_summary: string | null;
   is_cron: boolean;
   is_system_noise: boolean;
+  source_channel: string | null;
   timestamp: string;
 }
 
@@ -302,6 +303,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
         <div v-if="grp.type === 'user'" class="msg-row msg-row--user">
           <div class="bubble bubble--user">
             {{ grp.messages[0]?.clean_content || grp.messages[0]?.content }}
+            <span v-if="grp.messages[0]?.source_channel" class="channel-tag">{{ grp.messages[0].source_channel }}</span>
           </div>
           <div class="meta meta--user">{{ formatTime(grp.timestamp) }}</div>
         </div>
@@ -453,6 +455,19 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   font-size: 10px;
   color: var(--el-text-color-placeholder);
   margin-top: 4px;
+}
+
+/* 消息渠道标签 */
+.channel-tag {
+  display: inline-block;
+  font-size: 9px;
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--el-text-color-secondary);
+  padding: 0 5px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+  line-height: 1.6;
 }
 
 /* 工具折叠 */
