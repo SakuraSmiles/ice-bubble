@@ -1,12 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import type { TimelineMessageDTO } from '../../api/client';
-
-// =========== 对外暴露 ===========
-defineExpose({
-  getMessages: () => messages.value,
-  cronMessages: cronMessages.value,
-});
 
 // =========== 数据加载 ===========
 const messages = ref<TimelineMessageDTO[]>([]);
@@ -34,8 +28,6 @@ onMounted(() => {
   loadMessages();
   refreshTimer = setInterval(loadMessages, 30000);
 });
-
-import { onUnmounted } from 'vue';
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer);
 });
@@ -53,7 +45,7 @@ const visibleMessages = computed(() => {
   const result: TimelineMessageDTO[] = [];
   const cronMsgs: TimelineMessageDTO[] = [];
   for (const msg of messages.value) {
-    if (msg.message_type === 'system') continue;
+    if ((msg.message_type as string) === 'system') continue;
     const content = msg.content || '';
     const isCron = cronKeywords.some(kw => content.includes(kw));
     if (isCron) {
@@ -64,6 +56,12 @@ const visibleMessages = computed(() => {
   }
   cronMessages.value = cronMsgs;
   return result;
+});
+
+// =========== 对外暴露 ===========
+defineExpose({
+  getMessages: () => messages.value,
+  cronMessages,
 });
 
 // =========== 消息分组 ===========
@@ -84,7 +82,6 @@ const groupedMessages = computed(() => {
   let currentType = '';
 
   for (const msg of allMessages) {
-    const isToolMsg = msg.message_type === 'tool';
     const isUserMsg = msg.message_type === 'user';
     const isAgentMsg = msg.message_type === 'agent';
 

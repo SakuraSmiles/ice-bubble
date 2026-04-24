@@ -266,13 +266,6 @@ function getAgentTokenDisplay(agentId: string): string {
   return total.toString();
 }
 
-/** 工作路径截断 */
-function truncateWorkspacePath(workspace: string | null, maxLength: number = 30): string {
-  if (!workspace) return '';
-  if (workspace.length <= maxLength) return workspace;
-  return `${workspace.substring(0, 10)}...${workspace.substring(workspace.length - 15)}`;
-}
-
 /** Agent 列表：优先工作中，至少3个 */
 const onlineAgents = computed(() => {
   const agents = agentOverviewData.value?.agents ?? [];
