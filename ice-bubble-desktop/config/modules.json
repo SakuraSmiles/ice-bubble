@@ -5,6 +5,12 @@
       "name": "Admin 管理后台",
       "url": "http://localhost:13000",
       "enabled": true
+    },
+    {
+      "key": "task",
+      "name": "任务管理",
+      "url": "http://localhost:13102",
+      "enabled": true
     }
   ]
 }

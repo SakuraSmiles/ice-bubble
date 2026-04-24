@@ -39,6 +39,14 @@
       "enabled": true,
       "pollInterval": 30000,
       "registeredTime": "2026-04-10T16:22:15.365Z"
+    },
+    {
+      "moduleKey": "task",
+      "name": "任务管理",
+      "baseUrl": "http://localhost:13102",
+      "enabled": true,
+      "pollInterval": 30000,
+      "registeredTime": "2026-04-23T11:52:00.000Z"
     }
   ],
   "dataSync": {
