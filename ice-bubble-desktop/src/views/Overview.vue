@@ -269,9 +269,14 @@ function getAgentTokenDisplay(agentId: string): string {
 /** Agent 列表：优先工作中，至少3个 */
 const onlineAgents = computed(() => {
   const agents = agentOverviewData.value?.agents ?? [];
-  const online = agents.filter(a => isWorkingStatus(a.status) || a.status === '活跃');
-  const offline = agents.filter(a => !isWorkingStatus(a.status) && a.status !== '活跃');
-  return [...online, ...offline].slice(0, Math.max(3, agents.length));
+  // 只显示"活跃"状态的 agent
+  const active = agents.filter(a => a.status === '活跃' || isWorkingStatus(a.status));
+  // 不足3个时，用最近活跃的离线 agent 补充
+  const inactive = agents
+    .filter(a => a.status !== '活跃' && !isWorkingStatus(a.status))
+    .sort((a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime());
+  const result = [...active, ...inactive];
+  return result.slice(0, Math.max(3, result.length));
 });
 
 /** 监听 agent 数据变化 */
@@ -504,17 +509,23 @@ watch(moduleList, (newList) => {
                 </span>
               </div>
 
-              <!-- 最新消息（流式输出） -->
-              <div class="agent-msg-wrapper">
-                <div class="agent-msg" :class="{
-                  'agent-msg--streaming': getAgentRuntime(agent.agent_id).isStreaming,
-                  'agent-msg--empty': !getAgentRuntime(agent.agent_id).displayMessage
-                }" :ref="el => { if (el) messageRefs[agent.agent_id] = el as HTMLElement }">
-                  <template v-if="getAgentRuntime(agent.agent_id).displayMessage">
-                    {{ getAgentRuntime(agent.agent_id).displayMessage }}
-                  </template>
-                  <template v-else>暂无输出</template>
-                </div>
+              <!-- 任务 TODO 列表 -->
+              <div class="agent-todo-list">
+                <template v-if="getAgentTasks(agent.agent_id).tasks.length > 0">
+                  <div
+                    class="todo-item"
+                    :class="{ 'todo-item--done': task.status === 'DONE' }"
+                    v-for="task in getAgentTasks(agent.agent_id).tasks"
+                    :key="task.task_id"
+                  >
+                    <span class="todo-icon">
+                      <template v-if="task.status === 'DONE'">✅</template>
+                      <template v-else>⚪</template>
+                    </span>
+                    <span class="todo-title">{{ task.title }}</span>
+                  </div>
+                </template>
+                <div v-else class="todo-empty">暂无任务</div>
               </div>
             </div>
             <el-empty v-if="onlineAgents.length === 0" description="暂无在线 Agent" :image-size="40" />
@@ -772,55 +783,45 @@ watch(moduleList, (newList) => {
 }
 
 /* 消息区域 */
-.agent-item .agent-msg-wrapper {
+.agent-item .agent-todo-list {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding-left: 8px;
+  gap: 4px;
   margin-top: 8px;
+  padding-left: 8px;
 }
 
-.agent-item .agent-msg {
+.agent-item .todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   font-size: 11px;
-  color: var(--el-text-color-secondary);
   line-height: 1.4;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: normal;
+  color: var(--el-text-color-secondary);
+}
+
+.agent-item .todo-item--done .todo-title {
+  text-decoration: line-through;
+  color: var(--el-text-color-placeholder);
+}
+
+.agent-item .todo-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.agent-item .todo-title {
   word-break: break-word;
-  flex: 1;
-  min-height: 0;
 }
 
-.agent-item .agent-msg--streaming {
-  color: var(--el-text-color-primary);
-  -webkit-line-clamp: unset;
-  overflow-y: hidden;
-  text-overflow: initial;
-  white-space: pre-wrap;
-  flex: 1;
-}
-
-.agent-item .agent-msg--empty {
+.agent-item .todo-empty {
+  font-size: 11px;
   color: var(--el-text-color-placeholder);
   font-style: italic;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-  overflow: hidden;
-}
-
-.agent-item .agent-msg--streaming::after {
-  content: '▍';
-  display: inline;
-  animation: blink 0.8s step-end infinite;
-  color: var(--color-accent-blue);
-  margin-left: 1px;
 }
 
 @keyframes blink {
