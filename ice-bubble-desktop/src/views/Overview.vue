@@ -535,8 +535,8 @@ watch(moduleList, (newList) => {
 .main-layout {
   display: flex;
   gap: 16px;
-  flex-shrink: 0;
-  height: 600px;
+  flex: 1;
+  min-height: 0;
 }
 
 /* 左侧面板 */
