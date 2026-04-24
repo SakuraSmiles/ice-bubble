@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
 import type { ModuleDTO } from '../api/client';
-import ChatTimeline from './components/ChatTimeline.vue';
+
 
 // =========== 接口定义 ===========
 
@@ -147,10 +147,6 @@ async function fetchAllAgentTasks(): Promise<void> {
   const agents = agentOverviewData.value?.agents ?? [];
   await Promise.all(agents.map(a => fetchAgentTasks(a.agent_id)));
 }
-
-// =========== ChatTimeline 消息引用 ===========
-// =========== ChatTimeline 消息引用 ===========
-const chatTimelineRef = ref<InstanceType<typeof ChatTimeline> | null>(null);
 
 // =========== 核心功能函数 ===========
 
@@ -493,9 +489,18 @@ watch(moduleList, (newList) => {
 
         </div>
 
-        <!-- 右侧：ChatTimeline -->
+        <!-- 右侧：主内容区 -->
         <div class="right-panel">
-          <ChatTimeline ref="chatTimelineRef" />
+          <el-card class="main-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span>概览</span>
+              </div>
+            </template>
+            <div class="placeholder-content">
+              <el-empty description="功能开发中..." :image-size="60" />
+            </div>
+          </el-card>
         </div>
       </div>
     </el-card>
