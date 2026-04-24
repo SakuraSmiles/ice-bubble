@@ -276,7 +276,7 @@ const onlineAgents = computed(() => {
     .filter(a => a.status !== '活跃' && !isWorkingStatus(a.status))
     .sort((a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime());
   const result = [...active, ...inactive];
-  return result.slice(0, Math.max(3, result.length));
+  return result.slice(0, 3);
 });
 
 /** 监听 agent 数据变化 */
