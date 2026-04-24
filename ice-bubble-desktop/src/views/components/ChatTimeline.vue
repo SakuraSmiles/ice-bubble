@@ -278,7 +278,8 @@ function getToolSummary(groupMessages: TimelineMessageDTO[]): string {
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   position: relative;
   overflow: hidden;
 }
@@ -321,6 +322,7 @@ function getToolSummary(groupMessages: TimelineMessageDTO[]): string {
 /* 消息列表 */
 .chat-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px;
   display: flex;

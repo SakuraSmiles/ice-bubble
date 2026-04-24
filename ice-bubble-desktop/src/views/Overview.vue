@@ -821,9 +821,9 @@ watch(moduleList, (newList) => {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .main-card {
