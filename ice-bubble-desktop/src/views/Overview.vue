@@ -577,7 +577,7 @@ watch(moduleList, (newList) => {
   flex: 1;
   min-height: 0;
   padding: 16px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* 左右分栏布局 */
@@ -592,6 +592,7 @@ watch(moduleList, (newList) => {
 .left-panel {
   width: 280px;
   flex-shrink: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -600,7 +601,7 @@ watch(moduleList, (newList) => {
 
 /* 延迟监控卡片 */
 .latency-card {
-  height: 100%;
+  flex-shrink: 0;
 }
 
 .latency-card :deep(.el-card__header) {
