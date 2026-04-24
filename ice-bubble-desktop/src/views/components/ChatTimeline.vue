@@ -90,11 +90,21 @@ async function loadMore() {
   if (loadingMore.value || !hasMore.value || messages.value.length === 0) return;
   loadingMore.value = true;
 
-  // 记录加载前的第一个消息 id，用于恢复滚动位置
-  const anchorId = messages.value[0]?.id;
+  // 记录加载前可视区域顶部的消息 id，用于恢复滚动位置
+  let anchorId: number | undefined;
   const el = containerRef.value;
-  if (el && anchorId !== undefined) {
-    // 找到锚点元素在当前滚动中的相对位置
+  if (el) {
+    // 取滚动容器内第一个完整可见的消息行
+    const rows = el.querySelectorAll('[data-msg-id]');
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect();
+      const containerRect = el.getBoundingClientRect();
+      // 如果消息的顶部在容器顶部下方（可见区域），用它做锚点
+      if (rect.top >= containerRect.top - 10) {
+        anchorId = Number((row as HTMLElement).dataset.msgId);
+        break;
+      }
+    }
   }
 
   try {
@@ -117,7 +127,7 @@ async function loadMore() {
     loadingMore.value = false;
   }
 
-  // 恢复滚动位置：等 DOM 更新后，让锚点元素回到之前的位置
+  // 恢复滚动位置：等 DOM 更新后，让锚点消息回到加载前的位置
   await nextTick();
   if (el && anchorId !== undefined) {
     const anchorEl = el.querySelector(`[data-msg-id="${anchorId}"]`);
