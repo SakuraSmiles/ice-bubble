@@ -447,7 +447,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .bubble--user {
   background: #e8eaf6;
@@ -455,7 +455,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   border-radius: 14px 14px 4px 14px;
 }
 .bubble--agent {
-  background: #fff;
+  background: #f7f8fa;
   color: #222;
   border-radius: 14px 14px 14px 4px;
   max-width: 100%;
