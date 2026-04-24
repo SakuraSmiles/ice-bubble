@@ -561,23 +561,31 @@ watch(moduleList, (newList) => {
   flex-direction: column;
   padding: 0 32px;
   box-sizing: border-box;
-  min-height: calc(100vh - 1px);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .content-area {
   flex: 1;
-  margin-bottom: 20px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .content-area :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
   padding: 16px;
+  overflow: hidden;
 }
 
 /* 左右分栏布局 */
 .main-layout {
   display: flex;
   gap: 16px;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 /* 左侧面板 */
@@ -977,8 +985,10 @@ watch(moduleList, (newList) => {
 .right-panel {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow-y: auto;
-  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .main-card {
