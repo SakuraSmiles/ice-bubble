@@ -64,6 +64,21 @@ export interface SyncProgress {
   updated_at: string;
 }
 
+// ========== Timeline 类型 ==========
+
+export interface TimelineMessage {
+  id: number;
+  session_key: string;
+  agent_id: string | null;
+  agent_name: string;
+  avatar: string | null;
+  message_type: 'user' | 'agent' | 'tool';
+  content: string | null;
+  /** tool 消息为 true（内容是摘要） */
+  is_summary?: boolean;
+  timestamp: string;
+}
+
 // ========== 数据仓库 ==========
 
 export class DataRepository {
@@ -584,6 +599,115 @@ export class DataRepository {
     `).all(...values, limit, offset) as AdminMessage[];
 
     return { messages: rows, total: countRow.total };
+  }
+
+  /**
+   * 获取消息时间线（群聊风格）
+   * - 合并 user/agent/tool 所有消息，按时间 DESC 排序
+   * - 关联 agent 信息（name/avatar）
+   * - tool 消息只返回摘要
+   * - cursor 分页（WHERE timestamp < ?）
+   *
+   * @param params.limit 每页数量（默认50，最大200）
+   * @param params.before cursor 时间戳，返回此时间之前的消息
+   * @param params.agent_ids 只查指定 agent 的消息（可选）
+   */
+  getMessagesTimeline(params: {
+    limit?: number;
+    before?: string;
+    agent_ids?: string[];
+  } = {}): { messages: TimelineMessage[]; has_more: boolean; oldest_timestamp: string | null } {
+    const limit = Math.min(params.limit ?? 50, 200);
+    const messages: TimelineMessage[] = [];
+
+    // Build conditions
+    const conditions: string[] = ["m.message_type IN ('user', 'agent', 'tool')"];
+    const values: unknown[] = [];
+
+    if (params.before) {
+      conditions.push('m.timestamp < ?');
+      values.push(params.before);
+    }
+
+    if (params.agent_ids && params.agent_ids.length > 0) {
+      // Filter by agent_ids via admin_sessions.agent_id
+      const agentPlaceholders = params.agent_ids.map(() => '?').join(', ');
+      conditions.push(`s.agent_id IN (${agentPlaceholders})`);
+      values.push(...params.agent_ids);
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+    // Query: join admin_messages + admin_sessions (for agent_id) + admin_agents (for name/avatar)
+    // For user messages, also extract agent_id from session_key as fallback
+    const rows = this.db.prepare(`
+      SELECT
+        m.id,
+        m.session_key,
+        m.message_type,
+        m.content,
+        m.timestamp,
+        s.agent_id,
+        a.agent_name,
+        a.avatar
+      FROM admin_messages m
+      LEFT JOIN admin_sessions s ON m.session_key = s.session_key
+      LEFT JOIN admin_agents a ON s.agent_id = a.agent_id
+      ${whereClause}
+      ORDER BY m.timestamp DESC
+      LIMIT ?
+    `).all(...values, limit + 1) as Array<{
+      id: number;
+      session_key: string;
+      message_type: string;
+      content: string | null;
+      timestamp: string;
+      agent_id: string | null;
+      agent_name: string | null;
+      avatar: string | null;
+    }>;
+
+    const has_more = rows.length > limit;
+    if (has_more) rows.pop(); // Remove the extra one used for has_more detection
+
+    for (const row of rows) {
+      // Determine agent_id: prefer s.agent_id, fallback to extracting from session_key for user messages
+      let agentId = row.agent_id;
+      if (!agentId && row.message_type === 'user') {
+        const match = row.session_key.match(/^agent:([^:]+):/);
+        agentId = match ? match[1] : null;
+      }
+
+      const agentName = row.agent_name || agentId || '未知';
+
+      let content: string | null = row.content;
+      let isSummary = false;
+
+      if (row.message_type === 'tool') {
+        // tool 消息返回截断内容（前300字符），前端做展示
+        content = content ? content.substring(0, 300) : null;
+        isSummary = true;
+      } else if (row.message_type === 'user' && content && content.length > 500) {
+        // user 消息 content 截断
+        content = content.substring(0, 500) + '...';
+      }
+
+      messages.push({
+        id: row.id,
+        session_key: row.session_key,
+        agent_id: agentId,
+        agent_name: agentName,
+        avatar: row.avatar,
+        message_type: row.message_type as 'user' | 'agent' | 'tool',
+        content,
+        is_summary: isSummary,
+        timestamp: row.timestamp,
+      });
+    }
+
+    const oldestTimestamp = messages.length > 0 ? messages[messages.length - 1].timestamp : null;
+
+    return { messages, has_more, oldest_timestamp: oldestTimestamp };
   }
 
   /**

@@ -4,6 +4,7 @@
  * GET /api/data/sessions
  * GET /api/data/sessions/:key
  * GET /api/data/messages
+ * GET /api/data/messages/timeline  ← 群聊风格消息时间线
  * GET /api/data/agents
  * GET /api/data/agents/overview   ← Agent 概览（admin 层聚合）
  * GET /api/data/stats
@@ -13,6 +14,9 @@ import { Router, Request, Response } from 'express';
 import { logger } from '../utils/index.js';
 import { DataRepository } from '../storage/data-repository.js';
 import type { AgentOverviewService } from '../data/agent-overview.js';
+import { TaskEnhancementStatus, normalizeAgentStatus, type TaskEnhancement } from '../data/agent-overview.js';
+import http from 'http';
+import { URL } from 'url';
 
 export interface DataRouterConfig {
   repository: DataRepository;
@@ -102,10 +106,36 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
+   * GET /api/data/messages/timeline
+   * 获取群聊风格的消息时间线
+   *
+   * Query params:
+   *   - limit: 每页数量（默认50，最大200）
+   *   - before: cursor 时间戳，返回此时间之前的消息
+   *   - agent_ids: 逗号分隔的 agent_id 列表（可选，不传则返回所有）
+   */
+  router.get('/messages/timeline', (req: Request, res: Response) => {
+    const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
+    const before = req.query.before ? String(req.query.before) : undefined;
+    const agentIdsRaw = req.query.agent_ids ? String(req.query.agent_ids) : undefined;
+    const agent_ids = agentIdsRaw
+      ? agentIdsRaw.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined;
+
+    const result = repository.getMessagesTimeline({ limit, before, agent_ids });
+    res.json({
+      messages: result.messages,
+      has_more: result.has_more,
+      oldest_timestamp: result.oldest_timestamp,
+    });
+  });
+
+  /**
    * GET /api/data/agents
    *
    * 获取 agents 列表（含统一状态计算）
    * 状态由 calculateAgentStatus 统一计算（与 /agents/overview 共用同一函数）
+   * 新增 openclaw_status（标准化状态）和 task_enhancement（任务增强）
    *
    * 若 agentOverviewService 不可用，降级为纯 lastActiveAt 判断
    */
@@ -118,21 +148,47 @@ export function createDataRouter(config: DataRouterConfig): Router {
         const overviewMap = new Map(
           (await agentOverviewService.getAgentsOverview()).agents.map(a => [a.agent_id, a])
         );
+        // 并发获取所有 agent 的待办任务数
+        const pendingCountPromises = fullAgents.map(a =>
+          getAgentPendingCount(a.agent_id).then(count => [a.agent_id, count] as [string, number])
+        );
+        const pendingCounts = new Map(await Promise.all(pendingCountPromises));
+
         agents = fullAgents.map(a => {
           const ov = overviewMap.get(a.agent_id);
+          const calculatedStatus = ov ? ov.status : '离线';
+          const pendingCount = pendingCounts.get(a.agent_id) ?? 0;
           return {
             ...a,
-            status: ov ? ov.status : '离线',
+            // 原有状态（中文）
+            status: calculatedStatus,
+            // OpenClaw 标准化状态
+            openclaw_status: normalizeAgentStatus(calculatedStatus as any),
             latest_message: ov ? ov.latest_message : null,
+            // 任务增强字段
+            task_enhancement: buildTaskEnhancement(pendingCount),
           };
         });
       } else {
         // 降级：只用 admin_agents 表数据 + lastActiveAt 算 status
         const { calculateAgentStatus } = await import('../data/agent-overview.js');
-        agents = repository.getAgents().map(a => ({
-          ...a,
-          status: calculateAgentStatus(0, a.last_active_at, true),
-        }));
+        // 并发获取所有 agent 的待办任务数
+        const fullAgents = repository.getAgents();
+        const pendingCountPromises = fullAgents.map(a =>
+          getAgentPendingCount(a.agent_id).then(count => [a.agent_id, count] as [string, number])
+        );
+        const pendingCounts = new Map(await Promise.all(pendingCountPromises));
+
+        agents = fullAgents.map(a => {
+          const calculatedStatus = calculateAgentStatus(0, a.last_active_at, true);
+          const pendingCount = pendingCounts.get(a.agent_id) ?? 0;
+          return {
+            ...a,
+            status: calculatedStatus,
+            openclaw_status: normalizeAgentStatus(calculatedStatus),
+            task_enhancement: buildTaskEnhancement(pendingCount),
+          };
+        });
       }
       res.json({ count: agents.length, agents });
     } catch (err: any) {
@@ -234,5 +290,108 @@ export function createDataRouter(config: DataRouterConfig): Router {
     res.json({ agent_id: id, activity });
   });
 
+  /**
+   * GET /api/data/agents/:agent_id/tasks
+   * 代理 Task 服务的任务列表接口（解决 Desktop 直接请求 Task 的跨域问题）
+   * 内部转发请求到 Task 服务 (http://localhost:13102)
+   */
+  router.get('/agents/:agent_id/tasks', async (req: Request, res: Response) => {
+    const { agent_id } = req.params;
+    const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
+    const offset = parseInt(String(req.query.offset ?? '0'));
+    const taskServiceUrl = `http://localhost:13102/api/agents/${agent_id}/tasks?limit=${limit}&offset=${offset}`;
+
+    try {
+      const result = await proxyGet(taskServiceUrl);
+      res.setHeader('Content-Type', 'application/json');
+      res.status(result.status).send(result.body);
+    } catch (err: any) {
+      logger.error(`[DataAPI] /agents/:agent_id/tasks proxy failed:`, err);
+      res.status(502).json({ error: '代理 Task 服务失败', code: 'TASK_PROXY_FAILED' });
+    }
+  });
+
   return router;
+}
+
+// ============================================================================
+// Task 模块相关辅助函数
+// ============================================================================
+
+/**
+ * 获取指定 agent 的待办任务数
+ * @param agentId agent ID
+ * @returns pending 任务数；-1 表示 task 模块不可用；-2 表示超时
+ */
+async function getAgentPendingCount(agentId: string): Promise<number> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(
+      `http://localhost:13102/api/agents/${encodeURIComponent(agentId)}/tasks?status=pending&limit=1`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+    if (!res.ok) return -1;
+    const data = await res.json() as { count?: number; total?: number };
+    // 支持 { count } 或 { total } 两种响应格式
+    return typeof data.count === 'number' ? data.count : (typeof data.total === 'number' ? data.total : 0);
+  } catch {
+    clearTimeout(timeout);
+    return -1; // 不可用或超时均视为不可用
+  }
+}
+
+/**
+ * 构建 TaskEnhancement 对象
+ * @param pendingCount getAgentPendingCount 的返回值
+ */
+function buildTaskEnhancement(pendingCount: number): TaskEnhancement {
+  if (pendingCount < 0) {
+    // task 模块不可用或超时
+    return {
+      status: TaskEnhancementStatus.none,
+      pending_count: 0,
+      source: pendingCount === -2 ? 'unavailable' : 'unavailable',
+    };
+  }
+  return {
+    status: pendingCount > 0 ? TaskEnhancementStatus.working : TaskEnhancementStatus.idle,
+    pending_count: pendingCount,
+    source: 'available',
+  };
+}
+
+// ============================================================================
+// 简单的 GET 请求代理（内部服务调用，不走外部网络）
+// ============================================================================
+function proxyGet(url: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      timeout: 10000,
+    };
+
+    const req = http.request(options, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve({ status: res.statusCode || 500, body });
+      });
+      res.on('error', reject);
+    });
+
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+
+    req.end();
+  });
 }

@@ -65,6 +65,24 @@ export interface ModulesResponseDTO {
   modules: ModuleDTO[];
 }
 
+export interface TimelineMessageDTO {
+  id: number;
+  session_key: string;
+  agent_id: string | null;
+  agent_name: string;
+  avatar: string | null;
+  message_type: 'user' | 'agent' | 'tool';
+  content: string | null;
+  is_summary?: boolean;
+  timestamp: string;
+}
+
+export interface TimelineResponseDTO {
+  messages: TimelineMessageDTO[];
+  has_more: boolean;
+  oldest_timestamp: string | null;
+}
+
 export type AgentStatus = '失联' | '工作' | '活跃' | '休假' | '离线';
 
 export interface AgentDTO {
@@ -188,6 +206,15 @@ export const api = {
       Object.entries(params).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {})
     ).toString() : '';
     return fetchJson<{ messages: MessageDTO[] }>(`/messages${query}`);
+  },
+
+  getMessagesTimeline: (params?: { limit?: number; before?: string; agent_ids?: string[] }) => {
+    const entries = Object.entries(params ?? {}).reduce((acc: Record<string, string>, [k, v]) => {
+      if (v !== undefined && v !== null) acc[k] = String(v);
+      return acc;
+    }, {});
+    const query = Object.keys(entries).length > 0 ? '?' + new URLSearchParams(entries).toString() : '';
+    return fetchJson<TimelineResponseDTO>(`/messages/timeline${query}`);
   },
 
   // 模块

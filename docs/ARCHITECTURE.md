@@ -209,7 +209,49 @@ GET /__port
 
 ---
 
-## 七、版本历史
+## 七、Agent 状态系统
+
+### 设计原则
+- OpenClaw 状态为主（单一权威数据源）
+- 任务系统为辅（状态增强）
+
+### 状态枚举
+
+| 枚举值 | 含义 | 来源 |
+|--------|------|------|
+| active | 活跃 | OpenClaw |
+| idle | 空闲 | OpenClaw |
+| offline | 离线 | OpenClaw |
+
+### Task Enhancement
+
+```typescript
+interface TaskEnhancement {
+  status: 'working' | 'idle';
+  pending_count: number;
+  source: 'available' | 'unavailable' | 'none';
+}
+```
+
+### 展示格式
+
+| OpenClaw 状态 | 任务增强 | 最终展示 |
+|---------------|----------|----------|
+| active | working | Active (Working) |
+| active | idle | Active |
+| idle | working | Idle (Working) |
+| idle | idle | Idle |
+| offline | any | Offline |
+
+### 数据流
+
+1. collector 采集 OpenClaw 消息 → admin
+2. admin API 标准化状态
+3. 前端获取 agents → 增强展示
+
+---
+
+## 八、版本历史
 
 | 日期 | 版本 | 变更 |
 |------|------|------|

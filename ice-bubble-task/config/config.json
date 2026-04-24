@@ -1,0 +1,36 @@
+{
+  "server": {
+    "port": 13102,
+    "host": "localhost"
+  },
+  "database": {
+    "path": "../data/task.db",
+    "walMode": true,
+    "foreignKeys": false,
+    "performance": {
+      "cacheSize": -64000,
+      "mmapSize": 268435456,
+      "pageSize": 4096,
+      "busyTimeout": 5000
+    }
+  },
+  "collectors": {
+    "openclaw": {
+      "enabled": true,
+      "taskStorePath": "/home/dabai/.openclaw/workspace/tasks/task-store.json"
+    },
+    "workbuddy": {
+      "enabled": false,
+      "baseUrl": "http://localhost:13103"
+    },
+    "claudeCode": {
+      "enabled": false,
+      "taskStorePath": "~/.claude/tasks/task-store.json"
+    }
+  },
+  "scheduler": {
+    "collectIntervalMs": 30000,
+    "cleanupIntervalMs": 3600000,
+    "taskTtlDays": 7
+  }
+}

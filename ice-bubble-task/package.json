@@ -1,0 +1,39 @@
+{
+  "name": "@ice-bubble/task",
+  "version": "1.0.0",
+  "description": "ice-bubble 统一任务管理模块",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "init-db": "tsx scripts/init-db.ts",
+    "rebuild": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "ice-bubble",
+    "task",
+    "management"
+  ],
+  "author": "ice-bubble team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "rimraf": "^5.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}
