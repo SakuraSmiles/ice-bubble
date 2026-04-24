@@ -291,16 +291,16 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 .chat-wrap {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  height: calc(100vh - 240px);
   min-height: 0;
   position: relative;
   overflow: hidden;
 }
 
-/* 新消息提示 */
+/* 新消息提示 - 底部 */
 .new-msg-banner {
   position: absolute;
-  top: 8px;
+  bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--el-color-primary);
@@ -370,8 +370,8 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   white-space: pre-wrap;
 }
 .bubble--user {
-  background: var(--el-color-primary);
-  color: #fff;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
   border-radius: 14px 14px 4px 14px;
 }
 .bubble--agent {
