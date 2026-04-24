@@ -541,8 +541,8 @@ watch(moduleList, (newList) => {
 
 /* 左侧面板 */
 .left-panel {
-  width: 280px;
-  flex-shrink: 0;
+  max-width: 30%;
+  flex-shrink: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
