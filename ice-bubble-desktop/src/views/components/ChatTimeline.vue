@@ -312,19 +312,17 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 
         <!-- Agent 消息 -->
         <div v-else class="msg-row msg-row--agent">
-          <img
-            v-if="grp.avatar"
-            :src="`/api/resources/avatars/${grp.avatar}`"
-            class="avatar"
-          />
-          <div class="avatar-placeholder" v-else>{{ grp.agentName[0] }}</div>
-
-          <div class="agent-content">
-            <div class="msg-header msg-header--agent">
-              <span class="agent-label-name">{{ grp.agentName }}</span>
-              <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
-            </div>
-            <div class="bubble bubble--agent">
+          <div class="msg-header msg-header--agent">
+            <img
+              v-if="grp.avatar"
+              :src="`/api/resources/avatars/${grp.avatar}`"
+              class="avatar"
+            />
+            <div class="avatar-placeholder" v-else>{{ grp.agentName[0] }}</div>
+            <span class="agent-label-name">{{ grp.agentName }}</span>
+            <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
+          </div>
+          <div class="bubble bubble--agent">
               <div class="bubble-text" v-for="(m, mi) in grp.messages" :key="mi">
                 {{ m.content }}
               </div>
@@ -337,7 +335,6 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
               </details>
             </div>
           </div>
-        </div>
       </template>
     </div>
   </div>
@@ -393,12 +390,12 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 /* 消息行 */
 .msg-row {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
   max-width: 90%;
 }
-.msg-row--user { align-self: flex-end; flex-direction: row-reverse; }
-.msg-row--agent { align-self: flex-start; }
+.msg-row--user { align-self: flex-end; align-items: flex-end; }
+.msg-row--agent { align-self: flex-start; align-items: flex-start; }
 
 .avatar, .avatar-placeholder {
   width: 30px;
@@ -418,11 +415,6 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 }
 
 /* Agent 内容包裹（用于对齐头部+气泡） */
-.agent-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
 
 /* 消息头顶部（时间 + 名称/渠道） */
 .msg-header {
