@@ -816,9 +816,9 @@ watch(moduleList, (newList) => {
 
 /* 右侧：主内容区 */
 .right-panel {
-  flex: 1;
   min-width: 0;
-  height: 600px;
+  height: calc(100vh - 240px);
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;

@@ -291,7 +291,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
 .chat-wrap {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 240px);
+  flex: 1;
   min-height: 0;
   position: relative;
   overflow: hidden;
@@ -370,7 +370,7 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
   white-space: pre-wrap;
 }
 .bubble--user {
-  background: var(--el-fill-color-light);
+  background: #e3f2fd;
   color: var(--el-text-color-primary);
   border-radius: 14px 14px 4px 14px;
 }
