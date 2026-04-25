@@ -114,8 +114,6 @@ async function fetchLatestTask(): Promise<void> {
 /** 获取 Agent 的活跃任务（最新非已完成，最多2条） */
 function getAgentActiveTasks(agentId: string): TaskItem[] {
   if (!latestTaskData.value?.agents) return [];
-  // 父任务已取消或完成时不显示
-  if (latestTaskData.value.parent?.status === 'cancelled' || latestTaskData.value.parent?.status === 'completed') return [];
   const tasks = latestTaskData.value.agents[agentId];
   if (!tasks?.length) return [];
   return tasks.slice(0, 5);
