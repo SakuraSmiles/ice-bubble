@@ -114,9 +114,11 @@ async function fetchLatestTask(): Promise<void> {
 /** 获取 Agent 的活跃任务（最新非已完成，最多2条） */
 function getAgentActiveTasks(agentId: string): TaskItem[] {
   if (!latestTaskData.value?.agents) return [];
+  // 父任务已取消或完成时不显示
+  if (latestTaskData.value.parent?.status === 'cancelled' || latestTaskData.value.parent?.status === 'completed') return [];
   const tasks = latestTaskData.value.agents[agentId];
   if (!tasks?.length) return [];
-  return tasks.slice(0, 3);
+  return tasks.filter(t => t.status !== 'DONE' && t.status !== 'completed').slice(0, 3);
 }
 
 /** 获取 Agent 的任务数据（原始完整列表） */
@@ -479,7 +481,7 @@ watch(moduleList, (newList) => {
               <div class="agent-todo-list">
                 <template v-if="getAgentActiveTasks(agent.agent_id).length > 0">
                   <div
-                    class="todo-item"
+                                        class="todo-item" :class="'todo-item--' + task.status.toLowerCase()"
                     v-for="task in getAgentActiveTasks(agent.agent_id)"
                     :key="task.task_id"
                   >
@@ -730,16 +732,32 @@ watch(moduleList, (newList) => {
   gap: 6px;
   font-size: 11px;
   line-height: 1.4;
+  color: var(--el-text-color-primary);
+}
+
+.agent-item .todo-item--todo .todo-title,
+.agent-item .todo-item--pending .todo-title {
   color: var(--el-text-color-secondary);
+}
+
+.agent-item .todo-item--in_progress .todo-title,
+.agent-item .todo-item--in-progress .todo-title {
+  color: var(--el-color-primary);
+}
+
+.agent-item .todo-item--done .todo-title,
+.agent-item .todo-item--completed .todo-title {
+  text-decoration: line-through;
+  color: var(--el-text-color-placeholder);
 }
 
 /* Task dot/circle styles */
 .agent-item .todo-dot {
-  width: 14px;
-  height: 14px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -774,6 +792,11 @@ watch(moduleList, (newList) => {
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 0;
+  margin-top: -6px;
+  margin-left: 2px;
 }
 
 @keyframes todo-spin {
