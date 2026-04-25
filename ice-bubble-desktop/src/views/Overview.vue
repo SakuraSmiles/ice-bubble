@@ -483,7 +483,10 @@ watch(moduleList, (newList) => {
                     v-for="task in getAgentActiveTasks(agent.agent_id)"
                     :key="task.task_id"
                   >
-                    <span class="todo-dot" :class="'todo-dot--' + task.status.toLowerCase()"></span>
+                    <span class="todo-checkbox" :class="'todo-checkbox--' + task.status.toLowerCase()">
+                      <span v-if="task.status === 'DONE'" class="todo-checkmark">✓</span>
+                      <span v-else-if="task.status === 'IN_PROGRESS'" class="todo-semicheck">─</span>
+                    </span>
                     <span class="todo-title">{{ task.title }}</span>
                   </div>
                 </template>
@@ -730,28 +733,48 @@ watch(moduleList, (newList) => {
   color: var(--el-text-color-secondary);
 }
 
-/* Task status dots */
-.agent-item .todo-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+/* Task checkbox styles */
+.agent-item .todo-checkbox {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
   flex-shrink: 0;
-  margin-top: 4px;
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  transition: all 0.15s ease;
 }
 
-.agent-item .todo-dot--todo,
-.agent-item .todo-dot--pending {
-  background: var(--el-text-color-placeholder);
+.agent-item .todo-checkbox--todo,
+.agent-item .todo-checkbox--pending {
+  border: 1.5px solid var(--el-text-color-placeholder);
+  background: transparent;
+  color: transparent;
 }
 
-.agent-item .todo-dot--in_progress,
-.agent-item .todo-dot--in-progress {
-  background: var(--el-color-primary);
+.agent-item .todo-checkbox--in_progress,
+.agent-item .todo-checkbox--in-progress {
+  border: 1.5px solid var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
 }
 
-.agent-item .todo-dot--done,
-.agent-item .todo-dot--completed {
+.agent-item .todo-checkbox--done,
+.agent-item .todo-checkbox--completed {
+  border: 1.5px solid var(--el-color-success);
   background: var(--el-color-success);
+  color: #fff;
+}
+
+.agent-item .todo-checkmark,
+.agent-item .todo-semicheck {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .agent-item .todo-title {
