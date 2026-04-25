@@ -148,6 +148,11 @@ function analyzeMessageMeta(msg: {
     else if (content === 'HEARTBEAT_OK' || content === 'NO_REPLY') {
       meta.is_system_noise = true;
     }
+    // 检测 heartbeat 轮询（Read HEARTBEAT.md）
+    else if (/^Read HEARTBEAT\.md/.test(content)) {
+      meta.is_system_noise = true;
+      meta.clean_content = content.substring(0, 100);
+    }
     // 检测异步执行命令完成/失败通知
     else if (/^(Exec completed|Exec failed)/.test(content)) {
       meta.is_system_noise = true;
@@ -162,10 +167,23 @@ function analyzeMessageMeta(msg: {
     }
   }
 
-  // 检测 agent 空回复（NO_REPLY / silent 模式）
-  if (msg.message_type === 'agent' && (!content || content === 'NULL' || content === '')) {
-    meta.is_system_noise = true;
-    meta.clean_content = '';
+  // 检测 agent 噪音
+  if (msg.message_type === 'agent') {
+    // 空回复（NO_REPLY / silent 模式）
+    if (!content || content === 'NULL' || content === '') {
+      meta.is_system_noise = true;
+      meta.clean_content = '';
+    }
+    // HEARTBEAT_OK
+    else if (content === 'HEARTBEAT_OK') {
+      meta.is_system_noise = true;
+      meta.clean_content = '';
+    }
+    // cron 轮询汇报（暂无活跃子任务 / 任务状态巡检完成 等）
+    else if (/^(暂无活跃子任务|任务状态巡检完成)/.test(content)) {
+      meta.is_system_noise = true;
+      meta.clean_content = content.substring(0, 100);
+    }
   }
   // 检测 tool 空回复
   if (msg.message_type === 'tool' && (!content || content === 'NULL' || content === '' || content === '{}')) {
