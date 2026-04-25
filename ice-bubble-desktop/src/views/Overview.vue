@@ -113,16 +113,10 @@ async function fetchLatestTask(): Promise<void> {
 
 /** 获取 Agent 的活跃任务（最新非已完成，最多2条） */
 function getAgentActiveTasks(agentId: string): TaskItem[] {
-  const at = agentTasksMap.value[agentId];
-  if (!at?.tasks?.length) return [];
-  return at.tasks
-    .filter(t => t.status !== 'DONE')
-    .sort((a, b) => {
-      const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-      const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-      return tb - ta; // 最新的排前面
-    })
-    .slice(0, 2);
+  if (!latestTaskData.value?.agents) return [];
+  const tasks = latestTaskData.value.agents[agentId];
+  if (!tasks?.length) return [];
+  return tasks.filter(t => t.status !== 'DONE').slice(0, 2);
 }
 
 /** 获取 Agent 的任务数据（原始完整列表） */
@@ -721,6 +715,7 @@ watch(moduleList, (newList) => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
   margin-top: 8px;
   padding-left: 8px;
@@ -766,7 +761,8 @@ watch(moduleList, (newList) => {
 .agent-item .todo-empty {
   font-size: 11px;
   color: var(--el-text-color-placeholder);
-  font-style: italic;
+  text-align: center;
+  padding: 8px 4px;
 }
 
 @keyframes blink {
