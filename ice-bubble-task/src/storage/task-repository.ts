@@ -139,11 +139,12 @@ export class TaskRepository {
 
   /**
    * 获取所有父任务（parent_id 为 null），按更新时间降序
-   * T8 fix: 改为 ORDER BY updated_at DESC（符合 /tasks/latest 的语义）
+   * 按 created_at DESC 排序，最新创建的父任务排最前面
+   * updated_at 可能因为状态变更而被更新，导致不反映真实创建顺序
    */
   findParentTasks(): Task[] {
     const rows = this.db.prepare(
-      "SELECT * FROM tasks WHERE parent_id IS NULL ORDER BY updated_at DESC"
+      "SELECT * FROM tasks WHERE parent_id IS NULL ORDER BY created_at DESC"
     ).all() as Task[];
     return rows.map(r => this.rowToTask(r));
   }
