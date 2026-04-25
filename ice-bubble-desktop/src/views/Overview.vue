@@ -116,7 +116,7 @@ function getAgentActiveTasks(agentId: string): TaskItem[] {
   if (!latestTaskData.value?.agents) return [];
   const tasks = latestTaskData.value.agents[agentId];
   if (!tasks?.length) return [];
-  return tasks.filter(t => t.status !== 'DONE').slice(0, 2);
+  return tasks.slice(0, 3);
 }
 
 /** 获取 Agent 的任务数据（原始完整列表） */
@@ -483,9 +483,9 @@ watch(moduleList, (newList) => {
                     v-for="task in getAgentActiveTasks(agent.agent_id)"
                     :key="task.task_id"
                   >
-                    <span class="todo-checkbox" :class="'todo-checkbox--' + task.status.toLowerCase()">
+                    <span class="todo-dot" :class="'todo-dot--' + task.status.toLowerCase()">
                       <span v-if="task.status === 'DONE'" class="todo-checkmark">✓</span>
-                      <span v-else-if="task.status === 'IN_PROGRESS'" class="todo-semicheck">─</span>
+                      <span v-else-if="task.status === 'IN_PROGRESS'" class="todo-spinner"></span>
                     </span>
                     <span class="todo-title">{{ task.title }}</span>
                   </div>
@@ -733,48 +733,52 @@ watch(moduleList, (newList) => {
   color: var(--el-text-color-secondary);
 }
 
-/* Task checkbox styles */
-.agent-item .todo-checkbox {
+/* Task dot/circle styles */
+.agent-item .todo-dot {
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 1px;
+  margin-top: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
-  transition: all 0.15s ease;
+  position: relative;
 }
 
-.agent-item .todo-checkbox--todo,
-.agent-item .todo-checkbox--pending {
+.agent-item .todo-dot--todo,
+.agent-item .todo-dot--pending {
   border: 1.5px solid var(--el-text-color-placeholder);
   background: transparent;
-  color: transparent;
 }
 
-.agent-item .todo-checkbox--in_progress,
-.agent-item .todo-checkbox--in-progress {
-  border: 1.5px solid var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+.agent-item .todo-dot--in_progress,
+.agent-item .todo-dot--in-progress {
+  border: 2px solid;
+  border-color: var(--el-color-primary) transparent var(--el-color-primary) var(--el-color-primary);
+  animation: todo-spin 0.8s linear infinite;
+  background: transparent;
 }
 
-.agent-item .todo-checkbox--done,
-.agent-item .todo-checkbox--completed {
-  border: 1.5px solid var(--el-color-success);
-  background: var(--el-color-success);
-  color: #fff;
+.agent-item .todo-dot--done,
+.agent-item .todo-dot--completed {
+  border: 1.5px solid var(--el-text-color-placeholder);
+  background: transparent;
+  color: var(--el-color-success);
 }
 
-.agent-item .todo-checkmark,
-.agent-item .todo-semicheck {
+.agent-item .todo-checkmark {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+@keyframes todo-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .agent-item .todo-title {

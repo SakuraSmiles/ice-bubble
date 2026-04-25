@@ -256,13 +256,16 @@ const groupedMessages = computed(() => {
         toolMsgs: [],
       });
     } else if (role === 'agent') {
-      // 同 agent 连续 agent 消息合并
+      // tool 消息不能独立成组，必须合并到前置 agent 消息组
       if (current && current.type === 'agent' && current.agentId === msg.agent_id) {
         if (msg.message_type === 'tool') {
           current.toolMsgs.push(msg);
         } else {
           current.messages.push(msg);
         }
+      } else if (msg.message_type === 'tool' && current && current.type === 'agent') {
+        // tool 消息跟随当前 agent 组（即使 agent_id 不同也尽量合并）
+        current.toolMsgs.push(msg);
       } else {
         if (current) groups.push(current);
         current = {
@@ -274,6 +277,18 @@ const groupedMessages = computed(() => {
           messages: msg.message_type === 'tool' ? [] : [msg],
           toolMsgs: msg.message_type === 'tool' ? [msg] : [],
         };
+        // 工具消息独立成组时，至少赋一个占位消息避免渲染报错
+        if (current.messages.length === 0) {
+          current.messages.push({
+            id: msg.id,
+            content: '',
+            clean_content: '',
+            message_type: 'agent',
+            agent_id: msg.agent_id,
+            agent_name: msg.agent_name,
+            timestamp: msg.timestamp,
+          } as any);
+        }
       }
     }
   }
