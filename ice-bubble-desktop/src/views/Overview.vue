@@ -484,8 +484,8 @@ watch(moduleList, (newList) => {
                     :key="task.task_id"
                   >
                     <span class="todo-dot" :class="'todo-dot--' + task.status.toLowerCase()">
-                      <span v-if="task.status === 'DONE'" class="todo-checkmark">✓</span>
-                      <span v-else-if="task.status === 'IN_PROGRESS'" class="todo-spinner"></span>
+                      <span v-if="task.status === 'DONE' || task.status === 'completed'" class="todo-checkmark">✓</span>
+                      <span v-else-if="task.status === 'IN_PROGRESS' || task.status === 'in_progress'" class="todo-spinner"></span>
                     </span>
                     <span class="todo-title">{{ task.title }}</span>
                   </div>
