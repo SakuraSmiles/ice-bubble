@@ -378,7 +378,7 @@ onMounted(() => {
   refreshData();
   fetchAll(true);
   refreshTimer = setInterval(() => { refreshData(); refreshModules(); }, 5000);
-  agentRefreshTimer = setInterval(() => { fetchAgentOverview(); fetchTokenStats(); }, 30000);
+  agentRefreshTimer = setInterval(() => { fetchAgentOverview(); fetchTokenStats(); fetchLatestTask(); }, 30000);
 });
 
 onUnmounted(() => {
