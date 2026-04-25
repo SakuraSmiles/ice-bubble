@@ -148,6 +148,18 @@ function analyzeMessageMeta(msg: {
     else if (content === 'HEARTBEAT_OK' || content === 'NO_REPLY') {
       meta.is_system_noise = true;
     }
+    // 检测异步执行命令完成/失败通知
+    else if (/^(Exec completed|Exec failed)/.test(content)) {
+      meta.is_system_noise = true;
+      meta.clean_content = content.substring(0, 100);
+    }
+    // 检测 git commit 输出 / 编译输出
+    else if (/^\[[a-z0-9]+\]/.test(content) &&
+             (/(added \d+ files?|modules transformed|built in)/.test(content) ||
+              /^(feat|fix|style|refactor|chore|docs|test)\(/ .test(content))) {
+      meta.is_system_noise = true;
+      meta.clean_content = content.substring(0, 100);
+    }
   }
 
   // 检测 agent 空回复（NO_REPLY / silent 模式）
@@ -829,8 +841,14 @@ export class DataRepository {
       if (params.exclude_cron && meta.is_cron) continue;
 
       let content = row.content;
-      if (row.message_type === 'tool' && content && content.length > 300) {
-        content = content.substring(0, 300);
+      if (row.message_type === 'tool') {
+        const trimmed = (content || '').trim();
+        if (!trimmed || trimmed === '{}' || trimmed === '[]' || trimmed === 'ok' || trimmed === 'null') {
+          continue;
+        }
+        if (content && content.length > 200) {
+          content = content.substring(0, 200);
+        }
       }
 
       messages.push({

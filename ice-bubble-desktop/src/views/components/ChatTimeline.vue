@@ -235,6 +235,7 @@ type MsgGroup = {
   timestamp: string;
   messages: TimelineMessage[];
   toolMsgs: TimelineMessage[];
+  hiddenToolCount: number;
 };
 
 const groupedMessages = computed(() => {
@@ -254,6 +255,7 @@ const groupedMessages = computed(() => {
         timestamp: msg.timestamp,
         messages: [msg],
         toolMsgs: [],
+        hiddenToolCount: 0,
       });
     } else if (role === 'agent') {
       // tool 消息不能独立成组，必须合并到前置 agent 消息组
@@ -276,6 +278,7 @@ const groupedMessages = computed(() => {
           timestamp: msg.timestamp,
           messages: msg.message_type === 'tool' ? [] : [msg],
           toolMsgs: msg.message_type === 'tool' ? [msg] : [],
+          hiddenToolCount: 0,
         };
         // 工具消息独立成组时，至少赋一个占位消息避免渲染报错
         if (current.messages.length === 0) {
@@ -293,10 +296,25 @@ const groupedMessages = computed(() => {
     }
   }
   if (current) groups.push(current);
+
+  // 合并连续 tool 消息：超过 3 条时只保留前 2 条 + 统计信息
+  for (const grp of groups) {
+    if (grp.toolMsgs.length > 3) {
+      grp.hiddenToolCount = grp.toolMsgs.length - 2;
+      grp.toolMsgs = grp.toolMsgs.slice(0, 2);
+    }
+  }
+
   return groups;
 });
 
 // =========== 工具函数 ===========
+function truncateToolContent(content: string | null, maxLen = 150): string {
+  if (!content) return '';
+  if (content.length <= maxLen) return content;
+  return content.substring(0, maxLen) + '...';
+}
+
 function formatTime(ts: string) {
   const d = new Date(ts);
   const now = new Date();
@@ -307,8 +325,10 @@ function formatTime(ts: string) {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-function toolSummary(toolMsgs: TimelineMessage[]): string {
-  return `🛠 调用了 ${toolMsgs.length} 次工具`;
+function toolSummary(grp: MsgGroup): string {
+  const visible = grp.toolMsgs.length;
+  const total = visible + grp.hiddenToolCount;
+  return `🛠 调用了 ${total} 次工具`;
 }
 </script>
 
@@ -364,9 +384,9 @@ function toolSummary(toolMsgs: TimelineMessage[]): string {
               </div>
               <!-- 工具消息折叠 -->
               <details v-if="grp.toolMsgs.length > 0" class="tool-details">
-                <summary>{{ toolSummary(grp.toolMsgs) }}</summary>
+                <summary>{{ toolSummary(grp) }}{{ grp.hiddenToolCount > 0 ? `，还有 ${grp.hiddenToolCount} 条` : '' }}</summary>
                 <div v-for="(tm, ti) in grp.toolMsgs" :key="ti" class="tool-item">
-                  {{ tm.content?.substring(0, 300) }}...
+                  <pre>{{ truncateToolContent(tm.content) }}</pre>
                 </div>
               </details>
             </div>
