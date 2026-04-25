@@ -118,7 +118,7 @@ function getAgentActiveTasks(agentId: string): TaskItem[] {
   if (latestTaskData.value.parent?.status === 'cancelled' || latestTaskData.value.parent?.status === 'completed') return [];
   const tasks = latestTaskData.value.agents[agentId];
   if (!tasks?.length) return [];
-  return tasks.filter(t => t.status !== 'DONE' && t.status !== 'completed').slice(0, 3);
+  return tasks.slice(0, 5);
 }
 
 /** 获取 Agent 的任务数据（原始完整列表） */
