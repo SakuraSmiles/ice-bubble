@@ -136,8 +136,6 @@ const statusTags = computed(() => {
 
 .dot.done {
   background: var(--el-color-success);
-  transform: scale(1.15);
-  box-shadow: 0 0 0 1.5px rgba(26, 127, 55, 0.15);
 }
 
 .progress-label {

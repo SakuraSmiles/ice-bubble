@@ -149,12 +149,6 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
         >
           <!-- Agent 行（可点击展开/折叠） -->
           <div class="tree-agent-header" @click="toggleExpand(agent.agent_id, agent)">
-            <!-- 展开/折叠图标 (纯 CSS chevron) -->
-            <span class="expand-icon" :class="{ 'is-expanded': isExpanded(agent.agent_id, agent) }"></span>
-
-            <!-- 头像小圆点 -->
-            <span class="agent-status-dot" :class="'status-dot--' + agent.status"></span>
-
             <!-- Agent 名称 -->
             <span class="agent-name">{{ agent.agent_name || agent.agent_id }}</span>
 
@@ -177,6 +171,9 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
             <span class="agent-status-tag" :class="'status-tag--' + agent.status">
               {{ getStatusLabel(agent.status) }}
             </span>
+
+            <!-- 展开/折叠图标 (右侧) -->
+            <span class="expand-icon" :class="{ 'is-expanded': isExpanded(agent.agent_id, agent) }"></span>
           </div>
 
           <!-- 展开的子任务列表 -->
@@ -285,12 +282,11 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
   background: var(--el-fill-color-lighter);
 }
 
-/* 展开图标 — 纯 CSS chevron */
+/* 展开图标 — 纯 CSS chevron（右侧） */
 .expand-icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -299,46 +295,16 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
 .expand-icon::before {
   content: '';
   display: block;
-  width: 6px;
-  height: 6px;
-  border-right: 1.5px solid var(--el-text-color-secondary);
-  border-bottom: 1.5px solid var(--el-text-color-secondary);
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid var(--el-text-color-placeholder);
+  border-bottom: 1.5px solid var(--el-text-color-placeholder);
   transform: rotate(-45deg);
   transition: transform 0.2s ease;
-  transform-origin: center;
-  /* 视觉上偏左 1px，看起来更居中 */
-  margin-left: -1px;
 }
 
 .expand-icon.is-expanded::before {
   transform: rotate(45deg);
-  margin-left: -1px;
-}
-
-/* Agent 状态小圆点 */
-.agent-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.status-dot--工作,
-.status-dot--活跃,
-.status-dot--工作中 {
-  background: var(--el-color-success);
-}
-
-.status-dot--休假 {
-  background: var(--el-color-warning);
-}
-
-.status-dot--离线 {
-  background: var(--el-color-info);
-}
-
-.status-dot--失联 {
-  background: var(--el-color-danger);
 }
 
 /* Agent 名称 */
@@ -346,8 +312,9 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
   font-size: 13px;
   font-weight: 600;
   color: var(--el-text-color-primary);
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  margin-right: auto;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
