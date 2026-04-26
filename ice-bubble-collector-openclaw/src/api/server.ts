@@ -20,6 +20,56 @@ import { createMetaRouter, markStartTime } from './routes/meta.js';
 import { createDataRouter } from './routes/data.js';
 import type { ApiServerConfig } from './types.js';
 
+// ==================== 简单中间件实现 ====================
+
+/**
+ * 简单内存限流器（滑动窗口）
+ */
+function createSimpleRateLimiter(windowMs: number, maxRequests: number) {
+    const windowMap = new Map<string, { count: number; resetAt: number }>();
+
+    return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+        const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+        const now = Date.now();
+
+        let entry = windowMap.get(ip);
+        if (!entry || now > entry.resetAt) {
+            entry = { count: 0, resetAt: now + windowMs };
+            windowMap.set(ip, entry);
+        }
+
+        entry.count++;
+
+        if (entry.count > maxRequests) {
+            const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+            res.set('Retry-After', String(retryAfter));
+            res.status(429).json({ error: '请求过于频繁，请稍后重试', code: 'RATE_LIMIT_EXCEEDED' } as const);
+            return;
+        }
+
+        next();
+    };
+}
+
+/**
+ * 简单 Bearer Token 认证中间件
+ */
+function createAuthMiddleware(token: string) {
+    return (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+        const authHeader = _req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            res.status(401).json({ error: '未提供认证令牌', code: 'UNAUTHORIZED' } as const);
+            return;
+        }
+        const providedToken = authHeader.slice(7);
+        if (providedToken !== token) {
+            res.status(401).json({ error: '认证令牌无效', code: 'INVALID_TOKEN' } as const);
+            return;
+        }
+        next();
+    };
+}
+
 const serverLogger = new Logger('ApiServer');
 
 /**
@@ -59,6 +109,26 @@ export async function createApiServer(
         }
         next();
     });
+
+    // 限流中间件（已配置但未启用）
+    if (_config.rateLimit?.enabled) {
+        const limiter = createSimpleRateLimiter(
+            _config.rateLimit.windowMs,
+            _config.rateLimit.maxRequests,
+        );
+        app.use(limiter);
+        serverLogger.info('限流中间件已启用', {
+            windowMs: _config.rateLimit.windowMs,
+            maxRequests: _config.rateLimit.maxRequests,
+        });
+    }
+
+    // 认证中间件（已配置但未启用）
+    if (_config.auth?.enabled && _config.auth.token) {
+        const authMw = createAuthMiddleware(_config.auth.token);
+        app.use(authMw);
+        serverLogger.info('认证中间件已启用');
+    }
 
     // ---- 路由注册 ----
 

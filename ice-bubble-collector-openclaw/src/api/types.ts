@@ -69,4 +69,15 @@ export interface ApiServerConfig {
     port: number;
     /** 监听地址 */
     host: string;
+    /** 认证配置 */
+    auth?: {
+        enabled: boolean;
+        token: string;
+    };
+    /** 限流配置 */
+    rateLimit?: {
+        enabled: boolean;
+        windowMs: number;
+        maxRequests: number;
+    };
 }

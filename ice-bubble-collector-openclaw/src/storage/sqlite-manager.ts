@@ -237,61 +237,61 @@ export class SQLiteManager {
 
         // Migration 1: 添加 message_id 列到 session_messages 表
         // 用于存储 OpenClaw 原始消息 ID，实现去重
-        // 注意: SQLite 不允许直接添加 UNIQUE 列,需要重建表
         try {
             const result = this.db.prepare("SELECT name FROM pragma_table_info('session_messages') WHERE name='message_id'").get();
             if (!result) {
-                sqliteLogger.info('Running migration: 添加 message_id 列到 session_messages 表');
+                // 检查表中是否有数据，避免不必要的表重建
+                const countRow = this.db.prepare('SELECT COUNT(*) as cnt FROM session_messages').get() as SqlRow;
+                const rowCount = countRow.cnt as number;
 
-                // 由于 SQLite 限制,需要重建表
-                this.db.exec('BEGIN TRANSACTION');
-                try {
-                    // 重命名旧表
-                    this.db.exec('ALTER TABLE session_messages RENAME TO session_messages_old');
-
-                    // 创建新表
-                    this.db.exec(`
-                        CREATE TABLE session_messages (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            message_id TEXT UNIQUE,
-                            session_key TEXT NOT NULL,
-                            message_type TEXT NOT NULL,
-                            content TEXT,
-                            model TEXT,
-                            tokens_input INTEGER,
-                            tokens_output INTEGER,
-                            cost_total REAL,
-                            cost_input REAL,
-                            cost_output REAL,
-                            tools_json TEXT,
-                            timestamp TIMESTAMP NOT NULL,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            FOREIGN KEY (session_key) REFERENCES sessions(session_key) ON DELETE CASCADE
-                        )
-                    `);
-
-                    // 复制数据
-                    this.db.exec(`
-                        INSERT INTO session_messages (id, session_key, message_type, content, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, tools_json, timestamp, created_at)
-                        SELECT id, session_key, message_type, content, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, tools_json, timestamp, created_at FROM session_messages_old
-                    `);
-
-                    // 删除旧表
-                    this.db.exec('DROP TABLE session_messages_old');
-
-                    // 重建索引
-                    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_session_key ON session_messages(session_key)');
-                    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON session_messages(timestamp)');
-                    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_type ON session_messages(message_type)');
-
-                    // 记录迁移版本
+                if (rowCount === 0) {
+                    // 空表：直接用 ALTER TABLE ADD COLUMN（快速，无需重建）
+                    // 注意：UNIQUE 约束在有数据时才有意义，空表直接加列即可
+                    this.db.exec('ALTER TABLE session_messages ADD COLUMN message_id TEXT');
+                    // 为 message_id 创建唯一索引（等效于 UNIQUE 约束，但不阻塞 ALTER TABLE）
+                    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_message_id ON session_messages(message_id)');
                     this.db.exec('INSERT INTO schema_version (version) VALUES (1)');
-
-                    this.db.exec('COMMIT');
-                    sqliteLogger.info('Migration 1 completed: message_id 列已添加(重建表方式)');
-                } catch (innerError) {
-                    this.db.exec('ROLLBACK');
-                    throw innerError;
+                    sqliteLogger.info('Migration 1 completed: message_id 列已添加(ALTER TABLE，空表优化)');
+                } else {
+                    // 有数据的表：使用重建表方式（唯一索引需要重建数据）
+                    sqliteLogger.info(`Running migration: 添加 message_id 列到 session_messages 表 (${rowCount} 行数据，需重建表)`);
+                    this.db.exec('BEGIN TRANSACTION');
+                    try {
+                        this.db.exec('ALTER TABLE session_messages RENAME TO session_messages_old');
+                        this.db.exec(`
+                            CREATE TABLE session_messages (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                message_id TEXT UNIQUE,
+                                session_key TEXT NOT NULL,
+                                message_type TEXT NOT NULL,
+                                content TEXT,
+                                model TEXT,
+                                tokens_input INTEGER,
+                                tokens_output INTEGER,
+                                cost_total REAL,
+                                cost_input REAL,
+                                cost_output REAL,
+                                tools_json TEXT,
+                                timestamp TIMESTAMP NOT NULL,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                FOREIGN KEY (session_key) REFERENCES sessions(session_key) ON DELETE CASCADE
+                            )
+                        `);
+                        this.db.exec(`
+                            INSERT INTO session_messages (id, session_key, message_type, content, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, tools_json, timestamp, created_at)
+                            SELECT id, session_key, message_type, content, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, tools_json, timestamp, created_at FROM session_messages_old
+                        `);
+                        this.db.exec('DROP TABLE session_messages_old');
+                        this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_session_key ON session_messages(session_key)');
+                        this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON session_messages(timestamp)');
+                        this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_type ON session_messages(message_type)');
+                        this.db.exec('INSERT INTO schema_version (version) VALUES (1)');
+                        this.db.exec('COMMIT');
+                        sqliteLogger.info('Migration 1 completed: message_id 列已添加(重建表方式)');
+                    } catch (innerError) {
+                        this.db.exec('ROLLBACK');
+                        throw innerError;
+                    }
                 }
             }
         } catch (error) {
@@ -696,6 +696,61 @@ export class SQLiteManager {
         } catch (error) {
             throw new SQLiteError(
                 'Failed to get session history',
+                'SQLITE_QUERY_FAILED',
+                error
+            );
+        }
+    }
+
+    /**
+     * 获取所有 message_id（用于去重缓存预热）
+     *
+     * 使用分批游标查询避免大表内存压力
+     *
+     * @param batchSize 每批数量，默认 10000
+     * @returns 所有 message_id 数组
+     */
+    async getAllMessageIds(batchSize: number = 10000): Promise<string[]> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        try {
+            const allIds: string[] = [];
+            let lastId: string | null = null;
+
+            while (true) {
+                let sql: string;
+                let rows: SqlRow[];
+
+                if (lastId === null) {
+                    sql = `SELECT message_id FROM session_messages WHERE message_id IS NOT NULL ORDER BY id LIMIT ?`;
+                    const stmt = this.db.prepare(sql);
+                    rows = stmt.all(batchSize) as SqlRow[];
+                } else {
+                    sql = `SELECT message_id FROM session_messages WHERE message_id IS NOT NULL AND id > (SELECT id FROM session_messages WHERE message_id = ?) ORDER BY id LIMIT ?`;
+                    const stmt = this.db.prepare(sql);
+                    rows = stmt.all(lastId, batchSize) as SqlRow[];
+                }
+
+                if (rows.length === 0) break;
+
+                for (const row of rows) {
+                    const id = row.message_id as string;
+                    if (id) {
+                        allIds.push(id);
+                        lastId = id;
+                    }
+                }
+
+                if (rows.length < batchSize) break;
+            }
+
+            sqliteLogger.debug(`[SQLiteManager] getAllMessageIds 完成: 共 ${allIds.length} 条`);
+            return allIds;
+        } catch (error) {
+            throw new SQLiteError(
+                'Failed to get all message IDs',
                 'SQLITE_QUERY_FAILED',
                 error
             );

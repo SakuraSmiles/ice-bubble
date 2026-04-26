@@ -1,7 +1,8 @@
 /**
  * Redis 管理器
  *
- * 辅助存储：状态缓存、去重、Pub/Sub
+ * @deprecated Redis 功能暂未启用，当前为占位实现。
+ *             如需使用 Redis 缓存/PubSub，请实现此模块。
  */
 
 import { Logger } from '../utils/logger.js';
@@ -9,16 +10,11 @@ import { Logger } from '../utils/logger.js';
 const redisLogger = new Logger('RedisManager');
 
 export class RedisManager {
-    /**
-     * @Deprecated 当前为空实现，Redis 功能暂未启用
-     */
     async init(): Promise<void> {
-        // TODO: 实现 Redis 连接
-        redisLogger.debug('[RedisManager] init called (not implemented)');
+        redisLogger.warn('[RedisManager] Redis 功能未启用（请在配置中启用或移除此模块）');
     }
 
     async close(): Promise<void> {
-        // TODO: 实现 Redis 断开
-        redisLogger.info('Closing...');
+        redisLogger.debug('[RedisManager] close called');
     }
 }

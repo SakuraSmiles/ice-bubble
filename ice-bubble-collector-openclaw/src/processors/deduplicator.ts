@@ -6,6 +6,9 @@
  */
 
 import { UnifiedMessage } from '../types';
+import { Logger } from '../utils/logger.js';
+
+const sqliteLogger = new Logger('Deduplicator');
 
 /**
  * 去重器配置
@@ -343,5 +346,27 @@ export class Deduplicator {
      */
     size(): number {
         return this.cache.size();
+    }
+
+    /**
+     * 从数据库预热缓存
+     *
+     * 启动时从数据库加载已存在的 message_id，避免重启后重复消息走完整 pipeline
+     * 只填充到缓存容量上限，超出的会被后续 LRU 淘汰
+     *
+     * @param messageIds - 数据库中已存在的 message_id 列表
+     *
+     * @example
+     * // 启动时预热
+     * const ids = await sqliteManager.getAllMessageIds();
+     * deduplicator.preloadFromDatabase(ids);
+     */
+    preloadFromDatabase(messageIds: string[]): void {
+        let loaded = 0;
+        for (const id of messageIds) {
+            this.cache.set(id, true);
+            loaded++;
+        }
+        sqliteLogger.debug(`[Deduplicator] 预热完成: ${loaded} 条 message_id 已加载，缓存容量: ${this.config.cacheSize}`);
     }
 }

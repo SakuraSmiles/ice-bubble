@@ -154,6 +154,7 @@ export class FileCollector extends BaseCollector implements Collector {
   };
   private isRunning = false;
   private sqliteManager!: SQLiteManager;
+  private deduplicator!: Deduplicator;
 
   constructor(config: FileCollectorConfig) {
     super();
@@ -195,7 +196,7 @@ export class FileCollector extends BaseCollector implements Collector {
 
     // 初始化处理管道组件
     const validator = new DataValidator();
-    const deduplicator = new Deduplicator({ cacheSize: this.config.deduplicationCacheSize });
+    this.deduplicator = new Deduplicator({ cacheSize: this.config.deduplicationCacheSize });
     const batchWriter = new BatchWriter(this.sqliteManager, {
       batchSize: this.config.writerBatchSize,
       flushInterval: this.config.writerFlushInterval,
@@ -203,7 +204,7 @@ export class FileCollector extends BaseCollector implements Collector {
 
     // 初始化数据管道（传入配置的 agent ID 集合）
     this.pipeline = new CollectionPipeline(
-      this.sqliteManager, validator, deduplicator, batchWriter,
+      this.sqliteManager, validator, this.deduplicator, batchWriter,
       { batchSize: this.config.batchSize, configuredAgentIds: this.configuredAgentIds }
     );
 
@@ -253,6 +254,9 @@ export class FileCollector extends BaseCollector implements Collector {
 
     // 同步 agents 配置到 SQLite 并缓存配置的 agent_id 列表（在管道启动前完成，确保过滤生效）
     await this.syncAgentsFromConfig();
+
+    // 预热去重缓存：从数据库加载已存在的 message_id，避免重启后重复消息走完整 pipeline
+    await this.preloadDeduplicator();
 
     // 启动数据处理管道（传入配置的 agent ID 集合）
     this.pipeline.start();
@@ -687,6 +691,28 @@ export class FileCollector extends BaseCollector implements Collector {
       // 降级：使用内存中的 agent 列表（如果之前有同步过）
       this.configuredAgentIds = new Set(this.fallbackAgentIds);
       logger.warn(`Fallback to ${this.fallbackAgentIds.length} agents from memory`);
+    }
+  }
+
+  /**
+   * 预热去重缓存：从数据库加载已存在的 message_id
+   *
+   * 避免 Collector 重启后，LRU Cache 清空，导致数据库中已存在的 message_id
+   * 重复走 转换→验证→去重 检查，浪费 CPU
+   *
+   * 只加载到缓存容量上限（config.deduplicationCacheSize），超出部分由 LRU 自然淘汰
+   */
+  private async preloadDeduplicator(): Promise<void> {
+    try {
+      const messageIds = await this.sqliteManager.getAllMessageIds();
+      if (messageIds.length === 0) {
+        logger.debug('[FileCollector] 去重缓存预热: 数据库中无 message_id，跳过');
+        return;
+      }
+      this.deduplicator.preloadFromDatabase(messageIds);
+      logger.info(`[FileCollector] 去重缓存预热完成: ${messageIds.length} 条 message_id 已加载`);
+    } catch (error) {
+      logger.error('[FileCollector] 去重缓存预热失败，将从空缓存开始', error);
     }
   }
 
