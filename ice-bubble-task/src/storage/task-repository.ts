@@ -173,6 +173,17 @@ export class TaskRepository {
   }
 
   /**
+   * 获取最近更新的父任务，按 updated_at DESC 排序
+   * @param limit 返回的父任务数量，默认 3
+   */
+  findLatestParentTasks(limit: number = 3): Task[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM tasks WHERE parent_id IS NULL ORDER BY updated_at DESC LIMIT ?"
+    ).all(limit) as Task[];
+    return rows.map(r => this.rowToTask(r));
+  }
+
+  /**
    * 统计各状态的任务数量（按 agent_id）
    */
   getStats(agent_id?: string): Record<string, number> {

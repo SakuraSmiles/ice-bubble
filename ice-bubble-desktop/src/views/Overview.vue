@@ -8,6 +8,8 @@ import type { ModuleDTO } from '../api/client';
 // 子组件
 import SystemHealth from './components/SystemHealth.vue';
 import RecentSessions from './components/RecentSessions.vue';
+import AgentTaskTree from './components/AgentTaskTree.vue';
+import ParentTaskProgress from './components/ParentTaskProgress.vue';
 
 
 // =========== 接口定义 ===========
@@ -23,17 +25,6 @@ interface AgentOverview {
   latest_message: string | null;
   session_count?: number;
   message_count?: number;
-}
-
-interface TokenStats {
-  total_tokens_input: number;
-  total_tokens_output: number;
-  total_cost: number;
-  message_count: number;
-}
-
-interface TokenStatsMap {
-  [agentId: string]: TokenStats;
 }
 
 interface AgentRuntimeState {
@@ -54,113 +45,70 @@ const messageRefs = ref<Record<string, HTMLElement>>({});
 // Agent 概览数据
 const agentOverviewData = ref<{ agents: AgentOverview[] } | null>(null);
 
-/** Token 统计数据（今日） */
-const tokenStatsMap = ref<TokenStatsMap>({});
 
-/** 最近消息模型映射 */
-const latestAgentModels = ref<Record<string, string>>({});
 
-// =========== Task 模块相关 ===========
-
-type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE' | 'pending' | 'in_progress' | 'completed';
+// =========== 最近任务模块相关 ===========
 
 interface TaskItem {
   task_id: string;
   title: string;
-  status: TaskStatus;
+  status: string;
   updated_at?: string;
 }
 
-interface AgentTasks {
-  tasks: TaskItem[];
-  loading: boolean;
-  error: string | null;
+interface AgentGroup {
+  agent_id: string;
+  active_children: TaskItem[];
+  completed_children: TaskItem[];
 }
 
-const agentTasksMap = ref<Record<string, AgentTasks>>({});
-
-// =========== 最新任务模块相关 ===========
-
-interface LatestTaskData {
-  agents: Record<string, TaskItem[]>;
+interface ParentTask {
+  id: string;
+  title: string;
+  status: string;
+  updated_at: string;
+  agent_groups: AgentGroup[];
 }
 
-const latestTaskData = ref<LatestTaskData | null>(null);
+interface WorkspaceTasks {
+  parents: ParentTask[];
+}
+
+const workspaceTasks = ref<WorkspaceTasks | null>(null);
 const latestTaskLoading = ref(false);
-const latestTaskError = ref<string | null>(null);
 
-/** 获取最新任务 */
+/** 获取工作区任务（按父任务聚合） */
 async function fetchLatestTask(): Promise<void> {
   latestTaskLoading.value = true;
-  latestTaskError.value = null;
   try {
-    const res = await fetch('/api/tasks/latest');
+    const res = await fetch('/api/tasks/workspace');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    latestTaskData.value = data;
+    workspaceTasks.value = data;
   } catch (e) {
-    console.error('获取最新任务失败', e);
-    latestTaskError.value = e instanceof Error ? e.message : '获取失败';
-    latestTaskData.value = null;
+    console.warn('通过 proxy 获取失败，尝试直连 Task API', e);
+    try {
+      const res = await fetch('http://localhost:13102/api/tasks/workspace');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      workspaceTasks.value = data;
+    } catch (e2) {
+      console.error('获取工作区任务完全失败', e2);
+      workspaceTasks.value = null;
+    }
   } finally {
     latestTaskLoading.value = false;
   }
 }
 
-/** 截断任务标题，去除 Markdown 标记，最多 60 字符 */
-function truncateTaskTitle(title: string, maxLen: number = 35): string {
-  if (!title) return '';
-  const cleaned = title.replace(/^#+\s+/gm, '').trim();
-  if (cleaned.length <= maxLen) return cleaned;
-  return cleaned.substring(0, maxLen) + '...';
-}
-
-/** 获取 Agent 的活跃任务（最新非已完成，最多5条） */
-function getAgentActiveTasks(agentId: string): TaskItem[] {
-  if (!latestTaskData.value?.agents) return [];
-  const tasks = latestTaskData.value.agents[agentId];
-  if (!tasks?.length) return [];
-  return tasks.slice(0, 5);
-}
-
-/** 获取 Agent 的任务数据（原始完整列表） */
-function getAgentTasks(agentId: string): AgentTasks {
-  if (!agentTasksMap.value[agentId]) {
-    agentTasksMap.value[agentId] = { tasks: [], loading: false, error: null };
-  }
-  return agentTasksMap.value[agentId];
-}
-
-/** 获取 Agent 的任务列表 */
-async function fetchAgentTasks(agentId: string): Promise<void> {
-  const at = getAgentTasks(agentId);
-  at.loading = true;
-  at.error = null;
-  try {
-    const res = await fetch(`/api/agents/${agentId}/tasks`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    let rawTasks: any[] = Array.isArray(data) ? data : (data.tasks || []);
-    const statusMap: Record<string, TaskStatus> = {
-      pending: 'TODO', in_progress: 'IN_PROGRESS', completed: 'DONE', blocked: 'TODO'
-    };
-    at.tasks = rawTasks.map(t => ({
-      task_id: t.id, title: t.title || t.task_id, status: statusMap[t.status] ?? 'TODO', updated_at: t.updated_at
-    }));
-  } catch (e) {
-    console.error(`获取 Agent ${agentId} 任务失败`, e);
-    at.error = e instanceof Error ? e.message : '获取失败';
-    at.tasks = [];
-  } finally {
-    at.loading = false;
-  }
-}
-
-/** 批量获取所有在线 Agent 的任务 */
-async function fetchAllAgentTasks(): Promise<void> {
-  const agents = agentOverviewData.value?.agents ?? [];
-  await Promise.all(agents.map(a => fetchAgentTasks(a.agent_id)));
-}
+/** 最近的父任务（按 updated_at 排序取第一个） */
+const recentParentTask = computed<ParentTask | null>(() => {
+  const parents = workspaceTasks.value?.parents ?? [];
+  if (!parents.length) return null;
+  return [...parents].sort((a, b) =>
+    new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  )[0];
+});
 
 // =========== 核心功能函数 ===========
 
@@ -230,33 +178,19 @@ function scrollMessageToTop(agentId: string) {
   if (el) el.scrollTop = 0;
 }
 
-/** 头像 URL */
-function getAvatarUrl(avatar: string | null): string | null {
-  if (!avatar) return null;
-  return `/api/resources/avatars/${avatar}`;
-}
-
-/** 获取 Agent 的 Token 消耗显示 */
-function getAgentTokenDisplay(agentId: string): string {
-  const stats = tokenStatsMap.value[agentId];
-  if (!stats) return '-';
-  const total = stats.total_tokens_input + stats.total_tokens_output;
-  if (total >= 1000000) return (total / 1000000).toFixed(1) + 'M';
-  if (total >= 1000) return (total / 1000).toFixed(1) + 'K';
-  return total.toString();
-}
-
-/** Agent 列表：优先工作中，至少3个 */
+/** Agent 列表：所有工作中 agent 全部展示，不足 3 个时用最近活跃离线 agent 补充 */
 const onlineAgents = computed(() => {
   const agents = agentOverviewData.value?.agents ?? [];
-  // 只显示"活跃"状态的 agent
-  const active = agents.filter(a => a.status === '活跃' || isWorkingStatus(a.status));
-  // 不足3个时，用最近活跃的离线 agent 补充
-  const inactive = agents
+  // 工作中 / 活跃的 agent 全部展示（移除 slice(0, 3) 硬限制）
+  const working = agents
+    .filter(a => a.status === '活跃' || isWorkingStatus(a.status))
+    .sort((a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime());
+  // 不足 3 个时用最近活跃离线 agent 补充
+  if (working.length >= 3) return working;
+  const offline = agents
     .filter(a => a.status !== '活跃' && !isWorkingStatus(a.status))
     .sort((a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime());
-  const result = [...active, ...inactive];
-  return result.slice(0, 3);
+  return [...working, ...offline];
 });
 
 /** 监听 agent 数据变化 */
@@ -298,58 +232,6 @@ async function refreshModules(): Promise<void> {
   } catch (e) { console.error('获取模块列表失败:', e); }
 }
 
-// =========== Token 统计 ===========
-
-async function fetchTokenStats() {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const res = await fetch(`/api/agents/token-summary?date=${today}`);
-    const data = await res.json();
-    const statsMap: TokenStatsMap = {};
-    if (data.summary && Array.isArray(data.summary)) {
-      for (const item of data.summary) {
-        statsMap[item.agent_id] = {
-          total_tokens_input: item.total_tokens_input,
-          total_tokens_output: item.total_tokens_output,
-          total_cost: item.total_cost || 0,
-          message_count: item.message_count
-        };
-      }
-    }
-    tokenStatsMap.value = statsMap;
-  } catch (e) { console.error('获取 Token 统计失败', e); }
-}
-
-// =========== 最近消息模型 ===========
-
-async function fetchLatestAgentModels(): Promise<void> {
-  try {
-    const res = await fetch('/api/messages?limit=1000');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const msgs = data.messages ?? [];
-    const models: Record<string, string> = {};
-    for (const m of msgs) {
-      const sk = m.session_key || '';
-      const parts = sk.split(':');
-      const agentId = parts[1] && parts[0] === 'agent' ? parts[1] : null;
-      if (!agentId || !m.model) continue;
-      const ts = m.created_at || '';
-      const prev = models[agentId];
-      if (!prev || ts > prev.split('|')[0]) {
-        models[agentId] = ts + '|' + m.model;
-      }
-    }
-    const result: Record<string, string> = {};
-    for (const [k, v] of Object.entries(models)) {
-      result[k] = v.split('|')[1];
-    }
-    latestAgentModels.value = result;
-  } catch (e) {
-    console.error('获取最近模型失败', e);
-  }
-}
-
 // =========== 数据获取 ===========
 
 async function fetchAgentOverview() {
@@ -366,16 +248,13 @@ async function fetchAgentOverview() {
         delete agentRuntimeStates.value[id];
       }
     }
-    for (const id of Object.keys(agentTasksMap.value)) {
-      if (!currentIds.has(id)) delete agentTasksMap.value[id];
-    }
-    await fetchAllAgentTasks();
+    // 旧端点已废弃，不再调用 fetchAllAgentTasks
   } catch (e) { console.error('获取 Agent 概览失败', e); }
 }
 
 async function fetchAll(isLoading: boolean = false) {
   if (isLoading) loading.value = true;
-  await Promise.all([refreshModules(), fetchAgentOverview(), fetchTokenStats(), fetchLatestTask(), fetchLatestAgentModels()]);
+  await Promise.all([refreshModules(), fetchAgentOverview(), fetchLatestTask()]);
   if (isLoading) loading.value = false;
 }
 
@@ -385,7 +264,7 @@ onMounted(() => {
   refreshData();
   fetchAll(true);
   refreshTimer = setInterval(() => { refreshData(); refreshModules(); }, 5000);
-  agentRefreshTimer = setInterval(() => { fetchAgentOverview(); fetchTokenStats(); fetchLatestTask(); fetchLatestAgentModels(); }, 30000);
+  agentRefreshTimer = setInterval(() => { fetchAgentOverview(); fetchLatestTask(); }, 30000);
 });
 
 onUnmounted(() => {
@@ -412,47 +291,15 @@ onUnmounted(() => {
             :loading="loading"
           />
 
-          <!-- Agent 概览列表（保留在 Overview 内） -->
-          <div class="agent-list">
-            <div class="agent-item" :class="{ 'is-working': isWorkingStatus(agent.status) }"
-              v-for="agent in onlineAgents" :key="agent.agent_id">
-              <div class="agent-top">
-                <div class="avatar-wrapper" :class="{ 'is-working': isWorkingStatus(agent.status) }">
-                  <el-avatar v-if="getAvatarUrl(agent.avatar)" :size="36" :src="getAvatarUrl(agent.avatar)!"
-                    fit="cover" class="agent-avatar" />
-                  <el-avatar v-else :size="36" fit="cover" class="agent-avatar"
-                    style="color: var(--color-accent-blue); font-size: 14px;">
-                    {{ agent.agent_id.substring(0, 1).toUpperCase() }}
-                  </el-avatar>
-                  <span class="status-dot" :class="'status-dot--' + agent.status"></span>
-                </div>
-                <span class="agent-name">{{ agent.agent_name || agent.agent_id }}</span>
-                <el-tag size="small" effect="plain" class="agent-model-tag">
-                  {{ getAgentTokenDisplay(agent.agent_id) }}
-                </el-tag>
-              </div>
-              <div class="agent-model-name" v-if="latestAgentModels[agent.agent_id]">{{ latestAgentModels[agent.agent_id] }}</div>
+          <!-- 父任务进度条 -->
+          <ParentTaskProgress :parent-task="recentParentTask" :loading="loading" />
 
-              <!-- 任务 TODO 列表 -->
-              <div class="agent-todo-list">
-                <template v-if="getAgentActiveTasks(agent.agent_id).length > 0">
-                  <div
-                    class="todo-item" :class="'todo-item--' + task.status.toLowerCase()"
-                    v-for="task in getAgentActiveTasks(agent.agent_id)"
-                    :key="task.task_id"
-                  >
-                    <span class="todo-dot" :class="'todo-dot--' + task.status.toLowerCase()">
-                      <span v-if="task.status === 'DONE' || task.status === 'completed'" class="todo-checkmark">✓</span>
-                      <span v-else-if="task.status === 'IN_PROGRESS' || task.status === 'in_progress'" class="todo-spinner"></span>
-                    </span>
-                    <span class="todo-title" :title="task.title">{{ truncateTaskTitle(task.title) }}</span>
-                  </div>
-                </template>
-                <div v-else class="todo-empty">暂无任务</div>
-              </div>
-            </div>
-            <el-empty v-if="onlineAgents.length === 0" description="暂无在线 Agent" :image-size="40" />
-          </div>
+          <!-- Agent 任务树 -->
+          <AgentTaskTree
+            :agents="onlineAgents"
+            :parent-task="recentParentTask"
+            :loading="loading"
+          />
         </div>
 
         <!-- 右侧：最近会话（ChatTimeline） -->
@@ -572,107 +419,6 @@ onUnmounted(() => {
   font-size: 11px;
   color: var(--el-text-color-secondary);
   line-height: 1.6;
-}
-
-/* 任务列表 */
-.agent-item .agent-todo-list {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  margin-top: 8px;
-  padding-left: 8px;
-}
-
-.agent-item .todo-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--el-text-color-primary);
-}
-
-.agent-item .todo-item--todo .todo-title,
-.agent-item .todo-item--pending .todo-title {
-  color: var(--el-text-color-secondary);
-}
-
-.agent-item .todo-item--in_progress .todo-title,
-.agent-item .todo-item--in-progress .todo-title {
-  color: var(--el-color-primary);
-}
-
-.agent-item .todo-item--done .todo-title,
-.agent-item .todo-item--completed .todo-title {
-  text-decoration: line-through;
-  color: var(--el-text-color-placeholder);
-}
-
-/* Task dot/circle styles */
-.agent-item .todo-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-top: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  position: relative;
-}
-
-.agent-item .todo-dot--todo,
-.agent-item .todo-dot--pending {
-  border: 1.5px solid var(--el-text-color-placeholder);
-  background: transparent;
-}
-
-.agent-item .todo-dot--in_progress,
-.agent-item .todo-dot--in-progress {
-  border: 2px solid;
-  border-color: var(--el-color-primary) transparent var(--el-color-primary) var(--el-color-primary);
-  animation: todo-spin 0.8s linear infinite;
-  background: transparent;
-}
-
-.agent-item .todo-dot--done,
-.agent-item .todo-dot--completed {
-  border: 1.5px solid var(--el-text-color-placeholder);
-  background: transparent;
-  color: var(--el-color-success);
-}
-
-.agent-item .todo-checkmark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 0;
-  margin-top: -6px;
-  margin-left: 2px;
-}
-
-@keyframes todo-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.agent-item .todo-title {
-  word-break: break-word;
-}
-
-.agent-item .todo-empty {
-  font-size: 11px;
-  color: var(--el-text-color-placeholder);
-  text-align: center;
-  padding: 8px 4px;
 }
 
 /* 状态指示器 */

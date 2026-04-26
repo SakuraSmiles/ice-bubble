@@ -132,6 +132,55 @@ export function createTasksRouter(repository: TaskRepository, taskStorePath?: st
   });
 
   /**
+   * GET /api/tasks/workspace
+   * 获取工作台视图：最近更新的父任务，每个父任务按 agent_id 分组子任务，
+   * 每组分离 active（pending/in_progress）和 completed
+   */
+  router.get('/tasks/workspace', (_req: Request, res: Response) => {
+    try {
+      const parents = repository.findLatestParentTasks(3);
+
+      const result = parents.map(parent => {
+        const children = repository.findByParentId(parent.id);
+
+        // 按 agent_id 分组
+        const groups: Record<string, Task[]> = {};
+        for (const child of children) {
+          if (!groups[child.agent_id]) {
+            groups[child.agent_id] = [];
+          }
+          groups[child.agent_id].push(child);
+        }
+
+        // 构建 agent_groups
+        const agentGroups = Object.entries(groups).map(([agent_id, agentChildren]) => ({
+          agent_id,
+          active_children: agentChildren
+            .filter(c => c.status === 'pending' || c.status === 'in_progress')
+            .map(c => ({ id: c.id, title: c.title, status: c.status, updated_at: c.updated_at })),
+          completed_children: agentChildren
+            .filter(c => c.status === 'completed')
+            .map(c => ({ id: c.id, title: c.title, status: c.status, updated_at: c.updated_at }))
+        }));
+
+        return {
+          id: parent.id,
+          title: parent.title,
+          status: parent.status,
+          updated_at: parent.updated_at,
+          agent_groups: agentGroups
+        };
+      });
+
+      res.json({ parents: result });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error('GET /api/tasks/workspace failed', { error: msg });
+      res.status(500).json({ error: '获取工作台任务失败', code: 'WORKSPACE_TASKS_FAILED' });
+    }
+  });
+
+  /**
    * GET /api/tasks/latest
    * 获取所有非 completed 状态的任务，按 agent_id 分组
    */
