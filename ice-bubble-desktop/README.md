@@ -189,15 +189,28 @@ export const ADMIN_API_BASE = 'http://localhost:13000';
 
 ## API 调用
 
-desktop 通过 admin 模块获取数据：
+desktop 通过 Express 代理转发请求至 admin/task 服务：
 
-| API | 说明 |
-|-----|------|
-| GET /api/data/stats | 统计汇总 |
-| GET /api/data/sessions | 会话列表 |
-| GET /api/data/messages | 消息列表 |
-| GET /api/modules | 模块列表 |
-| GET /api/modules/:key/status | 模块状态 |
+| 方法 | 路径 | 目标服务 | 说明 |
+|------|------|---------|------|
+| GET | /api/stats | admin | 系统统计 |
+| GET | /api/sessions | admin | 会话列表 |
+| GET | /api/sessions/:key | admin | 会话详情 |
+| GET | /api/sessions/:key/messages | admin | 会话消息列表 |
+| GET | /api/messages | admin | 消息列表 |
+| GET | /api/messages/timeline | admin | 时间线消息（支持过滤） |
+| GET | /api/modules | admin | 模块列表 |
+| GET | /api/modules/:key/status | admin | 模块状态 |
+| GET | /api/modules/:key/config | admin | 模块配置 |
+| POST | /api/modules/test-connection | admin | 测试模块连接 |
+| POST | /api/modules | admin | 新增模块 |
+| PUT | /api/modules/:key | admin | 更新模块 |
+| DELETE | /api/modules/:key | admin | 删除模块 |
+| GET | /api/agents | admin | 成员列表 |
+| GET | /api/agents/with-activity | admin | 带活跃数据的成员列表 |
+| GET | /api/agents/token-summary | admin | Token 统计汇总 |
+| GET | /api/tasks/* | task | 任务相关接口（见 task 模块文档） |
+| GET | /api/agents/:agent_id/tasks | task | 成员关联的任务列表 |
 
 ---
 
