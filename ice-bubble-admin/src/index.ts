@@ -98,7 +98,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(10);  // 执行数据库迁移（v10: token_summary 改为每日聚合）
+    await dbManager.migrate(11);  // 执行数据库迁移（v10: token_summary 改为每日聚合）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 
@@ -137,6 +137,8 @@ export async function startAdmin(): Promise<void> {
         moduleKey: dataSyncConfig.moduleKey || 'collector-openclaw',
         pollInterval: dataSyncConfig.pollInterval || 60000,
         batchSize: dataSyncConfig.batchSize || 500,
+        taskApiBaseUrl: dataSyncConfig.taskApiBaseUrl,
+        subagentParserEnabled: dataSyncConfig.subagentParserEnabled,
       },
       dataRepository
     );

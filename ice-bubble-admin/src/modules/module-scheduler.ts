@@ -35,7 +35,16 @@ export interface ModuleStatus {
 
 // 前向声明，避免循环依赖
 import type { ModuleRepository } from '../storage/module-repository.js';
+import * as http from 'http';
+import * as https from 'https';
 import { Logger } from '../utils/logger.js';
+
+/**
+ * Per-request HTTP/HTTPS agent that bypasses proxy for localhost.
+ * Avoids mutating process.env.NO_PROXY which causes concurrency issues.
+ */
+const localAgent = new http.Agent({ keepAlive: true, noProxy: 'localhost,127.0.0.1' } as http.AgentOptions);
+const localAgentHttps = new https.Agent({ keepAlive: true, noProxy: 'localhost,127.0.0.1' } as https.AgentOptions);
 
 export class ModuleScheduler {
   private modules: ModuleEndpointConfig[] = [];
@@ -194,16 +203,9 @@ export class ModuleScheduler {
     const now = new Date().toISOString();
     const startTime = Date.now();
     try {
-      // 设置 NO_PROXY 避免代理问题
-      const originalNoProxy = process.env.NO_PROXY;
-      const current = process.env.NO_PROXY || '';
-      process.env.NO_PROXY = current ? `${current},localhost` : 'localhost';
-      
       const url = `${module.baseUrl.replace(/\/$/, '')}/api/meta/status`;
-      const response = await fetch(url);
-      
-      // 恢复 NO_PROXY
-      process.env.NO_PROXY = originalNoProxy;
+      const isHttps = url.startsWith('https://');
+      const response = await fetch(url, { agent: isHttps ? localAgentHttps : localAgent } as RequestInit);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -234,7 +236,7 @@ export class ModuleScheduler {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`[ModuleScheduler] 获取 ${module.moduleKey} 失败:`, { error: String(error) });
-      
+
       // 失败时：status=error/stopped, lastPollTime=now, lastError=错误信息
       if (this.repository) {
         await this.repository.saveModuleStatus(module.moduleKey, {
@@ -244,7 +246,7 @@ export class ModuleScheduler {
           latencyMs: 0,
         });
       }
-      
+
       return null;
     }
   }
@@ -283,16 +285,9 @@ export class ModuleScheduler {
     }
 
     try {
-      // 设置 NO_PROXY 避免代理问题
-      const originalNoProxy = process.env.NO_PROXY;
-      const current = process.env.NO_PROXY || '';
-      process.env.NO_PROXY = current ? `${current},localhost` : 'localhost';
-      
       const url = `${module.baseUrl.replace(/\/$/, '')}/api/meta/config`;
-      const response = await fetch(url);
-      
-      // 恢复 NO_PROXY
-      process.env.NO_PROXY = originalNoProxy;
+      const isHttps = url.startsWith('https://');
+      const response = await fetch(url, { agent: isHttps ? localAgentHttps : localAgent } as RequestInit);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);

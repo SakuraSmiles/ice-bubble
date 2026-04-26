@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../utils/index.js';
 import type { CollectorAgent } from '../data/collector-client.js';
+import { analyzeMessageMeta } from '../utils/message-meta.js';
 
 // ========== 类型定义 ==========
 
@@ -38,6 +39,7 @@ export interface AdminMessage {
   cost_total: number | null;
   cost_input: number | null;
   cost_output: number | null;
+  is_system_context?: number;
   timestamp: string;
   created_at: string;
   source_created_at: string | null;
@@ -87,120 +89,6 @@ export interface TimelineMessage {
   /** 消息使用的模型 */
   model: string | null;
   timestamp: string;
-}
-
-/**
- * 消息元信息（不存储在 DB，运行时计算）
- */
-interface MessageMeta {
-  is_cron: boolean;
-  is_system_noise: boolean;
-  clean_content: string;
-  content_summary: string;
-  source_channel: string | null;
-}
-
-function analyzeMessageMeta(msg: {
-  message_type: string;
-  content: string | null;
-  agent_name: string;
-}): MessageMeta {
-  const content = msg.content || '';
-  const meta: MessageMeta = {
-    is_cron: false,
-    is_system_noise: false,
-    clean_content: content,
-    content_summary: '',
-    source_channel: null,
-  };
-
-  if (msg.message_type === 'user') {
-    // 检测定时任务
-    if (content.startsWith('[cron:')) {
-      meta.is_cron = true;
-      meta.is_system_noise = true;
-      // 提取 cron 描述部分
-      const cronEnd = content.indexOf(']');
-      const afterCron = cronEnd > 0 ? content.substring(cronEnd + 1).trim() : content;
-      meta.clean_content = afterCron || content;
-    }
-    // 检测系统执行通知（System: / System(...) 格式）
-    else if (/^System[ :(]/.test(content) && content.length > 10) {
-      meta.is_system_noise = true;
-      // 去掉 System 前缀，保留实际内容
-      meta.clean_content = content.replace(/^System[ :]\([^)]*\)/g, '').replace(/^System[ :]/g, '').trim() || content.substring(0, 150);
-    }
-    // 检测 Sender metadata 块（webchat 消息编码）
-    else if (content.startsWith('Sender (untrusted metadata)')) {
-      // 提取 Sender metadata 中的 label 作为渠道
-      const senderMatch = content.match(/```json\s*\{[\s\S]*?"label"\s*:\s*"([^"]+)"[\s\S]*?\}\s*```/);
-      if (senderMatch) {
-        meta.source_channel = senderMatch[1];
-      }
-      // 去掉开头的 Sender metadata json 块
-      const pattern = /^Sender \(untrusted metadata\):\n```json\n[\s\S]*?\n```\n*\n*/;
-      const afterMeta = content.replace(pattern, '').trim();
-      // 再去掉时间头（如 [Sat 2026-04-11 23:04 GMT+8] 或 [Fri 22:42]）
-      const afterTime = afterMeta.replace(/^\[[^\]]+\]\s*/, '').trim();
-      meta.clean_content = afterTime || content;
-    }
-    // 检测 HEARTBEAT_OK / NO_REPLY
-    else if (content === 'HEARTBEAT_OK' || content === 'NO_REPLY') {
-      meta.is_system_noise = true;
-    }
-    // 检测 heartbeat 轮询（Read HEARTBEAT.md）
-    else if (/^Read HEARTBEAT\.md/.test(content)) {
-      meta.is_system_noise = true;
-      meta.clean_content = content.substring(0, 100);
-    }
-    // 检测异步执行命令完成/失败通知
-    else if (/^(Exec completed|Exec failed)/.test(content)) {
-      meta.is_system_noise = true;
-      meta.clean_content = content.substring(0, 100);
-    }
-    // 检测 git commit 输出 / 编译输出
-    else if (/^\[[a-z0-9]+\]/.test(content) &&
-             (/(added \d+ files?|modules transformed|built in)/.test(content) ||
-              /^(feat|fix|style|refactor|chore|docs|test)\(/ .test(content))) {
-      meta.is_system_noise = true;
-      meta.clean_content = content.substring(0, 100);
-    }
-  }
-
-  // 检测 agent 噪音
-  if (msg.message_type === 'agent') {
-    // 空回复（NO_REPLY / silent 模式）
-    if (!content || content === 'NULL' || content === '') {
-      meta.is_system_noise = true;
-      meta.clean_content = '';
-    }
-    // HEARTBEAT_OK
-    else if (content === 'HEARTBEAT_OK') {
-      meta.is_system_noise = true;
-      meta.clean_content = '';
-    }
-    // cron 轮询汇报（暂无活跃子任务 / 任务状态巡检完成 等）
-    else if (/^(暂无活跃子任务|任务状态巡检完成)/.test(content)) {
-      meta.is_system_noise = true;
-      meta.clean_content = content.substring(0, 100);
-    }
-  }
-  // 检测 tool 空回复
-  if (msg.message_type === 'tool' && (!content || content === 'NULL' || content === '' || content === '{}')) {
-    meta.is_system_noise = true;
-    meta.clean_content = '';
-  }
-
-  // 生成 content_summary
-  if (meta.clean_content) {
-    if (msg.message_type === 'tool') {
-      meta.content_summary = meta.clean_content.substring(0, 60) + (meta.clean_content.length > 60 ? '...' : '');
-    } else {
-      meta.content_summary = meta.clean_content.substring(0, 120);
-    }
-  }
-
-  return meta;
 }
 
 // ========== 数据仓库 ==========
@@ -595,8 +483,8 @@ export class DataRepository {
       INSERT OR IGNORE INTO admin_messages (
         source_id, source_module, session_key, message_type, content,
         model, tokens_input, tokens_output, cost_total, cost_input, cost_output,
-        timestamp, created_at, source_created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        is_system_context, timestamp, created_at, source_created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const now = new Date().toISOString();
@@ -619,6 +507,7 @@ export class DataRepository {
           row.cost_total ?? null,
           row.cost_input ?? null,
           row.cost_output ?? null,
+          row.is_system_context ?? 0,
           row.timestamp,
           now,
           row.source_created_at ?? null
@@ -1363,6 +1252,45 @@ export class DataRepository {
   }
 
   /**
+   * 增量更新 session 统计（仅对本次同步涉及的 session keys）
+   * 避免全表扫描，提升同步性能
+   * @param sessionKeys 本次同步涉及的 session key 列表
+   * @returns 更新涉及的 session 数量
+   */
+  computeSessionStatsIncremental(sessionKeys: string[]): number {
+    if (sessionKeys.length === 0) return 0;
+
+    let updated = 0;
+
+    const updateStmt = this.db.prepare(`
+      UPDATE admin_sessions
+      SET message_count = ?, first_message_at = ?, last_message_at = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE session_key = ?
+        AND (message_count != ? OR last_message_at != ? OR first_message_at IS NULL)
+    `);
+
+    const updateMany = this.db.transaction(() => {
+      for (const sessionKey of sessionKeys) {
+        const row = this.db.prepare(`
+          SELECT
+            COUNT(*) as message_count,
+            MIN(timestamp) as first_message_at,
+            MAX(timestamp) as last_message_at
+          FROM admin_messages
+          WHERE session_key = ?
+        `).get(sessionKey) as { message_count: number; first_message_at: string | null; last_message_at: string | null } | undefined;
+
+        if (!row) continue;
+        const result = updateStmt.run(row.message_count, row.first_message_at, row.last_message_at, sessionKey, row.message_count, row.last_message_at);
+        if (result.changes > 0) updated++;
+      }
+    });
+
+    updateMany();
+    return updated;
+  }
+
+  /**
    * 从 admin_messages 计算并更新每个 agent 的统计信息
    * - session_count: 独立会话数（不含 checkpoint）
    * - message_count: 消息总数（不含 checkpoint）
@@ -1414,6 +1342,52 @@ export class DataRepository {
 
     const updated = computeAndUpsert();
     logger.info(`[DataRepository] Agent stats computed: ${updated} agents updated`);
+    return updated;
+  }
+
+  /**
+   * 增量更新 agent 统计（仅对本次同步涉及的 agents）
+   * 避免全表扫描，提升同步性能
+   * @param agentIds 本次同步涉及的 agent id 列表
+   * @returns 更新涉及的 agent 数量
+   */
+  computeAgentStatsIncremental(agentIds: string[]): number {
+    if (agentIds.length === 0) return 0;
+
+    let updated = 0;
+
+    const updateStmt = this.db.prepare(`
+      UPDATE admin_agents
+      SET session_count = ?, message_count = ?, first_active_at = ?, last_active_at = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE agent_id = ?
+        AND (session_count != ? OR message_count != ? OR first_active_at != ? OR last_active_at != ? OR first_active_at IS NULL)
+    `);
+
+    const updateMany = this.db.transaction(() => {
+      for (const agentId of agentIds) {
+        const row = this.db.prepare(`
+          SELECT
+            COUNT(DISTINCT m.session_key) as session_count,
+            COUNT(*) as message_count,
+            MIN(m.timestamp) as first_active_at,
+            MAX(m.timestamp) as last_active_at
+          FROM admin_messages m
+          INNER JOIN admin_sessions s ON m.session_key = s.session_key
+          WHERE s.agent_id = ?
+            AND m.session_key NOT LIKE '%checkpoint%'
+        `).get(agentId) as { session_count: number; message_count: number; first_active_at: string | null; last_active_at: string | null } | undefined;
+
+        if (!row) continue;
+        const result = updateStmt.run(
+          row.session_count, row.message_count, row.first_active_at, row.last_active_at,
+          agentId,
+          row.session_count, row.message_count, row.first_active_at, row.last_active_at
+        );
+        if (result.changes > 0) updated++;
+      }
+    });
+
+    updateMany();
     return updated;
   }
 

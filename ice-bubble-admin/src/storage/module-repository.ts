@@ -27,6 +27,19 @@ const logger = new Logger('ModuleRepository');
 type SqlRow = Record<string, unknown>;
 
 /**
+ * ORDER BY 列名白名单（防止 SQL 注入）
+ */
+const SORT_BY_WHITELIST = new Set([
+    'updated_at',
+    'created_at',
+    'module_key',
+    'module_name',
+    'module_type',
+    'status',
+    'version',
+]);
+
+/**
  * 模块存储仓库（核心功能）
  */
 export class ModuleRepository {
@@ -114,8 +127,8 @@ export class ModuleRepository {
       const countResult = countStmt.get(...values) as { total: number };
       const total = countResult.total;
 
-      // 构建排序
-      const sortBy = params.sortBy || 'updated_at';
+      // 构建排序（白名单验证，防止 SQL 注入）
+      const sortBy = SORT_BY_WHITELIST.has(params.sortBy || '') ? params.sortBy : 'updated_at';
       const sortOrder = params.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
       // 获取分页数据

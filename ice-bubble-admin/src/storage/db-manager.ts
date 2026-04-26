@@ -379,6 +379,7 @@ export class DBManager {
           cost_total REAL,
           cost_input REAL,
           cost_output REAL,
+          is_system_context INTEGER NOT NULL DEFAULT 0,
           timestamp TIMESTAMP NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           source_created_at TIMESTAMP,
@@ -535,24 +536,42 @@ export class DBManager {
         break;
       case 3:
         // 迁移：给 admin_agents 表添加 model 字段
-        this.db.exec(`
-          ALTER TABLE admin_agents ADD COLUMN model TEXT;
-        `);
-        logger.info('Migration v3: added model column to admin_agents');
+        {
+          const colInfo = this.db.prepare('PRAGMA table_info(admin_agents)').all() as Array<{ name: string }>;
+          const hasModel = colInfo.some(col => col.name === 'model');
+          if (!hasModel) {
+            this.db.exec(`ALTER TABLE admin_agents ADD COLUMN model TEXT;`);
+            logger.info('Migration v3: added model column to admin_agents');
+          } else {
+            logger.info('Migration v3: model column already exists, skipping');
+          }
+        }
         break;
       case 4:
         // 迁移：给 admin_agents 表添加 avatar 字段
-        this.db.exec(`
-          ALTER TABLE admin_agents ADD COLUMN avatar TEXT;
-        `);
-        logger.info('Migration v4: added avatar column to admin_agents');
+        {
+          const colInfo = this.db.prepare('PRAGMA table_info(admin_agents)').all() as Array<{ name: string }>;
+          const hasAvatar = colInfo.some(col => col.name === 'avatar');
+          if (!hasAvatar) {
+            this.db.exec(`ALTER TABLE admin_agents ADD COLUMN avatar TEXT;`);
+            logger.info('Migration v4: added avatar column to admin_agents');
+          } else {
+            logger.info('Migration v4: avatar column already exists, skipping');
+          }
+        }
         break;
       case 5:
         // 迁移：给 admin_agents 表添加 source 字段
-        this.db.exec(`
-          ALTER TABLE admin_agents ADD COLUMN source TEXT DEFAULT 'openclaw';
-        `);
-        logger.info('Migration v5: added source column to admin_agents');
+        {
+          const colInfo = this.db.prepare('PRAGMA table_info(admin_agents)').all() as Array<{ name: string }>;
+          const hasSource = colInfo.some(col => col.name === 'source');
+          if (!hasSource) {
+            this.db.exec(`ALTER TABLE admin_agents ADD COLUMN source TEXT DEFAULT 'openclaw';`);
+            logger.info('Migration v5: added source column to admin_agents');
+          } else {
+            logger.info('Migration v5: source column already exists, skipping');
+          }
+        }
         break;
       // 可以添加更多版本的迁移逻辑
       case 6:
@@ -569,19 +588,32 @@ export class DBManager {
         break;
       case 7:
         // 迁移：给 admin_agents 表添加 workspace 字段
-        this.db.exec(`
-          ALTER TABLE admin_agents ADD COLUMN workspace TEXT;
-        `);
-        logger.info('Migration v7: added workspace column to admin_agents');
+        {
+          const colInfo = this.db.prepare('PRAGMA table_info(admin_agents)').all() as Array<{ name: string }>;
+          const hasWorkspace = colInfo.some(col => col.name === 'workspace');
+          if (!hasWorkspace) {
+            this.db.exec(`ALTER TABLE admin_agents ADD COLUMN workspace TEXT;`);
+            logger.info('Migration v7: added workspace column to admin_agents');
+          } else {
+            logger.info('Migration v7: workspace column already exists, skipping');
+          }
+        }
         break;
       case 8:
         // 迁移：给 admin_messages 表添加 token cost 字段
-        this.db.exec(`
-          ALTER TABLE admin_messages ADD COLUMN cost_total REAL;
-          ALTER TABLE admin_messages ADD COLUMN cost_input REAL;
-          ALTER TABLE admin_messages ADD COLUMN cost_output REAL;
-        `);
-        logger.info('Migration v8: added cost columns to admin_messages');
+        {
+          const colInfo = this.db.prepare('PRAGMA table_info(admin_messages)').all() as Array<{ name: string }>;
+          if (!colInfo.some(col => col.name === 'cost_total')) {
+            this.db.exec(`ALTER TABLE admin_messages ADD COLUMN cost_total REAL;`);
+          }
+          if (!colInfo.some(col => col.name === 'cost_input')) {
+            this.db.exec(`ALTER TABLE admin_messages ADD COLUMN cost_input REAL;`);
+          }
+          if (!colInfo.some(col => col.name === 'cost_output')) {
+            this.db.exec(`ALTER TABLE admin_messages ADD COLUMN cost_output REAL;`);
+          }
+          logger.info('Migration v8: added cost columns to admin_messages');
+        }
         break;
       case 9:
         // 迁移：创建 token_summary 表（token 统计聚合表）
@@ -641,6 +673,20 @@ export class DBManager {
           ALTER TABLE token_summary_new RENAME TO token_summary;
         `);
         logger.info('Migration v10: token_summary migrated to daily aggregation schema');
+        break;
+      case 11:
+        // 迁移：给 admin_messages 表添加 is_system_context 字段
+        // 安全检查：仅当列不存在时才执行（适用于 admin_messages 在 createTables 中已创建的情况）
+        const colInfo = this.db.prepare('PRAGMA table_info(admin_messages)').all() as Array<{ name: string }>;
+        const hasSystemContext = colInfo.some(col => col.name === 'is_system_context');
+        if (!hasSystemContext) {
+          this.db.exec(`
+            ALTER TABLE admin_messages ADD COLUMN is_system_context INTEGER NOT NULL DEFAULT 0;
+          `);
+          logger.info('Migration v11: added is_system_context column to admin_messages');
+        } else {
+          logger.info('Migration v11: is_system_context column already exists, skipping');
+        }
         break;
       default:
         logger.warn(`No migration defined for version ${version}`);
