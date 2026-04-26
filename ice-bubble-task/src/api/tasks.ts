@@ -28,6 +28,7 @@ export function createTasksRouter(repository: TaskRepository, taskStorePath?: st
    *   type?: string,        // type: TODO|LOOP|CHAIN|SUBAGENT
    *   description?: string,  // 任务描述
    *   parent_id?: string,   // 父任务 ID（可选）
+   *   idempotency_key?: string, // 幂等键（可选）
    * }
    */
   router.post('/tasks', (req: Request, res: Response) => {
@@ -37,7 +38,7 @@ export function createTasksRouter(repository: TaskRepository, taskStorePath?: st
     }
 
     try {
-      const { title, agent_id, priority, type, description, parent_id } = req.body;
+      const { title, agent_id, priority, type, description, parent_id, idempotency_key } = req.body;
 
       // 验证必填字段
       if (!title || !agent_id) {
@@ -63,13 +64,18 @@ export function createTasksRouter(repository: TaskRepository, taskStorePath?: st
         created_at: now,
         updated_at: now,
         terminated_by: null,
-        loop_target: null
+        loop_target: null,
+        idempotency_key: idempotency_key || undefined
       };
 
-      // 只写 SQLite；task-store.json 的同步由 OpenClaw skill 负责
-      repository.upsertTask(task);
+      // 幂等插入
+      const result = repository.upsertTask(task, idempotency_key);
 
-      res.status(201).json(task);
+      if (result.isNew) {
+        res.status(201).json(result.task);
+      } else {
+        res.status(200).json(result.task);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error('POST /api/tasks failed', { error: msg });
@@ -127,29 +133,26 @@ export function createTasksRouter(repository: TaskRepository, taskStorePath?: st
 
   /**
    * GET /api/tasks/latest
-   * 获取最新发布的父任务及其所有子任务
+   * 获取所有非 completed 状态的任务，按 agent_id 分组
    */
   router.get('/tasks/latest', (_req: Request, res: Response) => {
     try {
-      const parentTasks = repository.findParentTasks();
-      if (parentTasks.length === 0) {
-        res.json({ parent: null, subtasks: [], agents: {} });
-        return;
-      }
+      const allPending = repository.findTasks({ status: 'pending' });
+      const allInProgress = repository.findTasks({ status: 'in_progress' });
+      const allTasks: Task[] = [...allPending.tasks, ...allInProgress.tasks];
 
-      const latestParent = parentTasks[0];
-      const subtasks = repository.findByParentId(latestParent.id);
-
-      // 按 agent_id 分组
+      // 按 agent_id 分组，每个 agent 最多 5 个
       const agents: Record<string, Task[]> = {};
-      for (const subtask of subtasks) {
-        if (!agents[subtask.agent_id]) {
-          agents[subtask.agent_id] = [];
+      for (const task of allTasks) {
+        if (!agents[task.agent_id]) {
+          agents[task.agent_id] = [];
         }
-        agents[subtask.agent_id].push(subtask);
+        if (agents[task.agent_id].length < 5) {
+          agents[task.agent_id].push(task);
+        }
       }
 
-      res.json({ parent: latestParent, subtasks, agents });
+      res.json({ agents });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error('GET /api/tasks/latest failed', { error: msg });

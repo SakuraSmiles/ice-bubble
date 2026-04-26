@@ -9,15 +9,33 @@ export class TaskRepository {
   constructor(private db: Database.Database) {}
 
   /**
-   * 插入或替换任务（upsert by id）
+   * 根据 idempotency_key 查找任务
    */
-  upsertTask(task: TaskInsert): void {
+  findByIdempotencyKey(key: string): Task | null {
+    const row = this.db.prepare('SELECT * FROM tasks WHERE idempotency_key = ?').get(key) as Task | undefined;
+    return row ? this.rowToTask(row) : null;
+  }
+
+  /**
+   * 插入或更新任务（upsert by id）
+   * 支持幂等插入：如果传入了 idempotencyKey 且已存在，则返回现有任务
+   * @returns { task, isNew }
+   */
+  upsertTask(task: TaskInsert, idempotencyKey?: string): { task: Task; isNew: boolean } {
+    // 幂等检查
+    if (idempotencyKey) {
+      const existing = this.findByIdempotencyKey(idempotencyKey);
+      if (existing) {
+        return { task: existing, isNew: false };
+      }
+    }
+
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO tasks (
+      INSERT INTO tasks (
         id, title, status, priority, agent_id, type,
         parent_id, children_ids, description, loop_target,
-        created_at, updated_at, terminated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, updated_at, terminated_by, idempotency_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -33,20 +51,24 @@ export class TaskRepository {
       task.loop_target ?? null,
       task.created_at,
       task.updated_at,
-      task.terminated_by ?? null
+      task.terminated_by ?? null,
+      idempotencyKey ?? null
     );
+
+    return { task: this.rowToTask(task as Task), isNew: true };
   }
 
   /**
    * 批量 upsert
+   * 支持 idempotency_key 列，避免并发重复创建任务。
    */
   upsertTasks(tasks: TaskInsert[]): number {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO tasks (
         id, title, status, priority, agent_id, type,
         parent_id, children_ids, description, loop_target,
-        created_at, updated_at, terminated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, updated_at, terminated_by, idempotency_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertMany = this.db.transaction((items: TaskInsert[]) => {
@@ -64,7 +86,8 @@ export class TaskRepository {
           t.loop_target ?? null,
           t.created_at,
           t.updated_at,
-          t.terminated_by ?? null
+          t.terminated_by ?? null,
+          t.idempotency_key ?? null
         );
       }
     });

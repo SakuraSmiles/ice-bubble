@@ -50,6 +50,8 @@ export interface Task {
   updated_at: string;
   /** 被谁终止（null 表示正常结束） */
   terminated_by: string | null;
+  /** 幂等键 */
+  idempotency_key?: string;
 }
 
 /**
@@ -69,6 +71,8 @@ export interface TaskInsert {
   created_at: string;
   updated_at: string;
   terminated_by?: string | null;
+  /** 幂等键，用于防止重复创建任务 */
+  idempotency_key?: string;
 }
 
 /**

@@ -155,8 +155,23 @@ export class DBManager {
     this.db.prepare(`INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)`).run(version);
   }
 
-  private async executeVersionMigration(_version: number): Promise<void> {
-    // 预留扩展，当前版本无需迁移
+  private async executeVersionMigration(version: number): Promise<void> {
+    if (version === 2) {
+      await this.migrateV2();
+    }
+  }
+
+  private async migrateV2(): Promise<void> {
+    if (!this.db) throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+    // 添加 idempotency_key 列
+    this.db.exec(`
+      ALTER TABLE tasks ADD COLUMN idempotency_key TEXT;
+    `);
+    // 创建唯一索引（WHERE idempotency_key IS NOT NULL 允许 NULL 值重复）
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_idempotency_key ON tasks(idempotency_key) WHERE idempotency_key IS NOT NULL;
+    `);
+    logger.info('Migration v2 applied: added idempotency_key column and index');
   }
 
   async close(): Promise<void> {

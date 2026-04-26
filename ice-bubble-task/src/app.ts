@@ -65,7 +65,8 @@ export async function startTask(): Promise<void> {
     foreignKeys: config.database.foreignKeys,
     performance: config.database.performance,
   });
-  await dbManager.migrate(1);
+  // v1: initial schema, v2: idempotency_key column
+  await dbManager.migrate(2);
 
   const repository = new TaskRepository(dbManager.getConnection());
   logger.info('[Task] 数据库初始化完成', { dbPath });
