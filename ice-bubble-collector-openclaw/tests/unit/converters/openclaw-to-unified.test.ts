@@ -157,13 +157,13 @@ describe('openclaw-to-unified converter', () => {
       expect(result.messageType).toBe('agent');
       expect(result.content).toBe('我来帮你分析');
       expect(result.model).toBe('MiniMax-M2.7');
-      expect(result.tokens).toEqual({ input: 36, output: 78 });
+      expect(result.tokens).toMatchObject({ input: 36, output: 78 });
       expect(result.metadata?.provider).toBe('minimax-cn');
       expect(result.metadata?.api).toBe('anthropic-messages');
       expect(result.metadata?.stopReason).toBe('stop');
       expect(result.metadata?.responseId).toBe('resp-001');
-      expect(result.metadata?.totalTokens).toBe(13149);
-      expect(result.metadata?.cost).toBe(0.000135);
+      expect(result.tokens?.totalTokens).toBe(13149);
+      expect(result.tokens?.cost).toMatchObject({ total: 0.000135 });
     });
 
     it('应该正确处理带工具调用的 Assistant 消息', () => {
@@ -258,12 +258,10 @@ describe('openclaw-to-unified converter', () => {
       expect(result.messageType).toBe('tool');
       expect(result.content).toBe('file1.txt\nfile2.txt');
       expect(result.tools).toHaveLength(1);
-      expect(result.tools![0]).toEqual({
+      expect(result.tools![0]).toMatchObject({
         name: 'exec',
-        input: undefined,
         result: {
           status: 'completed',
-          approvalId: undefined,
           output: 'file1.txt\nfile2.txt',
         },
         durationMs: 150,

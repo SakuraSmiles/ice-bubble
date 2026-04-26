@@ -36,6 +36,24 @@ describe('FileCollector 可靠性功能', () => {
     agentsDir = path.join(tempDir, 'agents');
     fs.mkdirSync(agentsDir, { recursive: true });
 
+    // 创建 mock openclaw.json 配置（解决幽灵 agent 过滤问题）
+    const openclawConfig = {
+      agents: {
+        list: [
+          { id: 'dev', name: 'Dev Agent', workspace: tempDir },
+          { id: 'test-agent', name: 'Test Agent', workspace: tempDir },
+          { id: 'agent-0', name: 'Agent 0', workspace: tempDir },
+          { id: 'agent-1', name: 'Agent 1', workspace: tempDir },
+          { id: 'agent-2', name: 'Agent 2', workspace: tempDir },
+        ],
+      },
+    };
+    fs.writeFileSync(
+      path.join(tempDir, 'openclaw.json'),
+      JSON.stringify(openclawConfig, null, 2),
+      'utf-8'
+    );
+
     messages.length = 0;
     errors.length = 0;
 

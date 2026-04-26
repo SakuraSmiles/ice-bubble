@@ -12,9 +12,9 @@ import type { SessionMessage } from '../../../src/types';
 class MockSQLiteManager {
     public messages: SessionMessage[] = [];
 
-    async batchInsertMessages(messages: SessionMessage[]): Promise<number> {
+    async batchInsertMessages(messages: SessionMessage[]): Promise<{ inserted: number; duplicates: number }> {
         this.messages.push(...messages);
-        return messages.length;
+        return { inserted: messages.length, duplicates: 0 };
     }
 
     clear(): void {
@@ -98,7 +98,7 @@ describe('BatchWriter 简化测试', () => {
         await delay(100);
 
         expect(flushSpy).toHaveBeenCalledTimes(1);
-        expect(flushSpy).toHaveBeenCalledWith({ count: batchSize });
+        expect(flushSpy).toHaveBeenCalledWith({ count: batchSize, duplicates: 0 });
         console.log('✓ 测试 3 通过: 缓冲区满时自动刷新');
     });
 
@@ -139,7 +139,7 @@ describe('BatchWriter 简化测试', () => {
         await batchWriter.stop();
 
         expect(flushSpy).toHaveBeenCalledTimes(1);
-        expect(flushSpy).toHaveBeenCalledWith({ count: 2 });
+        expect(flushSpy).toHaveBeenCalledWith({ count: 2, duplicates: 0 });
         console.log('✓ 测试 5 通过: 启动和停止');
     });
 
@@ -176,7 +176,8 @@ describe('BatchWriter 简化测试', () => {
         await expect(batchWriter.flush()).rejects.toThrow('DB Error');
 
         const stats = batchWriter.getStats();
-        expect(stats.buffered).toBe(1);
+        expect(stats.buffered).toBe(0);
+        expect(stats.failedBuffered).toBe(1);
         expect(errorSpy).toHaveBeenCalled();
         console.log('✓ 测试 7 通过: 错误处理');
     });

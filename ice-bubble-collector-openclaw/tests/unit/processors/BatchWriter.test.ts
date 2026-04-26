@@ -32,9 +32,9 @@ class MockSQLiteManager {
         return this.messages.length;
     }
 
-    async batchInsertMessages(messages: SessionMessage[]): Promise<number> {
+    async batchInsertMessages(messages: SessionMessage[]): Promise<{ inserted: number; duplicates: number }> {
         this.messages.push(...messages);
-        return messages.length;
+        return { inserted: messages.length, duplicates: 0 };
     }
 
     clear(): void {
@@ -126,7 +126,7 @@ describe('BatchWriter', () => {
             await delay(100);
 
             expect(flushSpy).toHaveBeenCalledTimes(1);
-            expect(flushSpy).toHaveBeenCalledWith({ count: batchSize });
+            expect(flushSpy).toHaveBeenCalledWith({ count: batchSize, duplicates: 0 });
             expect(mockSQLiteManager.messages.length).toBe(batchSize);
         });
 
@@ -148,7 +148,7 @@ describe('BatchWriter', () => {
 
             // 第一次刷新 5 条，剩余 2 条
             expect(flushSpy).toHaveBeenCalledTimes(1);
-            expect(flushSpy).toHaveBeenCalledWith({ count: batchSize });
+            expect(flushSpy).toHaveBeenCalledWith({ count: batchSize, duplicates: 0 });
 
             const stats = batchWriter.getStats();
             expect(stats.buffered).toBe(2);
@@ -177,7 +177,7 @@ describe('BatchWriter', () => {
             await delay(flushInterval + 50);
 
             expect(flushSpy).toHaveBeenCalledTimes(1);
-            expect(flushSpy).toHaveBeenCalledWith({ count: 1 });
+            expect(flushSpy).toHaveBeenCalledWith({ count: 1, duplicates: 0 });
         });
 
         it('添加消息时应该重置定时器', async () => {
@@ -212,7 +212,7 @@ describe('BatchWriter', () => {
 
             // 现在应该刷新了
             expect(flushSpy).toHaveBeenCalledTimes(1);
-            expect(flushSpy).toHaveBeenCalledWith({ count: 2 });
+            expect(flushSpy).toHaveBeenCalledWith({ count: 2, duplicates: 0 });
         });
     });
 
@@ -254,7 +254,7 @@ describe('BatchWriter', () => {
             await batchWriter.flush();
 
             expect(flushSpy).toHaveBeenCalledTimes(1);
-            expect(flushSpy).toHaveBeenCalledWith({ count: 3 });
+            expect(flushSpy).toHaveBeenCalledWith({ count: 3, duplicates: 0 });
         });
     });
 
@@ -301,7 +301,7 @@ describe('BatchWriter', () => {
             await batchWriter.stop();
 
             expect(flushSpy).toHaveBeenCalledTimes(1);
-            expect(flushSpy).toHaveBeenCalledWith({ count: 2 });
+            expect(flushSpy).toHaveBeenCalledWith({ count: 2, duplicates: 0 });
         });
 
         it('重复 start 不应该创建多个定时器', () => {
@@ -405,9 +405,10 @@ describe('BatchWriter', () => {
             // 刷新应该抛错
             await expect(batchWriter.flush()).rejects.toThrow('DB Error');
 
-            // 缓冲区应该恢复
+            // 缓冲区应该恢复（消息移入 failedMessages 队列）
             const stats = batchWriter.getStats();
-            expect(stats.buffered).toBe(1);
+            expect(stats.buffered).toBe(0);
+            expect(stats.failedBuffered).toBe(1);
             expect(errorSpy).toHaveBeenCalled();
         });
 
@@ -441,15 +442,15 @@ describe('BatchWriter', () => {
             const errorSpy = vi.fn();
             batchWriter.on('error', errorSpy);
 
-            // 添加消息触发自动刷新（达到 batchSize=2 时自动触发）
+            // 手动调用 flush 来触发错误（模拟自动刷新失败）
             batchWriter.addMessage(createTestMessage());
             batchWriter.addMessage(createTestMessage());
 
-            // 等待异步错误处理完成
-            await delay(200);
-            
-            // 允许 unhandled rejection 在测试框架中被捕获
-            // 使用 try-catch 包裹以避免影响其他测试
+            // 等待 flush 完成（flush 会自动触发，因为 batchSize=2）
+            // 使用 catch 吞掉错误，因为 flush 失败会 throw
+            await delay(100);
+
+            // error 事件应该被触发
             expect(errorSpy).toHaveBeenCalled();
         });
     });
@@ -466,7 +467,7 @@ describe('BatchWriter', () => {
             batchWriter.addMessage(createTestMessage());
             await batchWriter.flush();
 
-            expect(flushSpy).toHaveBeenCalledWith({ count: 1 });
+            expect(flushSpy).toHaveBeenCalledWith({ count: 1, duplicates: 0 });
         });
 
         it('应该发送 error 事件', async () => {

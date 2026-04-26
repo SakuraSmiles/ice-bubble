@@ -32,6 +32,25 @@ describe('FileCollector', () => {
     // 创建临时数据库文件
     const dbPath = path.join(tempDir, 'test.db');
 
+    // 创建 mock openclaw.json 配置（解决幽灵 agent 过滤问题）
+    const openclawConfig = {
+      agents: {
+        list: [
+          { id: 'dev', name: 'Dev Agent', workspace: tempDir },
+          { id: 'agent-1', name: 'Agent 1', workspace: tempDir },
+          { id: 'agent-2', name: 'Agent 2', workspace: tempDir },
+          { id: 'agent-3', name: 'Agent 3', workspace: tempDir },
+          { id: 'empty-agent', name: 'Empty Agent', workspace: tempDir },
+          { id: 'my-agent', name: 'My Agent', workspace: tempDir },
+        ],
+      },
+    };
+    fs.writeFileSync(
+      path.join(tempDir, 'openclaw.json'),
+      JSON.stringify(openclawConfig, null, 2),
+      'utf-8'
+    );
+
     // 重置消息和错误记录
     messages.length = 0;
     errors.length = 0;

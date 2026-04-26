@@ -35,6 +35,41 @@ describe('FileCollector 集成测试', () => {
     agentsDir = path.join(tempDir, 'agents');
     fs.mkdirSync(agentsDir, { recursive: true });
 
+    // 创建 mock openclaw.json 配置（解决幽灵 agent 过滤问题）
+    const openclawConfig = {
+      agents: {
+        list: [
+          { id: 'dev', name: 'Dev Agent', workspace: tempDir },
+          { id: 'test-agent', name: 'Test Agent', workspace: tempDir },
+          { id: 'agent-0', name: 'Agent 0', workspace: tempDir },
+          { id: 'agent-1', name: 'Agent 1', workspace: tempDir },
+          { id: 'agent-2', name: 'Agent 2', workspace: tempDir },
+          { id: 'agent-3', name: 'Agent 3', workspace: tempDir },
+          { id: 'agent-4', name: 'Agent 4', workspace: tempDir },
+          { id: 'agent-5', name: 'Agent 5', workspace: tempDir },
+          { id: 'agent-6', name: 'Agent 6', workspace: tempDir },
+          { id: 'agent-7', name: 'Agent 7', workspace: tempDir },
+          { id: 'agent-8', name: 'Agent 8', workspace: tempDir },
+          { id: 'agent-9', name: 'Agent 9', workspace: tempDir },
+          { id: 'agent-10', name: 'Agent 10', workspace: tempDir },
+          { id: 'agent-11', name: 'Agent 11', workspace: tempDir },
+          { id: 'agent-12', name: 'Agent 12', workspace: tempDir },
+          { id: 'agent-13', name: 'Agent 13', workspace: tempDir },
+          { id: 'agent-14', name: 'Agent 14', workspace: tempDir },
+          { id: 'agent-15', name: 'Agent 15', workspace: tempDir },
+          { id: 'agent-16', name: 'Agent 16', workspace: tempDir },
+          { id: 'agent-17', name: 'Agent 17', workspace: tempDir },
+          { id: 'agent-18', name: 'Agent 18', workspace: tempDir },
+          { id: 'agent-19', name: 'Agent 19', workspace: tempDir },
+        ],
+      },
+    };
+    fs.writeFileSync(
+      path.join(tempDir, 'openclaw.json'),
+      JSON.stringify(openclawConfig, null, 2),
+      'utf-8'
+    );
+
     // 重置记录
     messages.length = 0;
     errors.length = 0;
@@ -206,7 +241,7 @@ describe('FileCollector 集成测试', () => {
       expect(messages[1].model).toBe('claude-3-5-sonnet');
       expect(messages[1].tools).toHaveLength(1);
       expect(messages[1].tools![0].name).toBe('exec');
-      expect(messages[1].tokens).toEqual({ input: 100, output: 200 });
+      expect(messages[1].tokens).toMatchObject({ input: 100, output: 200 });
 
       // 验证 Tool 消息
       expect(messages[2].tools![0].name).toBe('exec');
@@ -603,7 +638,7 @@ describe('FileCollector 集成测试', () => {
 
       // 验证 Agent 消息的详细信息
       expect(messages[1].model).toBe('MiniMax-M2.7');
-      expect(messages[1].tokens).toEqual({ input: 36, output: 78 });
+      expect(messages[1].tokens).toMatchObject({ input: 36, output: 78 });
       expect(messages[1].tools).toHaveLength(1);
       expect(messages[1].tools![0].name).toBe('exec');
 
