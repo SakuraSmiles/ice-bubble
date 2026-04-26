@@ -75,9 +75,13 @@ export class OpenClawCollector implements CollectorInterface {
         // 3. 采集状态变更
         const updates = store.statusUpdates || {};
         for (const [taskId, update] of Object.entries(updates)) {
-          this.repository.updateTaskStatus(taskId, update.status);
-          result.updated++;
-          // 采集后清除已同步的 statusUpdates（仅从内存对象删除）
+          const ok = this.repository.updateTaskStatus(taskId, update.status);
+          if (ok) {
+            result.updated++;
+          } else {
+            logger.warn(`Status update skipped for ${taskId}: no matching row in DB`);
+          }
+          // 无论成功与否都清除，避免重复消费
           delete store.statusUpdates[taskId];
         }
 
