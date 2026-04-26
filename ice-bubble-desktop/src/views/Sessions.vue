@@ -7,11 +7,13 @@ import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import ChatPanel from '../components/ChatPanel.vue';
 import type { Session } from '../components/SessionList.vue';
+import LoadingSkeleton from './components/LoadingSkeleton.vue';
 
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
 
 const allSessions = ref<Session[]>([]);
 const loading = ref(false);
+const refreshSpin = ref(false);
 const selectedSession = ref<Session | null>(null);
 const selectedSessionKey = ref<string | null>(null);
 const searchQuery = ref('');
@@ -120,6 +122,7 @@ function formatRelativeTime(dateString: string | null): string {
 
 async function fetchAllSessions() {
   loading.value = true;
+  refreshSpin.value = true;
   try {
     const data = await api.getSessions({ limit: 50 });
     allSessions.value = data.sessions || [];
@@ -134,6 +137,7 @@ async function fetchAllSessions() {
     ElMessage.error('获取会话列表失败: ' + (e.message || e));
   } finally {
     loading.value = false;
+    refreshSpin.value = false;
   }
 }
 
@@ -176,7 +180,7 @@ onUnmounted(() => {
   <div class="sessions-page">
     <PageHeader :title="'会话'" :subtitle="subtitle">
       <el-button circle size="small" :disabled="loading" @click="handleRefresh" title="刷新">
-        <el-icon><Refresh /></el-icon>
+        <el-icon :class="{ spinning: refreshSpin }"><Refresh /></el-icon>
       </el-button>
 
       <el-select
@@ -225,6 +229,11 @@ onUnmounted(() => {
         :session="selectedSession"
       />
 
+      <!-- 加载骨架屏 -->
+      <div v-else-if="loading" class="loading-skeleton-wrapper">
+        <LoadingSkeleton type="list" :rows="6" />
+      </div>
+
       <div v-else class="empty-state">
         <div class="empty-icon">💬</div>
         <div class="empty-text">请从右上角选择会话</div>
@@ -269,6 +278,14 @@ onUnmounted(() => {
   background: var(--el-bg-color);
 }
 
+.loading-skeleton-wrapper {
+  flex: 1;
+  padding: 16px;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+}
+
 .empty-icon {
   font-size: 48px;
   opacity: 0.5;
@@ -285,6 +302,17 @@ onUnmounted(() => {
   text-align: center;
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+
+/* 刷新按钮旋转动画 */
+:deep(.spinning) {
+  animation: spin 0.5s linear;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Dropdown option styles - with tree indent */

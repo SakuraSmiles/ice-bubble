@@ -14,6 +14,7 @@ interface TimelineMessage {
   content_summary: string | null;
   is_cron: boolean;
   is_system_noise: boolean;
+  is_system_context?: number | boolean;
   source_channel: string | null;
   model: string | null;
   timestamp: string;
@@ -226,6 +227,11 @@ onUnmounted(() => {
 
 defineExpose({ getMessages: () => messages.value });
 
+// =========== 过滤系统上下文消息 ===========
+const visibleMessages = computed(() =>
+  messages.value.filter(m => !m.is_system_context)
+);
+
 // =========== 消息分组 ===========
 type MsgGroup = {
   type: 'user' | 'agent';
@@ -242,7 +248,7 @@ const groupedMessages = computed(() => {
   const groups: MsgGroup[] = [];
   let current: MsgGroup | null = null;
 
-  for (const msg of messages.value) {
+  for (const msg of visibleMessages.value) {
     const role = msg.message_type === 'tool' ? 'agent' : msg.message_type;
     if (role === 'user') {
       // 用户消息独立成组

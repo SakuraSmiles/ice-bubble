@@ -5,7 +5,9 @@ import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
 import type { ModuleDTO } from '../api/client';
-import ChatTimeline from './components/ChatTimeline.vue';
+// 子组件
+import SystemHealth from './components/SystemHealth.vue';
+import RecentSessions from './components/RecentSessions.vue';
 
 
 // =========== 接口定义 ===========
@@ -19,6 +21,8 @@ interface AgentOverview {
   model: string | null;
   last_active_at: string;
   latest_message: string | null;
+  session_count?: number;
+  message_count?: number;
 }
 
 interface TokenStats {
@@ -53,6 +57,9 @@ const agentOverviewData = ref<{ agents: AgentOverview[] } | null>(null);
 /** Token 统计数据（今日） */
 const tokenStatsMap = ref<TokenStatsMap>({});
 
+/** 最近消息模型映射 */
+const latestAgentModels = ref<Record<string, string>>({});
+
 // =========== Task 模块相关 ===========
 
 type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE' | 'pending' | 'in_progress' | 'completed';
@@ -75,17 +82,6 @@ const agentTasksMap = ref<Record<string, AgentTasks>>({});
 // =========== 最新任务模块相关 ===========
 
 interface LatestTaskData {
-  parent: {
-    id: string;
-    title: string;
-    status: string;
-    priority: string;
-    agent_id: string;
-    type: string;
-    created_at: string;
-    updated_at: string;
-  } | null;
-  subtasks: TaskItem[];
   agents: Record<string, TaskItem[]>;
 }
 
@@ -111,7 +107,15 @@ async function fetchLatestTask(): Promise<void> {
   }
 }
 
-/** 获取 Agent 的活跃任务（最新非已完成，最多2条） */
+/** 截断任务标题，去除 Markdown 标记，最多 60 字符 */
+function truncateTaskTitle(title: string, maxLen: number = 35): string {
+  if (!title) return '';
+  const cleaned = title.replace(/^#+\s+/gm, '').trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  return cleaned.substring(0, maxLen) + '...';
+}
+
+/** 获取 Agent 的活跃任务（最新非已完成，最多5条） */
 function getAgentActiveTasks(agentId: string): TaskItem[] {
   if (!latestTaskData.value?.agents) return [];
   const tasks = latestTaskData.value.agents[agentId];
@@ -294,33 +298,6 @@ async function refreshModules(): Promise<void> {
   } catch (e) { console.error('获取模块列表失败:', e); }
 }
 
-function formatLatency(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-}
-
-function getLatencyColor(ms: number): string {
-  if (ms < 50) return 'var(--el-color-success)';
-  if (ms < 100) return 'var(--el-color-warning)';
-  return 'var(--el-color-danger)';
-}
-
-function getSuccessRateType(rate: number): string {
-  if (rate >= 99) return 'success';
-  if (rate >= 95) return 'warning';
-  return 'danger';
-}
-
-function getModuleLatency(mod: ModuleDTO): number { return mod.status?.latencyMs || 0; }
-const maxModuleLatency = ref(1);
-
-function getModuleLatencyWidth(mod: ModuleDTO): string {
-  const latency = getModuleLatency(mod);
-  return `${Math.min((latency / maxModuleLatency.value) * 100, 100)}%`;
-}
-
-const filteredModules = ref<ModuleDTO[]>([]);
-
 // =========== Token 统计 ===========
 
 async function fetchTokenStats() {
@@ -341,6 +318,36 @@ async function fetchTokenStats() {
     }
     tokenStatsMap.value = statsMap;
   } catch (e) { console.error('获取 Token 统计失败', e); }
+}
+
+// =========== 最近消息模型 ===========
+
+async function fetchLatestAgentModels(): Promise<void> {
+  try {
+    const res = await fetch('/api/messages?limit=1000');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const msgs = data.messages ?? [];
+    const models: Record<string, string> = {};
+    for (const m of msgs) {
+      const sk = m.session_key || '';
+      const parts = sk.split(':');
+      const agentId = parts[1] && parts[0] === 'agent' ? parts[1] : null;
+      if (!agentId || !m.model) continue;
+      const ts = m.created_at || '';
+      const prev = models[agentId];
+      if (!prev || ts > prev.split('|')[0]) {
+        models[agentId] = ts + '|' + m.model;
+      }
+    }
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(models)) {
+      result[k] = v.split('|')[1];
+    }
+    latestAgentModels.value = result;
+  } catch (e) {
+    console.error('获取最近模型失败', e);
+  }
 }
 
 // =========== 数据获取 ===========
@@ -368,7 +375,7 @@ async function fetchAgentOverview() {
 
 async function fetchAll(isLoading: boolean = false) {
   if (isLoading) loading.value = true;
-  await Promise.all([refreshModules(), fetchAgentOverview(), fetchTokenStats(), fetchLatestTask()]);
+  await Promise.all([refreshModules(), fetchAgentOverview(), fetchTokenStats(), fetchLatestTask(), fetchLatestAgentModels()]);
   if (isLoading) loading.value = false;
 }
 
@@ -378,7 +385,7 @@ onMounted(() => {
   refreshData();
   fetchAll(true);
   refreshTimer = setInterval(() => { refreshData(); refreshModules(); }, 5000);
-  agentRefreshTimer = setInterval(() => { fetchAgentOverview(); fetchTokenStats(); fetchLatestTask(); }, 30000);
+  agentRefreshTimer = setInterval(() => { fetchAgentOverview(); fetchTokenStats(); fetchLatestTask(); fetchLatestAgentModels(); }, 30000);
 });
 
 onUnmounted(() => {
@@ -388,14 +395,6 @@ onUnmounted(() => {
     if (s.streamTimer) { clearTimeout(s.streamTimer); s.streamTimer = null; }
   }
 });
-
-watch(moduleList, (newList) => {
-  const filtered = newList.filter((m: ModuleDTO) => m.moduleKey !== 'admin');
-  filteredModules.value = filtered;
-  if (filtered.length > 0) {
-    maxModuleLatency.value = Math.max(...filtered.map((m: ModuleDTO) => getModuleLatency(m)), 1);
-  }
-}, { immediate: true });
 </script>
 
 <template>
@@ -406,56 +405,14 @@ watch(moduleList, (newList) => {
       <div class="main-layout">
         <!-- 左侧面板 -->
         <div class="left-panel">
-          <!-- 延迟监控卡片 -->
-          <el-card class="latency-card" shadow="hover">
-            <template #header>
-              <div class="card-header">
-                <span>延迟监控</span>
-                <el-tag size="small" type="info">实时</el-tag>
-              </div>
-            </template>
-            <div class="latency-stats">
-              <div class="latency-stat">
-                <span class="label">前端→Admin</span>
-                <span class="value" :style="{ color: getLatencyColor(stats.avgLatency) }">
-                  {{ formatLatency(stats.avgLatency) }}
-                </span>
-              </div>
-              <div class="latency-stat">
-                <span class="label">延迟范围</span>
-                <span class="value small">
-                  {{ formatLatency(stats.minLatency) }} ~ {{ formatLatency(stats.maxLatency) }}
-                </span>
-              </div>
-              <div class="latency-stat">
-                <span class="label">成功率</span>
-                <el-tag :type="getSuccessRateType(stats.successRate)" size="small">
-                  {{ stats.successRate }}%
-                </el-tag>
-              </div>
-            </div>
-            <el-divider style="margin: 12px 0" />
-            <div class="module-section">
-              <div class="section-title">模块延迟</div>
-              <div class="module-list" v-if="filteredModules.length > 0">
-                <div class="module-item" v-for="mod in filteredModules" :key="mod.moduleKey">
-                  <span class="module-name">{{ mod.name }}</span>
-                  <div class="module-bar-wrapper">
-                    <div class="module-bar" :style="{
-                      width: getModuleLatencyWidth(mod),
-                      backgroundColor: getLatencyColor(getModuleLatency(mod))
-                    }"></div>
-                  </div>
-                  <span class="module-latency" :style="{ color: getLatencyColor(getModuleLatency(mod)) }">
-                    {{ formatLatency(getModuleLatency(mod)) }}
-                  </span>
-                </div>
-              </div>
-              <el-empty v-else description="暂无数据" :image-size="30" />
-            </div>
-          </el-card>
+          <!-- 系统健康状态（延迟监控 + 模块延迟） -->
+          <SystemHealth
+            :stats="stats"
+            :modules="moduleList"
+            :loading="loading"
+          />
 
-          <!-- Agent 概览列表 -->
+          <!-- Agent 概览列表（保留在 Overview 内） -->
           <div class="agent-list">
             <div class="agent-item" :class="{ 'is-working': isWorkingStatus(agent.status) }"
               v-for="agent in onlineAgents" :key="agent.agent_id">
@@ -474,12 +431,13 @@ watch(moduleList, (newList) => {
                   {{ getAgentTokenDisplay(agent.agent_id) }}
                 </el-tag>
               </div>
+              <div class="agent-model-name" v-if="latestAgentModels[agent.agent_id]">{{ latestAgentModels[agent.agent_id] }}</div>
 
               <!-- 任务 TODO 列表 -->
               <div class="agent-todo-list">
                 <template v-if="getAgentActiveTasks(agent.agent_id).length > 0">
                   <div
-                                        class="todo-item" :class="'todo-item--' + task.status.toLowerCase()"
+                    class="todo-item" :class="'todo-item--' + task.status.toLowerCase()"
                     v-for="task in getAgentActiveTasks(agent.agent_id)"
                     :key="task.task_id"
                   >
@@ -487,7 +445,7 @@ watch(moduleList, (newList) => {
                       <span v-if="task.status === 'DONE' || task.status === 'completed'" class="todo-checkmark">✓</span>
                       <span v-else-if="task.status === 'IN_PROGRESS' || task.status === 'in_progress'" class="todo-spinner"></span>
                     </span>
-                    <span class="todo-title">{{ task.title }}</span>
+                    <span class="todo-title" :title="task.title">{{ truncateTaskTitle(task.title) }}</span>
                   </div>
                 </template>
                 <div v-else class="todo-empty">暂无任务</div>
@@ -495,12 +453,11 @@ watch(moduleList, (newList) => {
             </div>
             <el-empty v-if="onlineAgents.length === 0" description="暂无在线 Agent" :image-size="40" />
           </div>
-
         </div>
 
-        <!-- 右侧：ChatTimeline -->
+        <!-- 右侧：最近会话（ChatTimeline） -->
         <div class="right-panel">
-          <ChatTimeline />
+          <RecentSessions :loading="loading" />
         </div>
       </div>
     </el-card>
@@ -556,108 +513,6 @@ watch(moduleList, (newList) => {
   overflow-y: auto;
 }
 
-/* 延迟监控卡片 */
-.latency-card {
-  flex-shrink: 0;
-}
-
-.latency-card :deep(.el-card__header) {
-  padding: 12px 16px;
-}
-
-.latency-card :deep(.el-card__body) {
-  padding: 12px 16px;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 600;
-}
-
-.latency-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.latency-stat {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.latency-stat .label {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.latency-stat .value {
-  font-size: 16px;
-  font-weight: 600;
-  font-family: var(--font-exo2);
-}
-
-.latency-stat .value.small {
-  font-size: 12px;
-}
-
-.module-section {
-  margin-top: 4px;
-}
-
-.section-title {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
-}
-
-.module-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.module-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.module-name {
-  width: 80px;
-  font-size: 11px;
-  color: var(--el-text-color-primary);
-  flex-shrink: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.module-bar-wrapper {
-  flex: 1;
-  height: 4px;
-  background: var(--el-fill-color);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.module-bar {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.3s ease, background-color 0.3s ease;
-}
-
-.module-latency {
-  width: 50px;
-  text-align: right;
-  font-size: 10px;
-  font-family: var(--font-exo2);
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
 /* Agent 列表 */
 .agent-list {
   display: flex;
@@ -711,7 +566,14 @@ watch(moduleList, (newList) => {
   border: 1px solid var(--el-border-color-extra-light);
 }
 
-/* 任务状态 */
+.agent-item .agent-model-name {
+  margin: 1px 0 0 44px;
+  font-family: var(--font-exo2);
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+}
+
 /* 任务列表 */
 .agent-item .agent-todo-list {
   flex: 1;
@@ -811,11 +673,6 @@ watch(moduleList, (newList) => {
   color: var(--el-text-color-placeholder);
   text-align: center;
   padding: 8px 4px;
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
 }
 
 /* 状态指示器 */

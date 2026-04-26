@@ -5,6 +5,7 @@ import { formatTime, formatRelativeTime, truncatePath, formatNumber } from '../u
 import { api, AgentWithActivityDTO } from '../api/client.ts';
 import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
+import LoadingSkeleton from './components/LoadingSkeleton.vue';
 
 interface ActivityDay {
   date: string;
@@ -13,6 +14,7 @@ interface ActivityDay {
 
 const agents = ref<AgentWithActivityDTO[]>([]);
 const loading = ref(false);
+const refreshSpin = ref(false);
 const totalAgents = ref(0);
 const totalSessions = ref(0);
 const totalMessages = ref(0);
@@ -276,6 +278,7 @@ async function fetchTokenStats() {
  */
 async function fetchAll(withActivity = true) {
   loading.value = true;
+  refreshSpin.value = true;
   try {
     await fetchAgentsBasic();
     if (withActivity) {
@@ -283,6 +286,7 @@ async function fetchAll(withActivity = true) {
     }
   } finally {
     loading.value = false;
+    refreshSpin.value = false;
   }
 }
 
@@ -324,13 +328,18 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   <div class="agents-page">
     <PageHeader title="成员" :subtitle="subtitle">
       <el-button circle size="small" :disabled="loading" @click="fetchAll(true)" title="刷新">
-        <el-icon><Refresh /></el-icon>
+        <el-icon :class="{ spinning: refreshSpin }"><Refresh /></el-icon>
       </el-button>
     </PageHeader>
 
     <el-card class="content-area" v-loading="loading">
       <div v-if="agents.length === 0 && !loading" class="empty-msg">暂无成员</div>
-      <div v-if="agents.length === 0 && loading" class="empty-msg">加载中...</div>
+
+      <!-- 加载骨架屏：成员卡片骨架 -->
+      <div v-if="agents.length === 0 && loading" class="loading-skeleton-area">
+        <LoadingSkeleton type="card" :rows="1" height="140px" v-for="i in 4" :key="i" />
+      </div>
+
       <div v-if="agents.length > 0" class="cards-grid">
         <el-card v-for="agent in agents" :key="agent.agent_id" class="agent-card">
           <div class="card-content">
@@ -492,6 +501,13 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   text-align: center;
   padding: 40px;
   color: var(--color-text-secondary);
+}
+
+.loading-skeleton-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
 }
 
 .cards-grid {
@@ -886,5 +902,16 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 
 .tooltip-count {
   color: rgba(255, 255, 255, 0.8);
+}
+
+/* 刷新按钮旋转动画 */
+:deep(.spinning) {
+  animation: spin 0.5s linear;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

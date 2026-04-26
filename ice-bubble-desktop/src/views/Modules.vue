@@ -29,6 +29,8 @@ interface Module {
 
 const modules = ref<Module[]>([]);
 const loading = ref(false);
+// 刷新按钮旋转动画状态
+const refreshSpin = ref(false);
 // 卡片级别的 loading 状态
 const cardLoading = ref<Record<string, boolean>>({});
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -114,7 +116,10 @@ const rules = {
 };
 
 async function fetchModules(showLoading = true) {
-  if (showLoading) loading.value = true;
+  if (showLoading) {
+    loading.value = true;
+    refreshSpin.value = true;
+  }
   error.value = '';
   try {
     const listData = await api.getModules();
@@ -142,6 +147,7 @@ async function fetchModules(showLoading = true) {
     error.value = e.message || '获取模块列表失败';
   } finally {
     loading.value = false;
+    refreshSpin.value = false;
   }
 }
 
@@ -384,7 +390,7 @@ onUnmounted(() => {
   <div class="modules-page">
     <PageHeader title="模块管理" subtitle="配置和管理模块信息">
       <el-button :disabled="loading" circle size="small" @click="fetchModules(true)">
-        <el-icon><Refresh /></el-icon>
+        <el-icon :class="{ spinning: refreshSpin }"><Refresh /></el-icon>
       </el-button>
       <el-button type="primary" circle size="small" @click="openAddDialog">
         <el-icon><Plus /></el-icon>
@@ -741,6 +747,17 @@ onUnmounted(() => {
   font-weight: 500;
   margin-top: -8px;
   padding-bottom: 4px;
+}
+
+/* 刷新按钮旋转动画 */
+:deep(.spinning) {
+  animation: spin 0.5s linear;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
 <style>
