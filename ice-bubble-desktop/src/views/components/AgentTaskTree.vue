@@ -177,13 +177,15 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
           </div>
 
           <!-- 展开的子任务列表 -->
-          <div class="tree-agent-children" v-if="isExpanded(agent.agent_id, agent)">
-            <AgentTodoList
-              :parent-task="parentTask"
-              :agents="[agent]"
-              :loading="loading"
-            />
-          </div>
+          <Transition name="tree-expand">
+            <div class="tree-agent-children" v-if="isExpanded(agent.agent_id, agent)">
+              <AgentTodoList
+                :parent-task="parentTask"
+                :agents="[agent]"
+                :loading="loading"
+              />
+            </div>
+          </Transition>
         </div>
       </div>
     </template>
@@ -364,18 +366,27 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
 
 /* 子任务展开区 */
 .tree-agent-children {
-  padding: 0;
-  animation: expand-in 0.2s ease-out;
+  margin-left: 16px;
+  padding-left: 12px;
+  border-left: 2px solid var(--el-border-color-extra-light);
 }
 
-@keyframes expand-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* 展开过渡动画 */
+.tree-expand-enter-active,
+.tree-expand-leave-active {
+  transition: opacity 0.2s ease, max-height 0.25s ease;
+  overflow: hidden;
+}
+
+.tree-expand-enter-from,
+.tree-expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
+.tree-expand-enter-to,
+.tree-expand-leave-from {
+  opacity: 1;
+  max-height: 200px;
 }
 </style>

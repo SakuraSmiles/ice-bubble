@@ -65,6 +65,22 @@ function getAgentTasks(agentId: string): TaskItem[] {
   return [...(group.active_children || []), ...(group.completed_children || [])];
 }
 
+/** 格式化相对时间 */
+function formatRelativeTime(isoStr: string | undefined): string {
+  if (!isoStr) return '';
+  const now = Date.now();
+  const then = new Date(isoStr).getTime();
+  const diff = now - then;
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return '刚刚';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h前`;
+  const days = Math.floor(hours / 24);
+  return `${days}d前`;
+}
+
 
 </script>
 
@@ -89,6 +105,7 @@ function getAgentTasks(agentId: string): TaskItem[] {
                 <span v-else-if="task.status === 'IN_PROGRESS' || task.status === 'in_progress'" class="todo-spinner"></span>
               </span>
               <span class="todo-title" :title="task.title">{{ truncateTaskTitle(task.title) }}</span>
+              <span v-if="task.status === 'DONE' || task.status === 'completed'" class="todo-time">{{ formatRelativeTime(task.updated_at) }}</span>
             </div>
           </template>
           <div v-else class="todo-empty">暂无任务</div>
@@ -206,6 +223,13 @@ function getAgentTasks(agentId: string): TaskItem[] {
 
 .todo-title {
   word-break: break-word;
+}
+
+.todo-time {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--el-text-color-placeholder);
+  flex-shrink: 0;
 }
 
 .todo-empty {

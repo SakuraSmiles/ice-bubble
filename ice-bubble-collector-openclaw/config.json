@@ -1,0 +1,10 @@
+{
+  "api": {
+    "enabled": true,
+    "port": 13100,
+    "host": "0.0.0.0"
+  },
+  "openclaw": {
+    "dataDir": "~/.openclaw"
+  }
+}

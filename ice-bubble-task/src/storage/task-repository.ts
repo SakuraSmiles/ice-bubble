@@ -178,7 +178,7 @@ export class TaskRepository {
    */
   findLatestParentTasks(limit: number = 3): Task[] {
     const rows = this.db.prepare(
-      "SELECT * FROM tasks WHERE parent_id IS NULL ORDER BY updated_at DESC LIMIT ?"
+      "SELECT * FROM tasks WHERE parent_id IS NULL AND status != 'cancelled' ORDER BY updated_at DESC LIMIT ?"
     ).all(limit) as Task[];
     return rows.map(r => this.rowToTask(r));
   }
