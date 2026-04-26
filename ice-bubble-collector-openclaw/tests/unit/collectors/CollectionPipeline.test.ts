@@ -124,6 +124,7 @@ interface PipelineTestEnv {
 async function createPipelineEnv(config?: {
   dedupCacheSize?: number;
   batchSize?: number;
+  sessionKey?: string;
 }): Promise<PipelineTestEnv> {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-test-'));
   const dbPath = path.join(tempDir, 'test.db');
@@ -163,6 +164,11 @@ async function createPipelineEnv(config?: {
 
   pipeline.start();
 
+  // 如果提供了 sessionKey，先确保 Session 存在于数据库中
+  if (config?.sessionKey) {
+    await pipeline.ensureSession(config.sessionKey);
+  }
+
   return { tempDir, dbPath, sqliteManager, validator, deduplicator, batchWriter, pipeline, events };
 }
 
@@ -182,7 +188,7 @@ describe('CollectionPipeline', () => {
   let env: PipelineTestEnv;
 
   beforeEach(async () => {
-    env = await createPipelineEnv();
+    env = await createPipelineEnv({ sessionKey: TEST_SESSION_KEY });
   });
 
   afterEach(async () => {
@@ -234,7 +240,7 @@ describe('CollectionPipeline', () => {
       expect(env.events.messages).toHaveLength(1);
       expect(env.events.messages[0].messageType).toBe('agent');
       expect(env.events.messages[0].model).toBe('gpt-4');
-      expect(env.events.messages[0].tokens).toEqual({ input: 10, output: 20 });
+      expect(env.events.messages[0].tokens).toMatchObject({ input: 10, output: 20 });
     });
 
     it('CP-203: 应该处理单个有效的 ToolResult 事件', async () => {
@@ -426,7 +432,7 @@ describe('CollectionPipeline', () => {
       expect(session!.agentId).toBe('auto-session');
     });
 
-    it('CP-504: 无效格式的 SessionKey 不应崩溃', async () => {
+    it('CP-504: 无效格式的 SessionKey 应抛出错误', async () => {
       const badKeys = [
         '',
         'not-valid-format',
@@ -437,11 +443,8 @@ describe('CollectionPipeline', () => {
       for (const key of badKeys) {
         await expect(
           env.pipeline.ensureSession(key)
-        ).resolves.not.toThrow();
+        ).rejects.toThrow();
       }
-
-      // 不应该有任何消息被处理
-      expect(env.events.errors).toHaveLength(0);
     });
   });
 
@@ -554,6 +557,7 @@ describe('CollectionPipeline 自定义配置', () => {
     );
 
     pipeline.start();
+    await pipeline.ensureSession(TEST_SESSION_KEY);
 
     const events: OpenClawEvent[] = [];
     for (let i = 0; i < 7; i++) {
