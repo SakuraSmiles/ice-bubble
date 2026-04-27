@@ -359,22 +359,19 @@ onUnmounted(() => {
 
           <!-- 数据状态 -->
           <div v-if="dataStatus" class="data-status">
-            <div class="data-status-title">⚡ 数据状态</div>
+            <div class="data-status-title">数据状态</div>
             <div class="data-status-rows">
               <div class="data-status-row">
-                <span class="data-status-icon">🔇</span>
                 <span class="data-status-label">今日过滤</span>
                 <span class="data-status-value is-number">{{ dataStatus.todayFiltered ?? 0 }}</span>
               </div>
               <div class="data-status-row">
-                <span class="data-status-icon">🗜️</span>
                 <span class="data-status-label">最近压缩</span>
                 <span class="data-status-value" :class="{ 'is-empty': !dataStatus.lastCompaction }">
                   {{ formatRelativeTime(dataStatus.lastCompaction) }}
                 </span>
               </div>
               <div class="data-status-row">
-                <span class="data-status-icon">💾</span>
                 <span class="data-status-label">最近记忆</span>
                 <span class="data-status-value" :class="{ 'is-empty': !dataStatus.lastMemoryFlush }">
                   {{ formatRelativeTime(dataStatus.lastMemoryFlush) }}
@@ -383,20 +380,20 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 父任务进度条 -->
-          <ParentTaskProgress
-            :parent-task="recentParentTask"
-            :agents="onlineAgents"
-            :loading="loading"
-          />
-
-          <!-- Agent 任务树（仅当有子任务时显示） -->
-          <AgentTaskTree
-            v-if="hasSubTasks"
-            :agents="onlineAgents"
-            :parent-task="recentParentTask"
-            :loading="loading"
-          />
+          <!-- 父任务 + 子任务（wrapper 容器） -->
+          <div v-if="recentParentTask" class="task-section">
+            <ParentTaskProgress
+              :parent-task="recentParentTask"
+              :agents="onlineAgents"
+              :loading="loading"
+            />
+            <AgentTaskTree
+              v-if="hasSubTasks"
+              :agents="onlineAgents"
+              :parent-task="recentParentTask"
+              :loading="loading"
+            />
+          </div>
         </div>
 
         <!-- 右侧：最近会话（ChatTimeline） -->
@@ -616,37 +613,67 @@ onUnmounted(() => {
 }
 
 .data-status-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .data-status-rows {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .data-status-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
 }
 
-.data-status-icon { font-size: 13px; flex-shrink: 0; }
 .data-status-label {
-  flex: 1;
   font-size: 12px;
-  color: var(--el-text-color-regular);
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
 }
+
 .data-status-value {
   font-size: 12px;
   font-weight: 600;
+  font-family: var(--font-exo2, ui-monospace, monospace);
   color: var(--el-text-color-primary);
-  flex-shrink: 0;
-  text-align: right;
 }
-.data-status-value.is-number { color: var(--el-color-primary); }
-.data-status-value.is-empty   { color: var(--el-text-color-placeholder); font-weight: 400; }
+
+.data-status-value.is-number {
+  color: var(--el-color-primary);
+}
+
+.data-status-value.is-empty {
+  color: var(--el-text-color-placeholder);
+  font-weight: 400;
+}
+
+/* ===== 父子任务 wrapper ===== */
+.task-section {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* 子任务区用背景色自然区分，无需分割线 */
+
+/* wrapper 内的 ParentTaskProgress 去掉自有边框 */
+.task-section .parent-task-progress {
+  border: none;
+  border-radius: 0;
+}
+
+/* AgentTaskTree 在 wrapper 内时去掉边框和圆角 */
+.task-section .tree-card {
+  border: none;
+  border-radius: 0;
+}
 </style>

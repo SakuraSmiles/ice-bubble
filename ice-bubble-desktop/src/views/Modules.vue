@@ -397,7 +397,7 @@ onUnmounted(() => {
       </el-button>
     </PageHeader>
 
-    <el-card class="content-area" v-loading="loading">
+    <div class="content-wrapper" v-loading="loading">
       <div v-if="error" class="error-msg">{{ error }}</div>
       <div v-if="!loading && modules.length === 0" class="empty-msg">暂无模块</div>
       <div v-if="!loading && modules.length > 0" class="cards-grid">
@@ -482,7 +482,7 @@ onUnmounted(() => {
           </div>
         </el-card>
       </div>
-    </el-card>
+    </div>
 
     <AppFooter />
 
@@ -590,9 +590,9 @@ onUnmounted(() => {
   margin: 0;
 }
 
-.content-area {
+.content-wrapper {
   flex: 1;
-  margin-bottom: 20px;
+  padding-bottom: 20px;
 }
 
 .cards-grid {

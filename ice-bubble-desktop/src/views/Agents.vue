@@ -332,7 +332,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
       </el-button>
     </PageHeader>
 
-    <el-card class="content-area" v-loading="loading">
+    <div v-loading="loading" class="content-wrapper">
       <div v-if="agents.length === 0 && !loading" class="empty-msg">暂无成员</div>
 
       <!-- 加载骨架屏：成员卡片骨架 -->
@@ -475,7 +475,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
           </div>
         </el-card>
       </div>
-    </el-card>
+    </div>
 
     <AppFooter />
   </div>
@@ -492,9 +492,9 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   min-height: calc(100vh - 1px);
 }
 
-.content-area {
+.content-wrapper {
   flex: 1;
-  margin-bottom: 20px;
+  padding: 0 0 20px 0;
 }
 
 .empty-msg {
@@ -514,12 +514,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  box-sizing: border-box;
-}
-
-.agent-card {
-  width: 100%;
+  padding: 0;
 }
 
 .agent-card:hover {

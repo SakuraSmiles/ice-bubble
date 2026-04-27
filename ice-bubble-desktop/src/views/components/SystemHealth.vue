@@ -100,7 +100,7 @@ watch(() => props.modules, (newList) => {
           </div>
         </div>
 
-        <el-divider style="margin: 12px 0" />
+        <el-divider style="margin: 8px 0" />
 
         <div class="module-section">
           <div class="section-title">模块延迟</div>
@@ -131,25 +131,30 @@ watch(() => props.modules, (newList) => {
 }
 
 .health-card :deep(.el-card__header) {
-  padding: 12px 16px;
+  padding: 10px 12px;
 }
 
 .health-card :deep(.el-card__body) {
-  padding: 12px 16px;
+  padding: 10px 12px;
+}
+
+.health-card :deep(.el-card) {
+  border: 1px solid var(--el-border-color-light);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  color: var(--el-text-color-secondary);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .health-stats {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .health-stat {
@@ -160,17 +165,24 @@ watch(() => props.modules, (newList) => {
 
 .health-stat .label {
   font-size: 12px;
+  font-weight: 400;
   color: var(--el-text-color-secondary);
+  line-height: 1.4;
 }
 
 .health-stat .value {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   font-family: var(--font-exo2);
+  color: var(--el-text-color-primary);
+  line-height: 1.4;
 }
 
 .health-stat .value.small {
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  line-height: 1.4;
 }
 
 .module-section {
@@ -179,14 +191,15 @@ watch(() => props.modules, (newList) => {
 
 .section-title {
   font-size: 12px;
+  font-weight: 400;
   color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .module-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .module-item {
@@ -197,8 +210,9 @@ watch(() => props.modules, (newList) => {
 
 .module-name {
   width: 80px;
-  font-size: 11px;
-  color: var(--el-text-color-primary);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
   flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -222,9 +236,10 @@ watch(() => props.modules, (newList) => {
 .module-latency {
   width: 50px;
   text-align: right;
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 600;
   font-family: var(--font-exo2);
-  font-weight: 500;
+  color: var(--el-text-color-primary);
   flex-shrink: 0;
 }
 

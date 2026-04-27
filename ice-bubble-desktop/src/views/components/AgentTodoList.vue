@@ -101,8 +101,7 @@ function formatRelativeTime(isoStr: string | undefined): string {
               :key="task.task_id"
             >
               <span class="todo-dot" :class="'todo-dot--' + task.status.toLowerCase()">
-                <span v-if="task.status === 'DONE' || task.status === 'completed'" class="todo-checkmark">✓</span>
-                <span v-else-if="task.status === 'IN_PROGRESS' || task.status === 'in_progress'" class="todo-spinner"></span>
+                <span v-if="task.status === 'IN_PROGRESS' || task.status === 'in_progress'" class="todo-spinner"></span>
               </span>
               <span class="todo-title" :title="task.title">{{ truncateTaskTitle(task.title) }}</span>
               <span v-if="task.status === 'DONE' || task.status === 'completed'" class="todo-time">{{ formatRelativeTime(task.updated_at) }}</span>
@@ -140,17 +139,23 @@ function formatRelativeTime(isoStr: string | undefined): string {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
-  padding-left: 8px;
+  gap: 8px;
 }
 
 .todo-item {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
   font-size: 11px;
   line-height: 1.4;
   color: var(--el-text-color-primary);
+  transition: background 0.15s;
+}
+
+.todo-item:hover {
+  background: var(--el-fill-color-lighter);
 }
 
 .todo-item--todo .todo-title,
@@ -170,11 +175,11 @@ function formatRelativeTime(isoStr: string | undefined): string {
 }
 
 .todo-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 4px;
+  margin-top: 5px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -186,6 +191,7 @@ function formatRelativeTime(isoStr: string | undefined): string {
 
 .todo-dot--todo,
 .todo-dot--pending {
+  opacity: 0.4;
   border: 1.5px solid var(--el-text-color-placeholder);
   background: transparent;
 }
@@ -200,20 +206,9 @@ function formatRelativeTime(isoStr: string | undefined): string {
 
 .todo-dot--done,
 .todo-dot--completed {
-  border: 1.5px solid var(--el-text-color-placeholder);
-  background: transparent;
-  color: var(--el-color-success);
-}
-
-.todo-checkmark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 0;
-  margin-top: -6px;
-  margin-left: 2px;
+  background: var(--el-color-success);
+  border: none;
+  color: white;
 }
 
 @keyframes todo-spin {
@@ -222,12 +217,17 @@ function formatRelativeTime(isoStr: string | undefined): string {
 }
 
 .todo-title {
-  word-break: break-word;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .todo-time {
   margin-left: auto;
-  font-size: 10px;
+  padding-left: 8px;
+  font-size: 11px;
   color: var(--el-text-color-placeholder);
   flex-shrink: 0;
 }
@@ -236,6 +236,8 @@ function formatRelativeTime(isoStr: string | undefined): string {
   font-size: 11px;
   color: var(--el-text-color-placeholder);
   text-align: center;
-  padding: 8px 4px;
+  padding: 14px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
 }
 </style>

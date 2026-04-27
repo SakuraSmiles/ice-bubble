@@ -126,17 +126,6 @@ const statusTags = computed(() => {
   <el-skeleton v-if="loading" :rows="1" animated style="padding: 10px; background: var(--el-fill-color-light); border-radius: 6px;" />
   <div v-else-if="parentTask" class="parent-task-progress">
     <div class="parent-task-title">{{ truncateTaskTitle(parentTask.title, 35) }}</div>
-    <div class="progress-row">
-      <div class="progress-dots">
-        <span
-          v-for="(tag, i) in statusTags"
-          :key="i"
-          class="dot"
-          :class="{ done: tag.done }"
-        />
-      </div>
-      <span class="progress-label">{{ progressLabel }}</span>
-    </div>
     <!-- 涉及的 Agent 头像（半堆叠效果） -->
     <div v-if="involvedAgents.length > 0" class="agent-avatars">
       <img
@@ -150,12 +139,23 @@ const statusTags = computed(() => {
         @error="($event.target as HTMLImageElement).style.display='none'"
       />
     </div>
+    <div class="progress-row">
+      <div class="progress-dots">
+        <span
+          v-for="(tag, i) in statusTags"
+          :key="i"
+          class="dot"
+          :class="{ done: tag.done }"
+        />
+      </div>
+      <span class="progress-label">{{ progressLabel }}</span>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .parent-task-progress {
-  padding: 10px;
+  padding: 14px 16px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
@@ -167,9 +167,9 @@ const statusTags = computed(() => {
 }
 
 .parent-task-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--el-text-color-secondary);
   margin-bottom: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -185,14 +185,14 @@ const statusTags = computed(() => {
 .progress-dots {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
   flex-wrap: wrap;
 }
 
 .dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--el-border-color-lighter);
   transition: background 0.25s ease, transform 0.2s ease;
@@ -204,7 +204,7 @@ const statusTags = computed(() => {
 }
 
 .progress-label {
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-exo2, monospace);
   color: var(--el-text-color-placeholder);
   flex-shrink: 0;
@@ -215,8 +215,8 @@ const statusTags = computed(() => {
 .agent-avatars {
   display: flex;
   align-items: center;
-  margin-top: 8px;
-  padding-left: 2px;
+  margin-bottom: 6px;
+  padding-left: 0;
 }
 
 .agent-avatar-stack {

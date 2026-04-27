@@ -140,6 +140,7 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
     <!-- 主体内容 -->
     <template v-else>
       <!-- Agent 列表 -->
+      <div class="tree-card">
       <div class="tree-list">
         <div
           class="tree-agent-row"
@@ -188,6 +189,7 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
           </Transition>
         </div>
       </div>
+      </div>
     </template>
   </div>
 </template>
@@ -199,6 +201,14 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
   flex-direction: column;
   gap: 0;
   background: transparent;
+}
+
+/* 与 ParentTaskProgress 无缝拼接的卡片 */
+.tree-card {
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color-light);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
 }
 
 /* 骨架屏 */
@@ -272,8 +282,8 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 12px;
+  height: 32px;
+  padding: 0 14px;
   cursor: pointer;
   user-select: none;
   transition: background 0.15s;
@@ -299,8 +309,8 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
   display: block;
   width: 5px;
   height: 5px;
-  border-right: 1.5px solid var(--el-text-color-placeholder);
-  border-bottom: 1.5px solid var(--el-text-color-placeholder);
+  border-right: 2px solid var(--el-text-color-secondary);
+  border-bottom: 2px solid var(--el-text-color-secondary);
   transform: rotate(-45deg);
   transition: transform 0.2s ease;
 }
@@ -311,9 +321,9 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
 
 /* Agent 名称 */
 .agent-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--el-text-color-secondary);
   flex: none;
   margin-right: auto;
   max-width: 120px;
@@ -366,9 +376,10 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
 
 /* 子任务展开区 */
 .tree-agent-children {
-  margin-left: 16px;
-  padding-left: 12px;
-  border-left: 2px solid var(--el-border-color-extra-light);
+  padding: 8px 14px;
+  background: var(--el-bg-color);
+  border-radius: 8px;
+  margin: 6px 14px;
 }
 
 /* 展开过渡动画 */
@@ -387,6 +398,6 @@ function isExpanded(agentId: string, agent: AgentOverview): boolean {
 .tree-expand-enter-to,
 .tree-expand-leave-from {
   opacity: 1;
-  max-height: 200px;
+  max-height: 600px;
 }
 </style>
