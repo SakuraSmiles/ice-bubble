@@ -227,6 +227,31 @@ export class SQLiteManager {
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+
+        // 7. session_messages_archive 表（30天消息归档）
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS session_messages_archive (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_id INTEGER,
+                message_id TEXT,
+                session_key TEXT NOT NULL,
+                message_type TEXT NOT NULL,
+                content TEXT,
+                model TEXT,
+                tokens_input INTEGER,
+                tokens_output INTEGER,
+                cost_total REAL,
+                cost_input REAL,
+                cost_output REAL,
+                tools_json TEXT,
+                timestamp TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(session_key, source_id)
+            );
+        `);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_archive_session ON session_messages_archive(session_key)`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_archive_timestamp ON session_messages_archive(timestamp)`);
     }
 
     /**
@@ -604,17 +629,18 @@ export class SQLiteManager {
 
                     sqliteLogger.debug(`批次 ${i + 1}/${batches.length} 插入成功: ${inserted} 条消息`);
 
-                } catch (error: any) {
+                } catch (error: unknown) {
                     retryCount++;
+                    const err = error instanceof Error ? error : new Error(String(error));
                     
-                    if (error.code === 'SQLITE_BUSY' && retryCount <= maxRetries) {
+                    if (err.message === 'SQLITE_BUSY' && retryCount <= maxRetries) {
                         // 数据库忙，等待后重试
                         const delay = Math.min(100 * Math.pow(2, retryCount), 1000); // 指数退避
                         sqliteLogger.warn(`批次 ${i + 1} 数据库忙，等待 ${delay}ms 后重试 (${retryCount}/${maxRetries})`);
                         await new Promise(resolve => setTimeout(resolve, delay));
                     } else {
                         // 其他错误或重试次数用尽
-                        sqliteLogger.error(`批次 ${i + 1} 插入失败`, error);
+                        sqliteLogger.error(`批次 ${i + 1} 插入失败`, err);
                         throw new SQLiteError(
                             `Failed to insert batch ${i + 1} after ${retryCount} retries`,
                             'SQLITE_BATCH_INSERT_FAILED',
@@ -1093,5 +1119,123 @@ export class SQLiteManager {
                 error
             );
         }
+    }
+
+    // ========== Data Archival (30-day retention) ==========
+
+    /**
+     * 归档超过指定天数的消息到 archive 表
+     * 幂等：只归档尚未归档的数据
+     * @param daysToKeep 保留天数，默认 30
+     * @returns 归档的消息数量
+     */
+    archiveOldMessages(daysToKeep: number = 30): number {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+        const cutoffISO = cutoffDate.toISOString();
+
+        sqliteLogger.info(`[SQLiteManager] Archiving messages older than ${cutoffISO}`);
+
+        const archive = this.db.transaction(() => {
+            // 1. 查找需要归档的消息（不在 archive 中）
+            const toArchive = this.db.prepare(`
+                SELECT * FROM session_messages
+                WHERE timestamp < ?
+                  AND id NOT IN (SELECT source_id FROM session_messages_archive WHERE source_id IS NOT NULL)
+            `).all(cutoffISO) as SqlRow[];
+
+            if (toArchive.length === 0) {
+                sqliteLogger.info('[SQLiteManager] No messages to archive');
+                return 0;
+            }
+
+            sqliteLogger.info(`[SQLiteManager] Found ${toArchive.length} messages to archive`);
+
+            // 2. 插入到 archive 表
+            const insertArchive = this.db.prepare(`
+                INSERT OR IGNORE INTO session_messages_archive (
+                  source_id, message_id, session_key, message_type, content,
+                  model, tokens_input, tokens_output, cost_total, cost_input, cost_output,
+                  tools_json, timestamp, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `);
+
+            for (const msg of toArchive) {
+                insertArchive.run(
+                    msg.id, msg.message_id, msg.session_key, msg.message_type, msg.content,
+                    msg.model, msg.tokens_input, msg.tokens_output, msg.cost_total, msg.cost_input, msg.cost_output,
+                    msg.tools_json, msg.timestamp, msg.created_at
+                );
+            }
+
+            // 3. 从主表删除已归档的消息
+            const sourceIds = toArchive.map(m => m.id).filter(id => id !== undefined);
+            if (sourceIds.length > 0) {
+                const placeholders = sourceIds.map(() => '?').join(',');
+                const deleted = this.db.prepare(
+                    `DELETE FROM session_messages WHERE id IN (${placeholders})`
+                ).run(...sourceIds);
+                sqliteLogger.info(`[SQLiteManager] Deleted ${deleted.changes} messages from main table`);
+            }
+
+            return toArchive.length;
+        });
+
+        const count = archive();
+        if (count > 0) {
+            this.db.exec('VACUUM');
+        }
+        sqliteLogger.info(`[SQLiteManager] Archived ${count} messages`);
+        return count;
+    }
+
+    /**
+     * 执行数据库 VACUUM
+     */
+    vacuumIfNeeded(): void {
+        if (!this.db) return;
+        try {
+            this.db.exec('VACUUM');
+            sqliteLogger.info('[SQLiteManager] VACUUM completed after archival');
+        } catch (error) {
+            sqliteLogger.warn('[SQLiteManager] VACUUM failed:', { error: String(error) });
+        }
+    }
+
+    /**
+     * 启动每日归档定时器（每天凌晨 3 点）
+     * @param daysToKeep 保留天数，默认 30
+     * @param onComplete 归档完成回调
+     */
+    startArchiveScheduler(daysToKeep: number = 30, onComplete?: (count: number) => void): void {
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+        const runArchive = () => {
+            try {
+                const count = this.archiveOldMessages(daysToKeep);
+                onComplete?.(count);
+            } catch (error) {
+                sqliteLogger.error('[SQLiteManager] Scheduled archive failed:', { error: String(error) });
+            }
+        };
+
+        // 计算到次日凌晨 3 点的毫秒数
+        const now = new Date();
+        const next3AM = new Date(now);
+        next3AM.setHours(3, 0, 0, 0);
+        if (next3AM <= now) next3AM.setDate(next3AM.getDate() + 1);
+        const initialDelay = next3AM.getTime() - now.getTime();
+
+        sqliteLogger.info(`[SQLiteManager] Archive scheduler will first run at ${next3AM.toISOString()} (in ${Math.round(initialDelay / 1000 / 60)}min), then every 24h`);
+
+        // 初始延迟后执行一次，之后每 24 小时执行
+        setTimeout(() => {
+            runArchive();
+            setInterval(runArchive, MS_PER_DAY);
+        }, initialDelay);
     }
 }

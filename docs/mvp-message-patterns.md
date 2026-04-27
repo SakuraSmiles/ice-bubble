@@ -1,3 +1,5 @@
+> ⚠️ 本文档标记于 2026-04，可能与当前实现不一致，仅供参考
+
 # MVP 消息格式分析与正则匹配规则
 
 > 基于 Collector API (`http://localhost:13100/api/data/messages`) 实际返回数据编写

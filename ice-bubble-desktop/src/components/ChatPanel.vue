@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
 import MarkdownContent from './MarkdownContent.vue';
+import EmptyState from './EmptyState.vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../api/client.ts';
@@ -150,10 +151,7 @@ defineExpose({ fetchMessages });
     </div>
 
     <!-- 空状态 -->
-    <div v-if="!session" class="empty-state">
-      <div class="empty-icon">💬</div>
-      <div class="empty-text">选择左侧会话查看聊天记录</div>
-    </div>
+    <EmptyState v-if="!session" icon="💬" title="选择左侧会话查看聊天记录" />
 
     <!-- 消息区域 -->
     <template v-else>
@@ -177,9 +175,7 @@ defineExpose({ fetchMessages });
         </div>
 
         <!-- 无消息 -->
-        <div class="empty-messages" v-if="!loading && messages.length === 0 && !error">
-          暂无消息记录
-        </div>
+        <EmptyState v-if="!loading && messages.length === 0 && !error" icon="💬" title="暂无消息记录" />
 
         <!-- 消息气泡 -->
         <div class="messages-list">

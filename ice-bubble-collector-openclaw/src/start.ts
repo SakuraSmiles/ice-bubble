@@ -85,6 +85,10 @@ async function start() {
     startLogger.info('✅ HTTP API 已启动\n');
   }
 
+  // 启动每日归档调度器（凌晨 3 点执行，保留 30 天数据）
+  collector.startArchiveScheduler(30);
+  startLogger.info('✅ 数据归档调度器已启动\n');
+
   startLogger.info('💡 提示: 按 Ctrl+C 停止采集器\n');
 
   // ==================== 6. 优雅关闭 ====================

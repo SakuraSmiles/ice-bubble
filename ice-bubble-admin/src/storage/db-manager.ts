@@ -368,7 +368,7 @@ export class DBManager {
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS admin_messages (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          source_id INTEGER,
+          source_id TEXT NOT NULL DEFAULT '',
           source_module TEXT NOT NULL,
           session_key TEXT NOT NULL,
           message_type TEXT,
@@ -389,6 +389,31 @@ export class DBManager {
         CREATE INDEX IF NOT EXISTS idx_admin_messages_session ON admin_messages(session_key);
         CREATE INDEX IF NOT EXISTS idx_admin_messages_timestamp ON admin_messages(timestamp);
         CREATE INDEX IF NOT EXISTS idx_admin_messages_type ON admin_messages(message_type);
+      `);
+
+      // 11b. 数据管理 - tool_calls 表（存储 tool 类型消息，独立归档策略）
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS admin_tool_calls (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_id TEXT NOT NULL DEFAULT '',
+          source_module TEXT NOT NULL DEFAULT '',
+          session_key TEXT NOT NULL,
+          message_type TEXT NOT NULL DEFAULT 'tool',
+          content TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          model TEXT,
+          tokens_input INTEGER DEFAULT 0,
+          tokens_output INTEGER DEFAULT 0,
+          cost_total REAL,
+          cost_input REAL,
+          cost_output REAL,
+          metadata TEXT,
+          UNIQUE(source_module, source_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON admin_tool_calls(session_key);
+        CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON admin_tool_calls(created_at);
+        CREATE INDEX IF NOT EXISTS idx_tool_calls_type ON admin_tool_calls(message_type);
       `);
 
       // 12. 数据管理 - agents 表（聚合 agent 统计数据）
@@ -686,6 +711,156 @@ export class DBManager {
           logger.info('Migration v11: added is_system_context column to admin_messages');
         } else {
           logger.info('Migration v11: is_system_context column already exists, skipping');
+        }
+        break;
+      case 12:
+        // 迁移 v12:
+        // 1. 创建 admin_messages_archive 表
+        // 2. 修复 admin_messages.source_id 的 UNIQUE 约束问题（NULL 值导致约束失效）
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS admin_messages_archive (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id INTEGER,
+            source_module TEXT NOT NULL,
+            session_key TEXT NOT NULL,
+            message_type TEXT,
+            content TEXT,
+            model TEXT,
+            tokens_input INTEGER,
+            tokens_output INTEGER,
+            cost_total REAL,
+            cost_input REAL,
+            cost_output REAL,
+            is_system_context INTEGER NOT NULL DEFAULT 0,
+            timestamp TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            source_created_at TIMESTAMP,
+            archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(session_key, source_id)
+          );
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_archive_session ON admin_messages_archive(session_key);
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_archive_timestamp ON admin_messages_archive(timestamp);
+        `);
+        logger.info('Migration v12: created admin_messages_archive table');
+        break;
+      case 13:
+        // 迁移 v13: 修复 admin_messages.source_id UNIQUE 约束问题
+        // SQLite UNIQUE(session_key, source_id) 中 NULL 值不被约束保护（NULL ≠ NULL），
+        // 导致同一 session_key 可插入多条 source_id=NULL 的消息。
+        // 修复：将 source_id 改为 NOT NULL DEFAULT ''，使 UNIQUE 约束正常工作。
+        {
+          // 检查是否需要迁移（仅当存在 NULL source_id 时才需要重建表）
+          const nullCount = this.db.prepare(
+            'SELECT COUNT(*) as cnt FROM admin_messages WHERE source_id IS NULL'
+          ).get() as { cnt: number };
+
+          if (nullCount.cnt > 0) {
+            logger.info(`Migration v13: found ${nullCount.cnt} NULL source_id values, rebuilding table...`);
+            this.db.exec('BEGIN TRANSACTION');
+            try {
+              this.db.exec('ALTER TABLE admin_messages RENAME TO admin_messages_old');
+              this.db.exec(`
+                CREATE TABLE admin_messages (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  source_id TEXT NOT NULL DEFAULT '',
+                  source_module TEXT NOT NULL,
+                  session_key TEXT NOT NULL,
+                  message_type TEXT,
+                  content TEXT,
+                  model TEXT,
+                  tokens_input INTEGER,
+                  tokens_output INTEGER,
+                  cost_total REAL,
+                  cost_input REAL,
+                  cost_output REAL,
+                  is_system_context INTEGER NOT NULL DEFAULT 0,
+                  timestamp TIMESTAMP NOT NULL,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  source_created_at TIMESTAMP,
+                  UNIQUE(session_key, source_id)
+                )
+              `);
+              // 迁移数据：NULL source_id -> ''
+              this.db.exec(`
+                INSERT INTO admin_messages (id, source_id, source_module, session_key, message_type, content, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, is_system_context, timestamp, created_at, source_created_at)
+                SELECT
+                  id,
+                  COALESCE(source_id, '') as source_id,
+                  source_module, session_key, message_type, content, model,
+                  tokens_input, tokens_output, cost_total, cost_input, cost_output,
+                  is_system_context, timestamp, created_at, source_created_at
+                FROM admin_messages_old
+              `);
+              this.db.exec('DROP TABLE admin_messages_old');
+              this.db.exec('COMMIT');
+              logger.info('Migration v13: admin_messages rebuilt with NOT NULL source_id');
+            } catch (innerErr) {
+              this.db.exec('ROLLBACK');
+              throw innerErr;
+            }
+          } else {
+            // 无 NULL 数据，跳过重建（SQLite 不支持 ALTER TABLE MODIFY COLUMN）
+            logger.info('Migration v13: no NULL source_id found, skipping rebuild');
+          }
+        }
+        break;
+      case 14:
+        // 迁移 v14: 将 admin_messages 中的 tool 类型消息拆分到 admin_tool_calls 表
+        {
+          // 检查 admin_tool_calls 表是否存在（createTables 已创建，但迁移可能在 init 之后运行）
+          const tableInfo = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='admin_tool_calls'").get();
+          if (!tableInfo) {
+            logger.warn('Migration v14: admin_tool_calls table not found, skipping');
+            break;
+          }
+
+          const toolCount = this.db.prepare(
+            "SELECT COUNT(*) as cnt FROM admin_messages WHERE message_type = 'tool'"
+          ).get() as { cnt: number };
+
+          if (toolCount.cnt > 0) {
+            logger.info(`Migration v14: migrating ${toolCount.cnt} tool messages to admin_tool_calls`);
+            this.db.exec('BEGIN TRANSACTION');
+            try {
+              // 1. 插入到 admin_tool_calls（忽略已存在的，幂等）
+              this.db.prepare(`
+                INSERT OR IGNORE INTO admin_tool_calls
+                  (source_id, source_module, session_key, message_type, content, created_at,
+                   model, tokens_input, tokens_output, cost_total, cost_input, cost_output, metadata)
+                SELECT
+                  COALESCE(source_id, '') as source_id,
+                  source_module,
+                  session_key,
+                  'tool' as message_type,
+                  content,
+                  created_at,
+                  model,
+                  COALESCE(tokens_input, 0) as tokens_input,
+                  COALESCE(tokens_output, 0) as tokens_output,
+                  cost_total,
+                  cost_input,
+                  cost_output,
+                  NULL as metadata
+                FROM admin_messages
+                WHERE message_type = 'tool'
+              `).run();
+
+              // 2. 从 admin_messages 删除 tool 消息
+              this.db.prepare("DELETE FROM admin_messages WHERE message_type = 'tool'").run();
+
+              this.db.exec('COMMIT');
+              logger.info(`Migration v14: completed, ${toolCount.cnt} tool messages moved to admin_tool_calls`);
+            } catch (innerErr) {
+              this.db.exec('ROLLBACK');
+              throw innerErr;
+            }
+          } else {
+            logger.info('Migration v14: no tool messages to migrate');
+          }
         }
         break;
       default:

@@ -94,7 +94,7 @@ export class SessionMessageMapper {
   /**
    * 数据库行 → TypeScript
    */
-  static fromDb(row: any): SessionMessage {
+  static fromDb(row: UnifiedMessageRow): SessionMessage {
     return {
       id: row.id,
       messageId: row.message_id || undefined,
@@ -123,7 +123,7 @@ export class SessionMessageMapper {
   /**
    * 批量转换：数据库行 → TypeScript
    */
-  static batchFromDb(rows: any[]): SessionMessage[] {
+  static batchFromDb(rows: UnifiedMessageRow[]): SessionMessage[] {
     return rows.map(row => this.fromDb(row));
   }
 }
@@ -153,7 +153,7 @@ export class SessionMapper {
   /**
    * 数据库行 → TypeScript
    */
-  static fromDb(row: any): Session {
+  static fromDb(row: UnifiedSessionRow): Session {
     return {
       sessionKey: row.session_key,
       agentId: row.agent_id,
@@ -191,7 +191,7 @@ export class AgentMapper {
   /**
    * 数据库行 → TypeScript
    */
-  static fromDb(row: any): Agent {
+  static fromDb(row: UnifiedAgentRow): Agent {
     return {
       agentId: row.agent_id,
       agentName: row.agent_name || undefined,

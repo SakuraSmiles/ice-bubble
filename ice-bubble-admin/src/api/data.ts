@@ -88,12 +88,32 @@ export function createDataRouter(config: DataRouterConfig): Router {
 
   /**
    * GET /api/messages
-   * 获取 messages 列表
+   * 获取 messages 列表（支持 ?archived=true 查询归档数据）
+   *
+   * Query params:
+   *   - session_key: 可选，按 session 筛选
+   *   - limit: 每页数量（默认 50，最大 200）
+   *   - offset: 分页偏移
+   *   - archived: 可选，"true" 时查询归档表
    */
   router.get('/messages', (req: Request, res: Response) => {
     const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
     const offset = parseInt(String(req.query.offset ?? '0'));
     const session_key = req.query.session_key ? String(req.query.session_key) : undefined;
+    const archived = req.query.archived === 'true';
+
+    if (archived) {
+      const result = repository.getArchivedMessages({ limit, offset, session_key });
+      res.json({
+        count: result.messages.length,
+        total: result.total,
+        limit,
+        offset,
+        messages: result.messages,
+        archived: true
+      });
+      return;
+    }
 
     const result = repository.getMessages({ limit, offset, session_key });
     res.json({

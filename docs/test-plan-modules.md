@@ -1,3 +1,5 @@
+> ⚠️ 本文档标记于 2026-04，可能与当前实现不一致，仅供参考
+
 # 模块管理页面 (Modules.vue) 测试计划
 
 > 项目路径：`/mnt/d/workspace/ice-bubble/ice-bubble-desktop`

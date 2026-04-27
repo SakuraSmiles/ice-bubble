@@ -23,10 +23,28 @@ import type { ApiServerConfig } from './types.js';
 // ==================== 简单中间件实现 ====================
 
 /**
+ * Get auth token: ICE_AUTH_TOKEN env var first, fallback to config value
+ */
+function getAuthToken(configToken?: string): string {
+    return process.env.ICE_AUTH_TOKEN || configToken || '';
+}
+
+/**
  * 简单内存限流器（滑动窗口）
+ * 包含定期清理逻辑，防止 Map 无限膨胀
  */
 function createSimpleRateLimiter(windowMs: number, maxRequests: number) {
     const windowMap = new Map<string, { count: number; resetAt: number }>();
+
+    // 定期清理过期条目（每 5 分钟）
+    setInterval(() => {
+        const now = Date.now();
+        for (const [ip, entry] of windowMap.entries()) {
+            if (now > entry.resetAt) {
+                windowMap.delete(ip);
+            }
+        }
+    }, 5 * 60 * 1000);
 
     return (req: express.Request, res: express.Response, next: express.NextFunction) => {
         const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
@@ -98,18 +116,17 @@ export async function createApiServer(
         next();
     });
 
-    // CORS — 从配置读取允许来源
+    // CORS — 精确化允许来源，禁止 * wildcard
     app.use((req, res, next) => {
         const isDev = process.env.NODE_ENV !== 'production';
         let allowedOrigins: string[];
 
         if (isDev) {
-            // 开发环境允许本地开发服务器
             allowedOrigins = ['http://localhost:1420', 'http://localhost:14000'];
         } else if (_config.cors?.origins && _config.cors.origins.length > 0) {
-            allowedOrigins = _config.cors.origins;
+            // 过滤掉 * wildcard，使用精确列表
+            allowedOrigins = _config.cors.origins.filter(o => o !== '*');
         } else {
-            // 配置文件不存在或无 origins 时，默认只允许 localhost
             allowedOrigins = ['http://localhost', 'http://127.0.0.1'];
         }
 
@@ -139,11 +156,12 @@ export async function createApiServer(
         });
     }
 
-    // 认证中间件（已配置但未启用）
-    if (_config.auth?.enabled && _config.auth.token) {
-        const authMw = createAuthMiddleware(_config.auth.token);
+    // 认证中间件：优先从 ICE_AUTH_TOKEN 环境变量读取，fallback 到配置文件
+    const authToken = getAuthToken(_config.auth?.token);
+    if (authToken) {
+        const authMw = createAuthMiddleware(authToken);
         app.use(authMw);
-        serverLogger.info('认证中间件已启用');
+        serverLogger.info('认证中间件已启用', { source: process.env.ICE_AUTH_TOKEN ? 'env' : 'config' });
     }
 
     // ---- 路由注册 ----

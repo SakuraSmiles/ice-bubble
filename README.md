@@ -117,7 +117,7 @@ ice-bubble/
 
 ```bash
 # 1. 数据采集层
-cd ice-bubble-collector-openclaw && python -m src.main
+cd ice-bubble-collector-openclaw && npm run dev
 
 # 2. 业务管理层（另起终端）
 cd ice-bubble-admin && npm run dev
@@ -131,6 +131,31 @@ cd ice-bubble-desktop && npm run dev:all
 
 > Desktop 的 Express 代理会自动将 `/api/tasks/*` 转发至 task 服务（13102），
 > 其他 `/api/*` 转发至 admin 服务（13000）。
+
+### 认证配置
+
+所有 API 服务（admin / collector / task）支持可选的 Bearer Token 认证。
+
+**配置方式（环境变量优先）：**
+
+```bash
+# 方式一：环境变量（推荐，生产环境使用）
+export ICE_AUTH_TOKEN="your-secret-token"
+
+# 方式二：config.json 备用（仅开发环境使用）
+# 在各模块的 config/config.json 中添加：
+# {
+#   "auth": { "token": "your-secret-token" }
+# }
+```
+
+**Desktop 前端配置：**
+
+在 Desktop 的 `.env` 文件中配置：
+
+```bash
+VITE_ICE_AUTH_TOKEN=your-secret-token
+```
 
 ---
 

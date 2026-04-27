@@ -323,6 +323,16 @@ export class FileCollector extends BaseCollector implements Collector {
     return 'FileCollector';
   }
 
+  /**
+   * 启动每日归档调度器（每天凌晨 3 点，保留 30 天数据）
+   */
+  startArchiveScheduler(daysToKeep: number = 30): void {
+    this.sqliteManager.startArchiveScheduler(daysToKeep, (count) => {
+      logger.info(`[FileCollector] 归档任务完成，共归档 ${count} 条消息`);
+    });
+    logger.info('[FileCollector] 数据归档调度器已启动');
+  }
+
   // ==================== 文件验证 ====================
 
   /**

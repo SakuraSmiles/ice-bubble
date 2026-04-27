@@ -3,6 +3,8 @@
  * 管理 desktop 与 admin 的连接状态，支持配置、检测、状态通知
  */
 
+import { isValidUrl } from './validators';
+
 // ============ 类型定义 ============
 
 export type ConnectionState =
@@ -26,26 +28,6 @@ const STORAGE_KEY = 'ice-bubble-admin-config';
 const HEALTH_CHECK_INTERVAL = 30000; // 30秒心跳检测
 
 // ============ 内部工具 ============
-
-function isValidUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
-    const host = parsed.hostname;
-    const isLocalhost = host === 'localhost';
-    const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(host);
-    if (!isLocalhost && !isIp) return false;
-    if (isIp) {
-      const parts = host.split('.').map(Number);
-      if (parts.some(p => p > 255)) return false;
-    }
-    const port = parseInt(parsed.port, 10);
-    if (!port || port < 1 || port > 65535) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // 通过 Desktop 代理访问 Admin API（避免跨域 CORS 问题）
 async function fetchAdminApi<T>(path: string, options?: RequestInit): Promise<T> {

@@ -1,44 +1,13 @@
 <script setup lang="ts">
 import LoadingSkeleton from './LoadingSkeleton.vue';
+import { formatRelativeTime } from '../../utils/format';
+import type { TaskItemDTO, ParentTaskDTO, AgentDTO } from '../../api/client';
 
-// =========== 类型定义 ===========
-// 与 Overview.vue 保持一致（status 用 string，兼容新旧数据格式）
-
-interface TaskItem {
-  task_id: string;
-  title: string;
-  status: string;
-  updated_at?: string;
-}
-
-interface AgentGroup {
-  agent_id: string;
-  active_children: TaskItem[];
-  completed_children: TaskItem[];
-}
-
-interface ParentTask {
-  id: string;
-  title: string;
-  status: string;
-  updated_at: string;
-  agent_groups: AgentGroup[];
-}
-
-interface AgentOverview {
-  agent_id: string;
-  agent_name: string;
-  avatar: string | null;
-  workspace: string | null;
-  status: string;
-  model: string | null;
-  last_active_at: string;
-  latest_message: string | null;
-}
+// =========== Props ===========
 
 interface Props {
-  parentTask: ParentTask | null;
-  agents: AgentOverview[];
+  parentTask: ParentTaskDTO | null;
+  agents: AgentDTO[];
   loading?: boolean;
 }
 
@@ -58,28 +27,13 @@ function truncateTaskTitle(title: string, maxLen: number = 35): string {
 }
 
 /** 获取指定 agent 在该父任务下的所有子任务 */
-function getAgentTasks(agentId: string): TaskItem[] {
+function getAgentTasks(agentId: string): TaskItemDTO[] {
   if (!props.parentTask?.agent_groups) return [];
   const group = props.parentTask.agent_groups.find(g => g.agent_id === agentId);
   if (!group) return [];
   return [...(group.active_children || []), ...(group.completed_children || [])];
 }
 
-/** 格式化相对时间 */
-function formatRelativeTime(isoStr: string | undefined): string {
-  if (!isoStr) return '';
-  const now = Date.now();
-  const then = new Date(isoStr).getTime();
-  const diff = now - then;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return '刚刚';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h前`;
-  const days = Math.floor(hours / 24);
-  return `${days}d前`;
-}
 
 
 </script>
@@ -104,7 +58,7 @@ function formatRelativeTime(isoStr: string | undefined): string {
                 <span v-if="task.status === 'IN_PROGRESS' || task.status === 'in_progress'" class="todo-spinner"></span>
               </span>
               <span class="todo-title" :title="task.title">{{ truncateTaskTitle(task.title) }}</span>
-              <span v-if="task.status === 'DONE' || task.status === 'completed'" class="todo-time">{{ formatRelativeTime(task.updated_at) }}</span>
+              <span v-if="task.status === 'DONE' || task.status === 'completed'" class="todo-time">{{ formatRelativeTime(task.updated_at ?? null) }}</span>
             </div>
           </template>
           <div v-else class="todo-empty">暂无任务</div>

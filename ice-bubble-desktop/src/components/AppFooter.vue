@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const version = '1.0.0';
+import pkg from '../../package.json';
+const version = pkg.version;
 </script>
 
 <template>

@@ -1,44 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import AgentTodoList from './AgentTodoList.vue';
+import type { TaskItemDTO, ParentTaskDTO, AgentDTO } from '../../api/client';
 
-// =========== 类型定义 ===========
-
-interface TaskItem {
-  task_id: string;
-  title: string;
-  status: string;
-  updated_at?: string;
-}
-
-interface AgentGroup {
-  agent_id: string;
-  active_children: TaskItem[];
-  completed_children: TaskItem[];
-}
-
-interface ParentTask {
-  id: string;
-  title: string;
-  status: string;
-  updated_at: string;
-  agent_groups: AgentGroup[];
-}
-
-interface AgentOverview {
-  agent_id: string;
-  agent_name: string;
-  avatar: string | null;
-  workspace: string | null;
-  status: string;
-  model: string | null;
-  last_active_at: string;
-  latest_message: string | null;
-}
+// =========== Props ===========
 
 interface Props {
-  agents: AgentOverview[];
-  parentTask: ParentTask | null;
+  agents: AgentDTO[];
+  parentTask: ParentTaskDTO | null;
   loading?: boolean;
 }
 
@@ -51,7 +20,7 @@ const props = withDefaults(defineProps<Props>(), {
 // =========== 工具函数 ===========
 
 /** 获取指定 agent 的所有子任务 */
-function getAgentTasks(agentId: string): TaskItem[] {
+function getAgentTasks(agentId: string): TaskItemDTO[] {
   if (!props.parentTask?.agent_groups) return [];
   const group = props.parentTask.agent_groups.find(g => g.agent_id === agentId);
   if (!group) return [];
@@ -76,8 +45,8 @@ function getAgentMiniDots(agentId: string): { filled: number; total: number } {
 }
 
 /** Agent 状态映射为显示文本 */
-function getStatusLabel(status: string): string {
-  if (status === '工作' || status === '工作中') return '工作中';
+function getStatusLabel(status: import("../../api/client").AgentStatus): string {
+  if (status === '工作') return '工作中';
   if (status === '活跃') return '活跃';
   if (status === '离线') return '离线';
   return status;
@@ -92,17 +61,17 @@ function hasTasks(agentId: string): boolean {
 }
 
 /** 过滤出有子任务的 agent */
-function filterWithTasks(agents: AgentOverview[]): AgentOverview[] {
+function filterWithTasks(agents: AgentDTO[]): AgentDTO[] {
   return agents.filter(a => hasTasks(a.agent_id));
 }
 
 /** 检测是否工作中/活跃状态 */
-function isActiveStatus(status: string): boolean {
-  return status === '工作' || status === '工作中' || status === '活跃';
+function isActiveStatus(status: import("../../api/client").AgentStatus): boolean {
+  return status === '工作' || status === '活跃';
 }
 
 /** 默认展开状态：工作中/活跃的展开，离线的折叠 */
-function getDefaultExpanded(agent: AgentOverview): boolean {
+function getDefaultExpanded(agent: AgentDTO): boolean {
   return isActiveStatus(agent.status);
 }
 
@@ -110,20 +79,20 @@ function getDefaultExpanded(agent: AgentOverview): boolean {
 const expandedAgents = ref<Record<string, boolean>>({});
 
 /** 确保某 agent 有展开状态记录 */
-function ensureExpanded(agentId: string, agent: AgentOverview) {
+function ensureExpanded(agentId: string, agent: AgentDTO) {
   if (expandedAgents.value[agentId] === undefined) {
     expandedAgents.value[agentId] = getDefaultExpanded(agent);
   }
 }
 
 /** 切换展开/折叠 */
-function toggleExpand(agentId: string, agent: AgentOverview) {
+function toggleExpand(agentId: string, agent: AgentDTO) {
   ensureExpanded(agentId, agent);
   expandedAgents.value[agentId] = !expandedAgents.value[agentId];
 }
 
 /** 获取 agent 展开状态 */
-function isExpanded(agentId: string, agent: AgentOverview): boolean {
+function isExpanded(agentId: string, agent: AgentDTO): boolean {
   ensureExpanded(agentId, agent);
   return expandedAgents.value[agentId];
 }

@@ -3,7 +3,46 @@
  *
  * 从 data-repository.ts 提取，避免 subagent-event-parser 产生循环依赖。
  * 纯函数，不依赖任何模块内部状态。
+ *
+ * 模块化拆分：
+ * - detect-cron: cron 任务检测
+ * - detect-channel: 来源渠道检测
+ * - detect-system-noise: 系统噪音检测
  */
+
+// ==================== 子模块导入（内部使用 + 重新导出）====================
+
+import {
+  isCronMessage,
+  extractCronContent,
+} from './detect-cron';
+import {
+  hasSenderMetadata,
+  extractSourceChannel,
+  extractContentAfterSenderMetadata,
+} from './detect-channel';
+import {
+  isUserSystemNoise,
+  cleanUserContent,
+  isAgentSystemNoise,
+  isToolSystemNoise,
+} from './detect-system-noise';
+
+// 重新导出供外部使用
+
+export {
+  isCronMessage,
+  extractCronContent,
+  hasSenderMetadata,
+  extractSourceChannel,
+  extractContentAfterSenderMetadata,
+  isUserSystemNoise,
+  cleanUserContent,
+  isAgentSystemNoise,
+  isToolSystemNoise,
+};
+
+// ==================== 接口定义 ====================
 
 /**
  * 消息元信息（不存储在 DB，运行时计算）
@@ -15,6 +54,8 @@ export interface MessageMeta {
   content_summary: string;
   source_channel: string | null;
 }
+
+// ==================== 主分析函数 ====================
 
 /**
  * 分析消息元信息：系统噪音、cron 标记、内容清洗等
@@ -38,9 +79,7 @@ export function analyzeMessageMeta(msg: {
     if (content.startsWith('[cron:')) {
       meta.is_cron = true;
       meta.is_system_noise = true;
-      const cronEnd = content.indexOf(']');
-      const afterCron = cronEnd > 0 ? content.substring(cronEnd + 1).trim() : content;
-      meta.clean_content = afterCron || content;
+      meta.clean_content = extractCronContent(content);
     }
     // 检测系统执行通知（System: / System(...) 格式）
     else if (/^System[ :(]/.test(content) && content.length > 10) {
@@ -48,15 +87,9 @@ export function analyzeMessageMeta(msg: {
       meta.clean_content = content.replace(/^System[ :]\([^)]*\)/g, '').replace(/^System[ :]/g, '').trim() || content.substring(0, 150);
     }
     // 检测 Sender metadata 块（webchat 消息编码）
-    else if (content.startsWith('Sender (untrusted metadata)')) {
-      const senderMatch = content.match(/```json\s*\{[\s\S]*?"label"\s*:\s*"([^"]+)"[\s\S]*?\}\s*```/);
-      if (senderMatch) {
-        meta.source_channel = senderMatch[1];
-      }
-      const pattern = /^Sender \(untrusted metadata\):\n```json\n[\s\S]*?\n```\n*\n*/;
-      const afterMeta = content.replace(pattern, '').trim();
-      const afterTime = afterMeta.replace(/^\[[^\]]+\]\s*/, '').trim();
-      meta.clean_content = afterTime || content;
+    else if (hasSenderMetadata(content)) {
+      meta.source_channel = extractSourceChannel(content);
+      meta.clean_content = extractContentAfterSenderMetadata(content);
     }
     // 处理仅有 [date] 前缀的消息（OpenClaw 上下文重建产生的截断版，缺少 Sender metadata）
     else if (/^\[(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2} \d{2}:\d{2} GMT[^\]]*\] /.test(content)) {
@@ -109,10 +142,7 @@ export function analyzeMessageMeta(msg: {
 
   // 检测 agent 噪音
   if (msg.message_type === 'agent') {
-    if (!content || content === 'NULL' || content === '') {
-      meta.is_system_noise = true;
-      meta.clean_content = '';
-    } else if (content === 'HEARTBEAT_OK') {
+    if (isAgentSystemNoise(content)) {
       meta.is_system_noise = true;
       meta.clean_content = '';
     } else if (/^(暂无活跃子任务|任务状态巡检完成)/.test(content)) {
@@ -122,7 +152,7 @@ export function analyzeMessageMeta(msg: {
   }
 
   // 检测 tool 空回复
-  if (msg.message_type === 'tool' && (!content || content === 'NULL' || content === '' || content === '{}')) {
+  if (msg.message_type === 'tool' && isToolSystemNoise(content)) {
     meta.is_system_noise = true;
     meta.clean_content = '';
   }
@@ -144,35 +174,8 @@ export function analyzeMessageMeta(msg: {
  * 不需要 clean_content / content_summary 时使用更轻量的版本
  */
 export function isSystemNoise(messageType: string, content: string | null): boolean {
-  if (!content || content === 'NULL' || content === '') return true;
-  if (content === 'HEARTBEAT_OK' || content === 'NO_REPLY') return true;
-  if (messageType === 'user') {
-    if (content.startsWith('[cron:')) return true;
-    if (/^System[ :(]/.test(content) && content.length > 10) return true;
-    if (/^Read HEARTBEAT\.md/.test(content)) return true;
-    if (/^(Exec completed|Exec failed)/.test(content)) return true;
-    if (/^\[[a-z0-9]+\]/.test(content) &&
-        (/(added \d+ files?|modules transformed|built in)/.test(content) ||
-         /^(feat|fix|style|refactor|chore|docs|test)\(/.test(content))) {
-      return true;
-    }
-    // [date] 前缀 + 空内容/系统消息
-    if (/^\[(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2}/.test(content)) {
-      const afterDate = content.replace(/^\[[^\]]+\]\s*/, '').trim();
-      if (!afterDate || afterDate === 'HEARTBEAT_OK' || afterDate === 'NO_REPLY') return true;
-      // [date] 前缀且非空（截断版原文），也视为系统噪音
-      return true;
-    }
-    if (content.startsWith('An async command completion event was triggered')) return true;
-    if (content.startsWith('Pre-compaction memory flush')) return true;
-    if (content.startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) return true;
-  }
-  if (messageType === 'agent') {
-    if (content === 'NULL' || content === '') return true;
-    if (/^(暂无活跃子任务|任务状态巡检完成)/.test(content)) return true;
-  }
-  if (messageType === 'tool' && (content === '{}' || content === '[]' || content === 'ok' || content === 'null')) {
-    return true;
-  }
+  if (messageType === 'user') return isUserSystemNoise(content || '');
+  if (messageType === 'agent') return isAgentSystemNoise(content);
+  if (messageType === 'tool') return isToolSystemNoise(content);
   return false;
 }

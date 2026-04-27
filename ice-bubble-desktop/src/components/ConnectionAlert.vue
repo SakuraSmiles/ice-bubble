@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { adminConnection, type ConnectionState } from '../utils/adminConnection';
+import { isUrlValid } from '../utils/validators';
 
 const emit = defineEmits<{
   (e: 'connection-change', connected: boolean): void;
@@ -54,25 +55,7 @@ const alertStyle = computed(() => {
   return { background: '#fef0f0', borderColor: '#fecaca' };
 });
 
-function isUrlValid(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
-    const host = parsed.hostname;
-    const isLocalhost = host === 'localhost';
-    const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(host);
-    if (!isLocalhost && !isIp) return false;
-    if (isIp) {
-      const parts = host.split('.').map(Number);
-      if (parts.some(p => p > 255)) return false;
-    }
-    const port = parseInt(parsed.port, 10);
-    if (!port || port < 1 || port > 65535) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
+
 
 async function testConnection() {
   const url = inputUrl.value.trim();

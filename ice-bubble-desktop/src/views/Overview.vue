@@ -4,7 +4,7 @@ import { apiMonitor, type MonitorStats } from '../utils/monitor';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
-import type { ModuleDTO, TimelineResponseDTO } from '../api/client';
+import type { ModuleDTO, TimelineResponseDTO, WorkspaceTasksDTO, AgentDTO, ParentTaskDTO, AgentGroupDTO } from '../api/client';
 // 子组件
 import SystemHealth from './components/SystemHealth.vue';
 import RecentSessions from './components/RecentSessions.vue';
@@ -13,19 +13,6 @@ import ParentTaskProgress from './components/ParentTaskProgress.vue';
 
 
 // =========== 接口定义 ===========
-
-interface AgentOverview {
-  agent_id: string;
-  agent_name: string;
-  avatar: string | null;
-  workspace: string | null;
-  status: string;
-  model: string | null;
-  last_active_at: string;
-  latest_message: string | null;
-  session_count?: number;
-  message_count?: number;
-}
 
 interface AgentRuntimeState {
   isStreaming: boolean;
@@ -43,38 +30,17 @@ const agentRuntimeStates = ref<Record<string, AgentRuntimeState>>({});
 const messageRefs = ref<Record<string, HTMLElement>>({});
 
 // Agent 概览数据
-const agentOverviewData = ref<{ agents: AgentOverview[] } | null>(null);
+const agentOverviewData = ref<{ agents: AgentDTO[] } | null>(null);
 
 
 
 // =========== 最近任务模块相关 ===========
 
-interface TaskItem {
-  task_id: string;
-  title: string;
-  status: string;
-  updated_at?: string;
-}
+// TaskItemDTO, AgentGroupDTO, ParentTaskDTO 已从 api/client 导入
+// WorkspaceTasksDTO === WorkspaceTasks
 
-interface AgentGroup {
-  agent_id: string;
-  active_children: TaskItem[];
-  completed_children: TaskItem[];
-}
 
-interface ParentTask {
-  id: string;
-  title: string;
-  status: string;
-  updated_at: string;
-  agent_groups: AgentGroup[];
-}
-
-interface WorkspaceTasks {
-  parents: ParentTask[];
-}
-
-const workspaceTasks = ref<WorkspaceTasks | null>(null);
+const workspaceTasks = ref<WorkspaceTasksDTO | null>(null);
 const latestTaskLoading = ref(false);
 
 // =========== 数据状态卡片 ===========
@@ -134,28 +100,18 @@ function formatRelativeTime(iso: string | null): string {
 async function fetchLatestTask(): Promise<void> {
   latestTaskLoading.value = true;
   try {
-    const res = await fetch('/api/tasks/workspace');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    workspaceTasks.value = data;
+    const data = await api.getWorkspaceTasks();
+    workspaceTasks.value = data as WorkspaceTasksDTO;
   } catch (e) {
-    console.warn('通过 proxy 获取失败，尝试直连 Task API', e);
-    try {
-      const res = await fetch('http://localhost:13102/api/tasks/workspace');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      workspaceTasks.value = data;
-    } catch (e2) {
-      console.error('获取工作区任务完全失败', e2);
-      workspaceTasks.value = null;
-    }
+    console.error('获取工作区任务失败', e);
+    workspaceTasks.value = null;
   } finally {
     latestTaskLoading.value = false;
   }
 }
 
 /** 最近的父任务（按 updated_at 排序取第一个） */
-const recentParentTask = computed<ParentTask | null>(() => {
+const recentParentTask = computed<ParentTaskDTO | null>(() => {
   const parents = workspaceTasks.value?.parents ?? [];
   if (!parents.length) return null;
   return [...parents].sort((a, b) =>
@@ -166,7 +122,7 @@ const recentParentTask = computed<ParentTask | null>(() => {
 /** 最近父任务是否包含子任务 */
 const hasSubTasks = computed(() => {
   const groups = recentParentTask.value?.agent_groups ?? [];
-  return groups.some(g =>
+  return groups.some((g: AgentGroupDTO) =>
     (g.active_children && g.active_children.length > 0) ||
     (g.completed_children && g.completed_children.length > 0)
   );
@@ -246,12 +202,12 @@ const onlineAgents = computed(() => {
   // 工作中 / 活跃的 agent 全部展示（移除 slice(0, 3) 硬限制）
   const working = agents
     .filter(a => a.status === '活跃' || isWorkingStatus(a.status))
-    .sort((a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime());
+    .sort((a, b) => (new Date(b.last_active_at ?? 0).getTime()) - (new Date(a.last_active_at ?? 0).getTime()));
   // 不足 3 个时用最近活跃离线 agent 补充
   if (working.length >= 3) return working;
   const offline = agents
     .filter(a => a.status !== '活跃' && !isWorkingStatus(a.status))
-    .sort((a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime());
+    .sort((a, b) => (new Date(b.last_active_at ?? 0).getTime()) - (new Date(a.last_active_at ?? 0).getTime()));
   return [...working, ...offline];
 });
 
@@ -282,9 +238,44 @@ const stats = ref<MonitorStats>({
 });
 
 const moduleList = ref<ModuleDTO[]>([]);
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
-let agentRefreshTimer: ReturnType<typeof setInterval> | null = null;
-let dataStatusTimer: ReturnType<typeof setInterval> | null = null;
+
+// =========== 统一轮询系统 ===========
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollPending = false;
+let tickCounter = 0; // 每 tick 自增，用于内部分频
+
+function startPolling(): void {
+  const interval = document.visibilityState === 'hidden' ? 30000 : 10000;
+  pollTimer = setInterval(() => {
+    if (pollPending) return;
+    tickCounter++;
+    // 10s 任务（近似原 5s）：refreshData + refreshModules（每 tick）
+    pollPending = true;
+    refreshData();
+    refreshModules().finally(() => { pollPending = false; });
+    // 30s 任务：fetchAgentOverview + fetchLatestTask + fetchDataStatus（每 3 ticks）
+    if (tickCounter % 3 === 0) {
+      pollPending = true;
+      fetchAgentOverview();
+      fetchLatestTask().finally(() => { pollPending = false; });
+      pollPending = true;
+      fetchDataStatus().finally(() => { pollPending = false; });
+    }
+  }, interval);
+}
+
+function stopPolling(): void {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+// 监听页面可见性，隐藏时降频
+function onVisibilityChange(): void {
+  stopPolling();
+  tickCounter = 0;
+  if (document.visibilityState === 'visible') {
+    startPolling();
+  }
+}
 
 function refreshData(): void { stats.value = apiMonitor.getStats(); }
 
@@ -299,11 +290,10 @@ async function refreshModules(): Promise<void> {
 
 async function fetchAgentOverview() {
   try {
-    const res = await fetch('/api/agents');
-    const data = await res.json();
+    const data = await api.getAgents();
     agentOverviewData.value = data;
     // 清理已消失 agent 的 runtime state
-    const currentIds = new Set((data.agents ?? []).map((a: AgentOverview) => a.agent_id));
+    const currentIds = new Set((data.agents ?? []).map((a) => a.agent_id));
     for (const id of Object.keys(agentRuntimeStates.value)) {
       if (!currentIds.has(id)) {
         const s = agentRuntimeStates.value[id];
@@ -327,15 +317,13 @@ onMounted(() => {
   refreshData();
   fetchAll(true);
   fetchDataStatus();
-  refreshTimer = setInterval(() => { refreshData(); refreshModules(); }, 5000);
-  agentRefreshTimer = setInterval(() => { fetchAgentOverview(); fetchLatestTask(); }, 30000);
-  dataStatusTimer = setInterval(() => { fetchDataStatus(); }, 30000);
+  startPolling();
+  document.addEventListener('visibilitychange', onVisibilityChange);
 });
 
 onUnmounted(() => {
-  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-  if (agentRefreshTimer) { clearInterval(agentRefreshTimer); agentRefreshTimer = null; }
-  if (dataStatusTimer) { clearInterval(dataStatusTimer); dataStatusTimer = null; }
+  stopPolling();
+  document.removeEventListener('visibilitychange', onVisibilityChange);
   for (const s of Object.values(agentRuntimeStates.value)) {
     if (s.streamTimer) { clearTimeout(s.streamTimer); s.streamTimer = null; }
   }

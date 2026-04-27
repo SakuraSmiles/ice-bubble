@@ -23,7 +23,7 @@ export class AppError extends Error {
     public code: string,
     message: string,
     public cause?: Error,
-    public metadata?: Record<string, any>
+    public metadata?: Record<string, unknown>
   ) {
     super(message);
     this.name = 'AppError';
@@ -37,7 +37,7 @@ export class AppError extends Error {
   /**
    * 转换为 JSON 格式
    */
-  toJSON(): Record<string, any> {
+  toJSON(): Record<string, unknown> {
     return {
       name: this.name,
       code: this.code,
@@ -77,7 +77,7 @@ export class CollectorError extends AppError {
     code: CollectorErrorCode,
     message: string,
     cause?: Error,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ) {
     super(`COLLECTOR_${code}`, message, cause, metadata);
     this.name = 'CollectorError';
@@ -105,9 +105,9 @@ export class ValidationError extends AppError {
     code: ValidationErrorCode,
     message: string,
     public field?: string,
-    public value?: any,
+    public value?: unknown,
     cause?: Error,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ) {
     super(`VALIDATION_${code}`, message, cause, metadata);
     this.name = 'ValidationError';
@@ -135,9 +135,9 @@ export class StorageError extends AppError {
     code: StorageErrorCode,
     message: string,
     public query?: string,
-    public params?: any[],
+    public params?: unknown[],
     cause?: Error,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ) {
     super(`STORAGE_${code}`, message, cause, metadata);
     this.name = 'StorageError';
@@ -166,9 +166,9 @@ export class ProcessingError extends AppError {
     code: ProcessingErrorCode,
     message: string,
     public processor?: string,
-    public input?: any,
+    public input?: unknown,
     cause?: Error,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ) {
     super(`PROCESSING_${code}`, message, cause, metadata);
     this.name = 'ProcessingError';
@@ -195,9 +195,9 @@ export class ConfigurationError extends AppError {
     code: ConfigurationErrorCode,
     message: string,
     public configPath?: string,
-    public configValue?: any,
+    public configValue?: unknown,
     cause?: Error,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ) {
     super(`CONFIG_${code}`, message, cause, metadata);
     this.name = 'ConfigurationError';
@@ -241,17 +241,17 @@ export const Errors = {
 
   // 验证错误
   validation: {
-    invalidFormat: (field: string, value: any, expected: string, cause?: Error) =>
-      new ValidationError('INVALID_FORMAT', `字段 ${field} 格式无效: ${value} (期望: ${expected})`, field, value, cause),
+    invalidFormat: (field: string, value: unknown, expected: string, cause?: Error) =>
+      new ValidationError('INVALID_FORMAT', `字段 ${field} 格式无效: ${String(value)} (期望: ${expected})`, field, value, cause),
     
     missingRequired: (field: string, cause?: Error) =>
       new ValidationError('MISSING_REQUIRED', `缺少必填字段: ${field}`, field, undefined, cause),
     
-    typeMismatch: (field: string, value: any, expected: string, cause?: Error) =>
+    typeMismatch: (field: string, value: unknown, expected: string, cause?: Error) =>
       new ValidationError('TYPE_MISMATCH', `字段 ${field} 类型不匹配: ${typeof value} (期望: ${expected})`, field, value, cause),
     
-    duplicateDetected: (field: string, value: any, cause?: Error) =>
-      new ValidationError('DUPLICATE_DETECTED', `检测到重复值: ${field}=${value}`, field, value, cause),
+    duplicateDetected: (field: string, value: unknown, cause?: Error) =>
+      new ValidationError('DUPLICATE_DETECTED', `检测到重复值: ${field}=${String(value)}`, field, value, cause),
     
     timestampInvalid: (timestamp: string, cause?: Error) =>
       new ValidationError('TIMESTAMP_INVALID', `无效的时间戳: ${timestamp}`, 'timestamp', timestamp, cause),
@@ -262,14 +262,14 @@ export const Errors = {
     connectionFailed: (dbPath: string, cause?: Error) =>
       new StorageError('CONNECTION_FAILED', `数据库连接失败: ${dbPath}`, undefined, undefined, cause, { dbPath }),
     
-    queryFailed: (query: string, params: any[], cause?: Error) =>
+    queryFailed: (query: string, params: unknown[], cause?: Error) =>
       new StorageError('QUERY_FAILED', `查询执行失败`, query, params, cause),
     
     transactionFailed: (cause?: Error) =>
       new StorageError('TRANSACTION_FAILED', `事务执行失败`, undefined, undefined, cause),
     
-    duplicateKey: (table: string, key: string, value: any, cause?: Error) =>
-      new StorageError('DUPLICATE_KEY', `重复键冲突: ${table}.${key}=${value}`, undefined, undefined, cause, { table, key, value }),
+    duplicateKey: (table: string, key: string, value: unknown, cause?: Error) =>
+      new StorageError('DUPLICATE_KEY', `重复键冲突: ${table}.${key}=${String(value)}`, undefined, undefined, cause, { table, key, value }),
     
     busy: (timeout: number, cause?: Error) =>
       new StorageError('BUSY', `数据库忙，超时: ${timeout}ms`, undefined, undefined, cause, { timeout }),
@@ -277,10 +277,10 @@ export const Errors = {
 
   // 处理错误
   processing: {
-    conversionFailed: (processor: string, input: any, cause?: Error) =>
+    conversionFailed: (processor: string, input: unknown, cause?: Error) =>
       new ProcessingError('CONVERSION_FAILED', `数据转换失败: ${processor}`, processor, input, cause),
     
-    deduplicationFailed: (processor: string, input: any, cause?: Error) =>
+    deduplicationFailed: (processor: string, input: unknown, cause?: Error) =>
       new ProcessingError('DEDUPLICATION_FAILED', `去重处理失败: ${processor}`, processor, input, cause),
     
     batchWriteFailed: (processor: string, batchSize: number, cause?: Error) =>
@@ -292,8 +292,8 @@ export const Errors = {
     missingRequired: (configPath: string, cause?: Error) =>
       new ConfigurationError('MISSING_REQUIRED', `缺少必需配置: ${configPath}`, configPath, undefined, cause),
     
-    invalidValue: (configPath: string, value: any, expected: string, cause?: Error) =>
-      new ConfigurationError('INVALID_VALUE', `配置值无效: ${configPath}=${value} (期望: ${expected})`, configPath, value, cause),
+    invalidValue: (configPath: string, value: unknown, expected: string, cause?: Error) =>
+      new ConfigurationError('INVALID_VALUE', `配置值无效: ${configPath}=${String(value)} (期望: ${expected})`, configPath, value, cause),
     
     fileNotFound: (configPath: string, cause?: Error) =>
       new ConfigurationError('FILE_NOT_FOUND', `配置文件不存在: ${configPath}`, configPath, undefined, cause),
@@ -311,7 +311,7 @@ export interface ErrorHandlingOptions {
   /** 是否重新抛出错误 */
   rethrow?: boolean;
   /** 默认返回值（如果不重新抛出） */
-  defaultValue?: any;
+  defaultValue?: unknown;
   /** 错误转换函数 */
   transform?: (error: Error) => Error;
 }
@@ -327,8 +327,8 @@ export async function safeExecute<T>(
   
   try {
     return await fn();
-  } catch (error) {
-    const finalError = transform ? transform(error as Error) : (error as Error);
+  } catch (error: unknown) {
+    const finalError = transform ? transform(error instanceof Error ? error : new Error(String(error))) : (error instanceof Error ? error : new Error(String(error)));
     
     if (log) {
       console.error('执行失败:', finalError);

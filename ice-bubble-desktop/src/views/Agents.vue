@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
-import { formatTime, formatRelativeTime, truncatePath, formatNumber } from '../utils/format.ts';
-import { api, AgentWithActivityDTO } from '../api/client.ts';
+import { formatTime, formatRelativeTime, truncatePath, formatNumber } from '../utils/format';
+import { api, AgentWithActivityDTO } from '../api/client';
 import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
 import LoadingSkeleton from './components/LoadingSkeleton.vue';
+import EmptyState from '../components/EmptyState.vue';
 
 interface ActivityDay {
   date: string;
@@ -333,7 +334,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
     </PageHeader>
 
     <div v-loading="loading" class="content-wrapper">
-      <div v-if="agents.length === 0 && !loading" class="empty-msg">暂无成员</div>
+      <EmptyState v-if="agents.length === 0 && !loading" title="暂无成员" icon="👤" />
 
       <!-- 加载骨架屏：成员卡片骨架 -->
       <div v-if="agents.length === 0 && loading" class="loading-skeleton-area">

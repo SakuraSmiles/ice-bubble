@@ -45,6 +45,29 @@ export interface AdminMessage {
   source_created_at: string | null;
 }
 
+/**
+ * admin_tool_calls 表 row 类型
+ * 与 AdminMessage 共享大部分字段，但使用 created_at 而非 timestamp
+ * 合并查询时会 AS created_at AS timestamp 以统一字段名
+ */
+export interface AdminToolCall {
+  id?: number;
+  source_id: string;
+  source_module: string;
+  session_key: string;
+  message_type: 'tool';
+  content: string | null;
+  created_at: string;
+  timestamp?: string; // AS created_at AS timestamp，合并时使用
+  model: string | null;
+  tokens_input: number | null;
+  tokens_output: number | null;
+  cost_total: number | null;
+  cost_input: number | null;
+  cost_output: number | null;
+  metadata: string | null;
+}
+
 export interface AdminAgent {
   agent_id: string;
   agent_name: string | null;
@@ -475,54 +498,59 @@ export class DataRepository {
   /**
    * 批量保存 messages（upsert with UNIQUE constraint）
    * 同时更新 token_summary 表
+   * tool 类型消息写入 admin_tool_calls，user/agent 写入 admin_messages
    */
   saveMessages(messages: AdminMessage[]): number {
     if (messages.length === 0) return 0;
 
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO admin_messages (
-        source_id, source_module, session_key, message_type, content,
-        model, tokens_input, tokens_output, cost_total, cost_input, cost_output,
-        is_system_context, timestamp, created_at, source_created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const contentMessages = messages.filter(m => m.message_type !== 'tool');
+    const toolMessages = messages.filter(m => m.message_type === 'tool');
 
     const now = new Date().toISOString();
     let inserted = 0;
 
-    const insertMany = this.db.transaction((rows: AdminMessage[]) => {
-      // 记录每条消息是否新插入（用于 token 统计去重）
-      const newlyInserted: boolean[] = [];
+    // ---- content messages (user + agent) ----
+    if (contentMessages.length > 0) {
+      const stmt = this.db.prepare(`
+        INSERT OR IGNORE INTO admin_messages (
+          source_id, source_module, session_key, message_type, content,
+          model, tokens_input, tokens_output, cost_total, cost_input, cost_output,
+          is_system_context, timestamp, created_at, source_created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
 
-      for (const row of rows) {
-        const result = stmt.run(
-          row.source_id ?? null,
-          row.source_module,
-          row.session_key,
-          row.message_type ?? null,
-          row.content ?? null,
-          row.model ?? null,
-          row.tokens_input ?? null,
-          row.tokens_output ?? null,
-          row.cost_total ?? null,
-          row.cost_input ?? null,
-          row.cost_output ?? null,
-          row.is_system_context ?? 0,
-          row.timestamp,
-          now,
-          row.source_created_at ?? null
-        );
-        const isNew = result.changes > 0;
-        newlyInserted.push(isNew);
-        if (isNew) inserted++;
-      }
+      const newlyInsertedContent: boolean[] = [];
 
-      // 收集需要更新的 token 数据
-      // 1. 获取所有 session_key -> agent_id 映射
-      const sessionKeys = [...new Set(rows.map(r => r.session_key))];
+      const insertContent = this.db.transaction((rows: AdminMessage[]) => {
+        for (const row of rows) {
+          const result = stmt.run(
+            row.source_id ?? null,
+            row.source_module,
+            row.session_key,
+            row.message_type ?? null,
+            row.content ?? null,
+            row.model ?? null,
+            row.tokens_input ?? null,
+            row.tokens_output ?? null,
+            row.cost_total ?? null,
+            row.cost_input ?? null,
+            row.cost_output ?? null,
+            row.is_system_context ?? 0,
+            row.timestamp,
+            now,
+            row.source_created_at ?? null
+          );
+          const isNew = result.changes > 0;
+          newlyInsertedContent.push(isNew);
+          if (isNew) inserted++;
+        }
+      });
+
+      insertContent(contentMessages);
+
+      // token 统计（仅对 content 消息）
+      const sessionKeys = [...new Set(contentMessages.map(r => r.session_key))];
       const sessionAgentMap = this.getSessionAgentIds(sessionKeys);
-
-      // 2. 按 agentId 聚合 token 数据（只统计新插入的消息）
       const tokenUpdates = new Map<string, {
         tokensInput: number;
         tokensOutput: number;
@@ -531,29 +559,19 @@ export class DataRepository {
         costOutput: number;
       }>();
 
-      for (let i = 0; i < rows.length; i++) {
-        // 只统计新插入的消息，避免重复计算
-        if (!newlyInserted[i]) continue;
-
-        const row = rows[i];
+      for (let i = 0; i < contentMessages.length; i++) {
+        if (!newlyInsertedContent[i]) continue;
+        const row = contentMessages[i];
         const agentId = sessionAgentMap.get(row.session_key);
         if (!agentId) continue;
-
-        // 只统计有 token 或 cost 的消息
         const hasTokenData =
           (row.tokens_input != null && row.tokens_input > 0) ||
           (row.tokens_output != null && row.tokens_output > 0) ||
           (row.cost_total != null && row.cost_total > 0);
         if (!hasTokenData) continue;
-
         const existing = tokenUpdates.get(agentId) || {
-          tokensInput: 0,
-          tokensOutput: 0,
-          costTotal: 0,
-          costInput: 0,
-          costOutput: 0,
+          tokensInput: 0, tokensOutput: 0, costTotal: 0, costInput: 0, costOutput: 0,
         };
-
         tokenUpdates.set(agentId, {
           tokensInput: existing.tokensInput + (row.tokens_input ?? 0),
           tokensOutput: existing.tokensOutput + (row.tokens_output ?? 0),
@@ -563,27 +581,55 @@ export class DataRepository {
         });
       }
 
-      // 3. 批量更新 token_summary
       if (tokenUpdates.size > 0) {
-        const updates = Array.from(tokenUpdates.entries()).map(([agentId, data]) => ({
-          agentId,
-          ...data,
-        }));
+        const updates = Array.from(tokenUpdates.entries()).map(([agentId, data]) => ({ agentId, ...data }));
         try {
           this.batchUpdateTokenSummary(updates);
         } catch (error) {
-          // token 更新失败不影响消息入库，记录错误
           logger.error('[DataRepository] Failed to update token_summary:', { error: String(error) });
         }
       }
-    });
+    }
 
-    insertMany(messages);
+    // ---- tool messages -> admin_tool_calls ----
+    if (toolMessages.length > 0) {
+      const stmt = this.db.prepare(`
+        INSERT OR IGNORE INTO admin_tool_calls (
+          source_id, source_module, session_key, message_type, content,
+          created_at, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, metadata
+        ) VALUES (?, ?, ?, 'tool', ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `);
+
+      const insertTool = this.db.transaction((rows: AdminMessage[]) => {
+        for (const row of rows) {
+          const result = stmt.run(
+            row.source_id ?? '',
+            row.source_module,
+            row.session_key,
+            row.content ?? null,
+            row.timestamp, // 使用 timestamp 作为 created_at
+            row.model ?? null,
+            row.tokens_input ?? 0,
+            row.tokens_output ?? 0,
+            row.cost_total ?? null,
+            row.cost_input ?? null,
+            row.cost_output ?? null
+          );
+          if (result.changes > 0) inserted++;
+        }
+      });
+
+      insertTool(toolMessages);
+    }
+
     return inserted;
   }
 
   /**
-   * 获取消息列表
+   * 获取消息列表（合并 admin_messages + admin_tool_calls）
+   * - 每页 LIMIT 条 content (user+agent)
+   * - tool 消息按时间窗口附加在 content 之后
+   * - total 只统计 content 总数（不含 tool）
    */
   getMessages(params: {
     session_key?: string;
@@ -601,17 +647,59 @@ export class DataRepository {
       values.push(params.session_key);
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const sessionFilter = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countRow = this.db.prepare(`SELECT COUNT(*) as total FROM admin_messages ${whereClause}`).get(...values) as { total: number };
-
-    const rows = this.db.prepare(`
-      SELECT * FROM admin_messages ${whereClause}
+    // 1. 从 admin_messages 取 content (user+agent)，按 timestamp DESC
+    const contentSQL = `
+      SELECT * FROM admin_messages ${sessionFilter}
       ORDER BY timestamp DESC
       LIMIT ? OFFSET ?
-    `).all(...values, limit, offset) as AdminMessage[];
+    `;
+    const contentRows = this.db.prepare(contentSQL).all(...values, limit, offset) as AdminMessage[];
 
-    return { messages: rows, total: countRow.total };
+    // 2. 计算时间窗口（用于取 tool 消息）
+    if (contentRows.length === 0) {
+      const countRow = this.db.prepare(`SELECT COUNT(*) as total FROM admin_messages ${sessionFilter}`).get(...values) as { total: number };
+      return { messages: [], total: countRow.total };
+    }
+    const oldest = contentRows[contentRows.length - 1].timestamp;
+    const newest = contentRows[0].timestamp;
+
+    // 3. 从 admin_tool_calls 取时间窗口内的 tool（session_key 相同，时间在窗口内）
+    const toolConditions = sessionFilter ? `${sessionFilter} AND` : 'WHERE';
+    const toolSQL = `
+      SELECT
+        id,
+        source_id,
+        source_module,
+        session_key,
+        'tool' as message_type,
+        content,
+        model,
+        tokens_input,
+        tokens_output,
+        cost_total,
+        cost_input,
+        cost_output,
+        0 as is_system_context,
+        created_at as timestamp,
+        created_at,
+        NULL as source_created_at
+      FROM admin_tool_calls
+      ${toolConditions} created_at BETWEEN ? AND ?
+      ORDER BY created_at DESC
+    `;
+    const toolRows = this.db.prepare(toolSQL).all(...values, oldest, newest) as AdminMessage[];
+
+    // 4. 合并并按 timestamp DESC 排序
+    const merged = [...contentRows, ...toolRows].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    // 5. total = content 总数（不含 tool）
+    const countRow = this.db.prepare(`SELECT COUNT(*) as total FROM admin_messages ${sessionFilter}`).get(...values) as { total: number };
+
+    return { messages: merged, total: countRow.total };
   }
 
   /**
@@ -649,42 +737,44 @@ export class DataRepository {
     const messages: TimelineMessage[] = [];
 
     // Build conditions
-    const conditions: string[] = ["m.message_type IN ('user', 'agent', 'tool')"];
+    const contentConditions: string[] = ["m.message_type IN ('user', 'agent')"];
     const values: unknown[] = [];
 
     if (params.message_types) {
       const types = params.message_types.split(',').map(s => s.trim()).filter(Boolean);
       if (types.length > 0 && types.length < 3) {
-        conditions[0] = `m.message_type IN (${types.map(() => '?').join(', ')})`;
+        contentConditions[0] = `m.message_type IN (${types.map(() => '?').join(', ')})`;
         values.push(...types);
       }
     }
 
     if (params.before) {
-      conditions.push('m.timestamp < ?');
+      contentConditions.push('m.timestamp < ?');
       values.push(params.before);
     }
 
     if (params.since) {
-      conditions.push('m.timestamp > ?');
+      contentConditions.push('m.timestamp > ?');
       values.push(params.since);
     }
 
     if (params.agent_ids && params.agent_ids.length > 0) {
       const agentPlaceholders = params.agent_ids.map(() => '?').join(', ');
-      conditions.push(`s.agent_id IN (${agentPlaceholders})`);
+      contentConditions.push(`s.agent_id IN (${agentPlaceholders})`);
       values.push(...params.agent_ids);
     }
 
     if (params.search) {
-      conditions.push('m.content LIKE ?');
-      values.push(`%${params.search}%`);
+      contentConditions.push('m.content LIKE ?');
+      // 转义 LIKE 通配符 % 和 _，避免搜索词被误解释为通配符
+      const escaped = params.search.replace(/[%_]/g, (c) => c === '%' ? '\\%' : '\\_');
+      values.push(`%${escaped}%`);
     }
 
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const contentWhereClause = `WHERE ${contentConditions.join(' AND ')}`;
 
-    // Query
-    const rows = this.db.prepare(`
+    // Step 1: Query admin_messages for user+agent (limit+1 to detect has_more)
+    const contentRows = this.db.prepare(`
       SELECT
         m.id,
         m.session_key,
@@ -698,7 +788,7 @@ export class DataRepository {
       FROM admin_messages m
       LEFT JOIN admin_sessions s ON m.session_key = s.session_key
       LEFT JOIN admin_agents a ON s.agent_id = a.agent_id
-      ${whereClause}
+      ${contentWhereClause}
       ORDER BY m.timestamp DESC
       LIMIT ?
     `).all(...values, limit + 1) as Array<{
@@ -713,21 +803,105 @@ export class DataRepository {
       avatar: string | null;
     }>;
 
-    const has_more = rows.length > limit;
-    if (has_more) rows.pop();
+    const contentHasMore = contentRows.length > limit;
+    if (contentHasMore) contentRows.pop();
+
+    // Step 2: Determine time window from content rows
+    let windowOldest: string | null = null;
+    let windowNewest: string | null = null;
+    if (contentRows.length > 0) {
+      windowOldest = contentRows[contentRows.length - 1].timestamp;
+      windowNewest = contentRows[0].timestamp;
+    }
+
+    // Step 3: Build tool-only conditions (message_type filter doesn't apply to tool table)
+    const toolConditions: string[] = [];
+    const toolValues: unknown[] = [];
+
+    if (params.before) {
+      toolConditions.push('t.created_at < ?');
+      toolValues.push(params.before);
+    }
+    if (params.since) {
+      toolConditions.push('t.created_at > ?');
+      toolValues.push(params.since);
+    }
+    if (params.agent_ids && params.agent_ids.length > 0) {
+      const agentPlaceholders = params.agent_ids.map(() => '?').join(', ');
+      toolConditions.push(`s.agent_id IN (${agentPlaceholders})`);
+      toolValues.push(...params.agent_ids);
+    }
+    if (params.search) {
+      toolConditions.push('t.content LIKE ?');
+      const escaped = params.search.replace(/[%_]/g, (c) => c === '%' ? '\\%' : '\\_');
+      toolValues.push(`%${escaped}%`);
+    }
+    if (windowOldest && windowNewest) {
+      toolConditions.push('t.created_at BETWEEN ? AND ?');
+      toolValues.push(windowOldest, windowNewest);
+    }
+
+    const toolWhereClause = toolConditions.length > 0 ? `WHERE ${toolConditions.join(' AND ')}` : '';
+
+    // Step 4: Query admin_tool_calls within time window
+    let toolRows: Array<{
+      id: number;
+      session_key: string;
+      message_type: string;
+      content: string | null;
+      timestamp: string;
+      model: string | null;
+      agent_id: string | null;
+      agent_name: string | null;
+      avatar: string | null;
+    }> = [];
+
+    if (toolWhereClause) {
+      const toolSQL = `
+        SELECT
+          t.id,
+          t.session_key,
+          'tool' as message_type,
+          t.content,
+          t.created_at as timestamp,
+          t.model,
+          s.agent_id,
+          a.agent_name,
+          a.avatar
+        FROM admin_tool_calls t
+        LEFT JOIN admin_sessions s ON t.session_key = s.session_key
+        LEFT JOIN admin_agents a ON s.agent_id = a.agent_id
+        ${toolWhereClause}
+        ORDER BY t.created_at DESC
+      `;
+      toolRows = this.db.prepare(toolSQL).all(...toolValues) as typeof toolRows;
+    }
+
+    // Step 5: Merge content + tool rows and sort by timestamp DESC
+    const mergedRows = [...contentRows, ...toolRows].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    // Step 6: has_more based on CONTENT rows only (not tool)
+    const has_more = contentHasMore;
 
     // 统计范围内的 agent
     const agentSet = new Set<string>();
-    // 总行数（近似）
+    // 总行数（content only，不含 tool）
     let totalInRange = 0;
     try {
-      const countRow = this.db.prepare(`SELECT COUNT(*) as cnt FROM admin_messages m LEFT JOIN admin_sessions s ON m.session_key = s.session_key ${whereClause}`).get(...values) as { cnt: number };
+      const countRow = this.db.prepare(`SELECT COUNT(*) as cnt FROM admin_messages m LEFT JOIN admin_sessions s ON m.session_key = s.session_key ${contentWhereClause}`).get(...values) as { cnt: number };
       totalInRange = countRow.cnt;
     } catch { /* ignore */ }
 
     const seenContent = new Set<string>();
 
-    for (const row of rows) {
+    for (const row of mergedRows) {
+      // Apply message_types filter dynamically
+      if (params.message_types) {
+        const types = params.message_types.split(',').map(s => s.trim()).filter(Boolean);
+        if (types.length > 0 && !types.includes(row.message_type)) continue;
+      }
       // Determine agent_id
       let agentId = row.agent_id;
       if (!agentId && row.message_type === 'user') {
@@ -1217,53 +1391,6 @@ export class DataRepository {
   // ========== Stats Computation (from admin_messages) ==========
 
   /**
-   * 从 admin_messages 计算并更新每个 session 的统计信息
-   * - message_count: 消息总数
-   * - first_message_at: 首条消息时间
-   * - last_message_at: 末条消息时间
-   * 仅当 message_count 或 last_message_at 发生变化时更新
-   * @returns 更新涉及的 session 数量
-   */
-  computeSessionStats(): number {
-    logger.info('[DataRepository] Computing session stats from admin_messages...');
-
-    const computeAndUpsert = this.db.transaction(() => {
-      // 获取所有 session_key
-      const sessions = this.db.prepare('SELECT session_key FROM admin_sessions').all() as { session_key: string }[];
-      let updated = 0;
-
-      for (const { session_key } of sessions) {
-        const row = this.db.prepare(`
-          SELECT
-            COUNT(*) as message_count,
-            MIN(timestamp) as first_message_at,
-            MAX(timestamp) as last_message_at
-          FROM admin_messages
-          WHERE session_key = ?
-        `).get(session_key) as { message_count: number; first_message_at: string | null; last_message_at: string | null } | undefined;
-
-        if (!row) continue;
-
-        // 仅当 message_count 或 last_message_at 变化时更新
-        const update = this.db.prepare(`
-          UPDATE admin_sessions
-          SET message_count = ?, first_message_at = ?, last_message_at = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE session_key = ?
-            AND (message_count != ? OR last_message_at != ? OR first_message_at IS NULL)
-        `);
-        const result = update.run(row.message_count, row.first_message_at, row.last_message_at, session_key, row.message_count, row.last_message_at);
-        if (result.changes > 0) updated++;
-      }
-
-      return updated;
-    });
-
-    const updated = computeAndUpsert();
-    logger.info(`[DataRepository] Session stats computed: ${updated} sessions updated`);
-    return updated;
-  }
-
-  /**
    * 增量更新 session 统计（仅对本次同步涉及的 session keys）
    * 避免全表扫描，提升同步性能
    * @param sessionKeys 本次同步涉及的 session key 列表
@@ -1299,61 +1426,6 @@ export class DataRepository {
     });
 
     updateMany();
-    return updated;
-  }
-
-  /**
-   * 从 admin_messages 计算并更新每个 agent 的统计信息
-   * - session_count: 独立会话数（不含 checkpoint）
-   * - message_count: 消息总数（不含 checkpoint）
-   * - first_active_at: 首次活跃时间（不含 checkpoint）
-   * - last_active_at: 最近活跃时间（不含 checkpoint）
-   * 仅当任何统计值发生变化时更新
-   * @returns 更新涉及的 agent 数量
-   */
-  computeAgentStats(): number {
-    logger.info('[DataRepository] Computing agent stats from admin_messages...');
-
-    const computeAndUpsert = this.db.transaction(() => {
-      // 获取所有配置的 agent_id
-      const agents = this.db.prepare('SELECT agent_id FROM admin_agents').all() as { agent_id: string }[];
-      let updated = 0;
-
-      for (const { agent_id } of agents) {
-        const row = this.db.prepare(`
-          SELECT
-            COUNT(DISTINCT m.session_key) as session_count,
-            COUNT(*) as message_count,
-            MIN(m.timestamp) as first_active_at,
-            MAX(m.timestamp) as last_active_at
-          FROM admin_messages m
-          INNER JOIN admin_sessions s ON m.session_key = s.session_key
-          WHERE s.agent_id = ?
-            AND m.session_key NOT LIKE '%checkpoint%'
-        `).get(agent_id) as { session_count: number; message_count: number; first_active_at: string | null; last_active_at: string | null } | undefined;
-
-        if (!row) continue;
-
-        // 仅当任何统计值变化时更新
-        const update = this.db.prepare(`
-          UPDATE admin_agents
-          SET session_count = ?, message_count = ?, first_active_at = ?, last_active_at = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE agent_id = ?
-            AND (session_count != ? OR message_count != ? OR first_active_at != ? OR last_active_at != ? OR first_active_at IS NULL)
-        `);
-        const result = update.run(
-          row.session_count, row.message_count, row.first_active_at, row.last_active_at,
-          agent_id,
-          row.session_count, row.message_count, row.first_active_at, row.last_active_at
-        );
-        if (result.changes > 0) updated++;
-      }
-
-      return updated;
-    });
-
-    const updated = computeAndUpsert();
-    logger.info(`[DataRepository] Agent stats computed: ${updated} agents updated`);
     return updated;
   }
 
@@ -1556,5 +1628,205 @@ export class DataRepository {
     logger.info(`[DataRepository] Recomputed agent stats for ${agentResult.changes} agents`);
 
     return sessionResult.changes;
+  }
+
+  // ========== Data Archival (30-day retention) ==========
+
+  // ========== Data Archival (30-day retention) ==========
+
+  /**
+   * 归档超过指定天数的 tool_call 消息（7天独立保留策略）
+   * 幂等：只归档尚未归档的数据
+   * @param daysToKeep 保留天数，默认 7
+   * @returns 归档的消息数量
+   */
+  archiveOldToolCalls(daysToKeep: number = 7): number {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+    const cutoffISO = cutoffDate.toISOString();
+
+    logger.info(`[DataRepository] Archiving tool_calls older than ${cutoffISO}`);
+
+    let archivedCount = 0;
+    this.db.transaction(() => {
+      const deleted = this.db.prepare(
+        `DELETE FROM admin_tool_calls WHERE created_at < ?`
+      ).run(cutoffISO);
+      archivedCount = deleted.changes;
+    })();
+
+    logger.info(`[DataRepository] Archived ${archivedCount} tool_calls`);
+    return archivedCount;
+  }
+
+  /**
+   * 归档超过指定天数的消息到 archive 表
+   * 幂等：只归档尚未归档的数据
+   * @param daysToKeep 保留天数，默认 30
+   * @returns 归档的消息数量
+   */
+  archiveOldMessages(daysToKeep: number = 30): number {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+    const cutoffISO = cutoffDate.toISOString();
+
+    logger.info(`[DataRepository] Archiving messages older than ${cutoffISO}`);
+
+    const archive = this.db.transaction(() => {
+      // 1. 查找需要归档的消息（仅主表数据，不在 archive 中）
+      const toArchive = this.db.prepare(`
+        SELECT * FROM admin_messages
+        WHERE timestamp < ?
+          AND id NOT IN (SELECT source_id FROM admin_messages_archive WHERE source_id IS NOT NULL)
+      `).all(cutoffISO) as AdminMessage[];
+
+      if (toArchive.length === 0) {
+        logger.info('[DataRepository] No messages to archive');
+        return 0;
+      }
+
+      logger.info(`[DataRepository] Found ${toArchive.length} messages to archive`);
+
+      // 2. 插入到 archive 表
+      const insertArchive = this.db.prepare(`
+        INSERT OR IGNORE INTO admin_messages_archive (
+          source_id, source_module, session_key, message_type, content,
+          model, tokens_input, tokens_output, cost_total, cost_input, cost_output,
+          is_system_context, timestamp, created_at, source_created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const msg of toArchive) {
+        insertArchive.run(
+          msg.source_id ?? null,
+          msg.source_module,
+          msg.session_key,
+          msg.message_type ?? null,
+          msg.content ?? null,
+          msg.model ?? null,
+          msg.tokens_input ?? null,
+          msg.tokens_output ?? null,
+          msg.cost_total ?? null,
+          msg.cost_input ?? null,
+          msg.cost_output ?? null,
+          msg.is_system_context ?? 0,
+          msg.timestamp,
+          msg.created_at,
+          msg.source_created_at ?? null
+        );
+      }
+
+      // 3. 从主表删除已归档的消息
+      const sourceIds = toArchive.map(m => m.id).filter(id => id !== undefined);
+      if (sourceIds.length > 0) {
+        const placeholders = sourceIds.map(() => '?').join(',');
+        const deleted = this.db.prepare(
+          `DELETE FROM admin_messages WHERE id IN (${placeholders})`
+        ).run(...sourceIds);
+        logger.info(`[DataRepository] Deleted ${deleted.changes} messages from main table`);
+      }
+
+      // 4. 可选 VACUUM（由调用方控制频率）
+      return toArchive.length;
+    });
+
+    const count = archive();
+    logger.info(`[DataRepository] Archived ${count} messages`);
+    return count;
+  }
+
+  /**
+   * 执行数据库 VACUUM（清理归档后的碎片空间）
+   * 建议在归档后调用，但不要太频繁
+   */
+  vacuumIfNeeded(): void {
+    try {
+      this.db.exec('VACUUM');
+      logger.info('[DataRepository] VACUUM completed after archival');
+    } catch (error) {
+      logger.warn('[DataRepository] VACUUM failed:', { error: String(error) });
+    }
+  }
+
+  /**
+   * 获取已归档消息（支持与主表统一查询接口）
+   */
+  getArchivedMessages(params: {
+    session_key?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): { messages: AdminMessage[]; total: number } {
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+
+    if (params.session_key) {
+      conditions.push('session_key = ?');
+      values.push(params.session_key);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRow = this.db.prepare(`SELECT COUNT(*) as total FROM admin_messages_archive ${whereClause}`).get(...values) as { total: number };
+
+    const rows = this.db.prepare(`
+      SELECT * FROM admin_messages_archive ${whereClause}
+      ORDER BY timestamp DESC
+      LIMIT ? OFFSET ?
+    `).all(...values, limit, offset) as AdminMessage[];
+
+    return { messages: rows, total: countRow.total };
+  }
+
+  /**
+   * 启动每日归档定时器（每天凌晨 3 点）
+   * admin_messages: 30天保留；admin_tool_calls: 7天保留（独立调度）
+   * @param daysToKeep admin_messages 保留天数，默认 30
+   * @param onComplete 归档完成回调
+   * @returns interval timer id
+   */
+  startArchiveScheduler(daysToKeep: number = 30, onComplete?: (count: number) => void): NodeJS.Timeout {
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+    const runArchive = () => {
+      try {
+        // 归档 admin_messages（30天）
+        const count = this.archiveOldMessages(daysToKeep);
+        if (count > 0) this.vacuumIfNeeded();
+        onComplete?.(count);
+
+        // 归档 admin_tool_calls（7天，独立策略）
+        try {
+          const toolCount = this.archiveOldToolCalls(7);
+          if (toolCount > 0) {
+            logger.info(`[DataRepository] Tool calls archive: ${toolCount} cleaned up`);
+          }
+        } catch (toolErr) {
+          logger.error('[DataRepository] Scheduled tool_calls archive failed:', { error: String(toolErr) });
+        }
+      } catch (error) {
+        logger.error('[DataRepository] Scheduled archive failed:', { error: String(error) });
+      }
+    };
+
+    // 计算到次日凌晨 3 点的毫秒数
+    const now = new Date();
+    const next3AM = new Date(now);
+    next3AM.setHours(3, 0, 0, 0);
+    if (next3AM <= now) next3AM.setDate(next3AM.getDate() + 1);
+    const initialDelay = next3AM.getTime() - now.getTime();
+
+    logger.info(`[DataRepository] Archive scheduler will first run at ${next3AM.toISOString()} (in ${Math.round(initialDelay / 1000 / 60)}min), then every 24h`);
+
+    // 先执行一次（延迟后），之后每 24 小时执行
+    setTimeout(() => {
+      runArchive();
+      setInterval(runArchive, MS_PER_DAY);
+    }, initialDelay);
+
+    // 返回值仅用于兼容，实际清理由进程退出时自然结束
+    return setTimeout(() => {}, 0);
   }
 }

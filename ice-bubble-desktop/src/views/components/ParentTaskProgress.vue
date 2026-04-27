@@ -1,38 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import type { TaskItemDTO, ParentTaskDTO, AgentDTO } from '../../api/client';
 
-// =========== 类型定义 ===========
-
-interface TaskItem {
-  task_id: string;
-  title: string;
-  status: string;
-  updated_at?: string;
-}
-
-interface AgentGroup {
-  agent_id: string;
-  active_children: TaskItem[];
-  completed_children: TaskItem[];
-}
-
-interface ParentTask {
-  id: string;
-  title: string;
-  status: string;
-  updated_at: string;
-  agent_groups: AgentGroup[];
-}
-
-interface AgentOverview {
-  agent_id: string;
-  agent_name: string;
-  avatar: string | null;
-}
+// =========== Props ===========
 
 interface Props {
-  parentTask: ParentTask | null;
-  agents?: AgentOverview[];
+  parentTask: ParentTaskDTO | null;
+  agents?: AgentDTO[];
   loading?: boolean;
 }
 
@@ -53,8 +27,8 @@ function truncateTaskTitle(title: string, maxLen: number = 35): string {
 
 /** 获取所有子任务（平铺） */
 const allChildren = computed(() => {
-  if (!props.parentTask?.agent_groups) return [] as TaskItem[];
-  const items: TaskItem[] = [];
+  if (!props.parentTask?.agent_groups) return [] as TaskItemDTO[];
+  const items: TaskItemDTO[] = [];
   for (const g of props.parentTask.agent_groups) {
     items.push(...(g.active_children || []));
     items.push(...(g.completed_children || []));
@@ -67,8 +41,8 @@ const hasChildren = computed(() => allChildren.value.length > 0);
 
 /** 涉及到的 agent 列表（main 永远显示 + 实际执行者） */
 const involvedAgents = computed(() => {
-  if (!props.agents) return [] as AgentOverview[];
-  const result: AgentOverview[] = [];
+  if (!props.agents) return [] as AgentDTO[];
+  const result: AgentDTO[] = [];
   const seen = new Set<string>();
   // main 永远排第一（任务发起者）
   const mainAgent = props.agents.find(a => a.agent_id === 'main');
@@ -91,7 +65,7 @@ const involvedAgents = computed(() => {
 });
 
 /** 获取 agent 头像 URL */
-function getAvatarUrl(agent: AgentOverview): string {
+function getAvatarUrl(agent: AgentDTO): string {
   if (agent.avatar) return `/api/resources/avatars/${agent.avatar}`;
   return `/api/resources/avatars/${agent.agent_id}.png`;
 }
@@ -132,8 +106,8 @@ const statusTags = computed(() => {
         v-for="(agent, i) in involvedAgents"
         :key="agent.agent_id"
         :src="getAvatarUrl(agent)"
-        :alt="agent.agent_name"
-        :title="agent.agent_name"
+        :alt="agent.agent_name ?? undefined"
+        :title="agent.agent_name ?? undefined"
         class="agent-avatar-stack"
         :style="{ zIndex: involvedAgents.length - i }"
         @error="($event.target as HTMLImageElement).style.display='none'"

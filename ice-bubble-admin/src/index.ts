@@ -19,6 +19,7 @@ import { createResourcesRouter } from './api/resources.js';
 import { DataSync } from './data/data-sync.js';
 import { AgentOverviewService } from './data/agent-overview.js';
 import { CollectorClient } from './data/collector-client.js';
+import { createBearerAuthMiddleware, getAuthToken } from './utils/auth-middleware.js';
 
 // 加载环境变量
 config();
@@ -30,9 +31,39 @@ export const VERSION = '1.0.0';
 
 // 读取配置 - 使用相对路径
 const configPath = './config/config.json';
-let configData: any;
+
+interface ServerConfig {
+  port?: number;
+  host?: string;
+}
+
+interface ModuleConfig {
+  moduleKey: string;
+  name: string;
+  baseUrl: string;
+  enabled: boolean;
+  pollInterval?: number;
+}
+
+interface DataSyncConfig {
+  collectorBaseUrl?: string;
+  moduleKey?: string;
+  pollInterval?: number;
+  batchSize?: number;
+  taskApiBaseUrl?: string;
+  subagentParserEnabled?: boolean;
+}
+
+interface AppConfig {
+  server?: ServerConfig;
+  modules?: ModuleConfig[];
+  dataSync?: DataSyncConfig;
+  auth?: { token?: string };
+}
+
+let configData: AppConfig;
 try {
-  configData = JSON.parse(readFileSync(configPath, 'utf-8'));
+  configData = JSON.parse(readFileSync(configPath, 'utf-8')) as AppConfig;
 } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);
   console.error(`[index] Failed to parse ${configPath}: ${msg}`);
@@ -98,14 +129,20 @@ export async function startAdmin(): Promise<void> {
     const app = express();
     app.use(express.json());
 
-    const PORT = configData.server?.port || 13101;
+    // Bearer token auth middleware (skipped if no token configured — backward compatible)
+    const authToken = getAuthToken(configData.auth?.token);
+    if (authToken) {
+        app.use('/api', createBearerAuthMiddleware({ token: authToken }));
+    }
+
+    const PORT = configData.server?.port || 13000;
     const HOST = configData.server?.host || 'localhost';
 
     // 初始化数据库
     const dbPath = join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(11);  // 执行数据库迁移（v10: token_summary 改为每日聚合）
+    await dbManager.migrate(14);  // 执行数据库迁移（v14: tool 消息拆分到独立表）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 
@@ -151,6 +188,12 @@ export async function startAdmin(): Promise<void> {
     );
     dataSync.start();
     logger.info('[Admin] 数据同步调度器初始化完成');
+
+    // 启动每日归档调度器（凌晨 3 点执行，保留 30 天数据）
+    dataRepository.startArchiveScheduler(30, (count) => {
+      logger.info(`[Admin] 归档任务完成，共归档 ${count} 条消息`);
+    });
+    logger.info('[Admin] 数据归档调度器已启动');
 
     // 注册 API 路由
     app.use('/api', createDataRouter({

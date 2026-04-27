@@ -2,12 +2,14 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { api } from '../api/client.ts';
+import { api } from '../api/client';
+import { formatRelativeTime } from '../utils/format';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import ChatPanel from '../components/ChatPanel.vue';
 import type { Session } from '../components/SessionList.vue';
 import LoadingSkeleton from './components/LoadingSkeleton.vue';
+import EmptyState from '../components/EmptyState.vue';
 
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
 
@@ -101,23 +103,6 @@ function getShortKey(key: string): string {
     return parts.slice(localIdx).join(':');
   }
   return key;
-}
-
-function formatRelativeTime(dateString: string | null): string {
-  if (!dateString) return '-';
-  const now = Date.now();
-  const date = new Date(dateString).getTime();
-  const diff = now - date;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return '刚刚';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}小时前`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}天前`;
-  const d = new Date(dateString);
-  return `${d.getMonth() + 1}-${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
 
 async function fetchAllSessions() {
@@ -234,10 +219,7 @@ onUnmounted(() => {
         <LoadingSkeleton type="list" :rows="6" />
       </div>
 
-      <div v-else class="empty-state">
-        <div class="empty-icon">💬</div>
-        <div class="empty-text">请从右上角选择会话</div>
-      </div>
+      <EmptyState v-else icon="💬" title="请从右上角选择会话" />
     </div>
 
     <AppFooter />

@@ -5,9 +5,10 @@ import { Refresh, Plus, Delete, InfoFilled, VideoPlay, VideoPause } from '@eleme
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { formatTime } from '../utils/format.ts';
-import { api } from '../api/client.ts';
-import type { ModuleDTO } from '../api/client.ts';
+import EmptyState from '../components/EmptyState.vue';
+import { formatTime } from '../utils/format';
+import { api } from '../api/client';
+import type { ModuleDTO } from '../api/client';
 
 interface ModuleStatus {
   state: 'running' | 'stopped' | 'error' | null;
@@ -399,7 +400,7 @@ onUnmounted(() => {
 
     <div class="content-wrapper" v-loading="loading">
       <div v-if="error" class="error-msg">{{ error }}</div>
-      <div v-if="!loading && modules.length === 0" class="empty-msg">暂无模块</div>
+      <EmptyState v-if="!loading && modules.length === 0" title="暂无模块" icon="📦" />
       <div v-if="!loading && modules.length > 0" class="cards-grid">
         <el-card
           v-for="mod in modules"

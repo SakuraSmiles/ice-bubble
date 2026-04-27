@@ -3,6 +3,9 @@
         "port": 13000,
         "host": "localhost"
     },
+    "auth": {
+        "token": ""
+    },
     "cors": {
         "enabled": true,
         "origins": [

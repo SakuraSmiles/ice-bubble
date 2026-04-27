@@ -6,6 +6,13 @@
 import { API_BASE } from '../config';
 import { apiMonitor } from '../utils/monitor';
 
+// Auth token: read from environment variable (Vite) or config
+function getAuthToken(): string {
+  // Vite uses import.meta.env for env vars
+  const envToken = (import.meta as any).env?.VITE_ICE_AUTH_TOKEN;
+  return envToken || '';
+}
+
 // ============ DTO 接口 ============
 
 export interface StatsDTO {
@@ -111,7 +118,7 @@ export interface TimelineResponseDTO {
   meta: TimelineMetaDTO;
 }
 
-export type AgentStatus = '失联' | '工作' | '活跃' | '休假' | '离线';
+export type AgentStatus = '失联' | '工作' | '工作中' | '活跃' | '休假' | '离线';
 
 export interface AgentDTO {
   agent_id: string;
@@ -125,6 +132,7 @@ export interface AgentDTO {
   avatar: string | null;
   model: string | null;
   source: string;
+  latest_message: string | null;
   /** 统一状态，由 admin 层 calculateAgentStatus 计算 */
   status: AgentStatus;
 }
@@ -178,16 +186,53 @@ export interface TokenSummaryResponseDTO {
   summary: TokenSummaryDTO[];
 }
 
+// ============ 任务 DTO ============
+
+export interface TaskItemDTO {
+  task_id: string;
+  title: string;
+  status: string;
+  updated_at?: string;
+}
+
+export interface AgentGroupDTO {
+  agent_id: string;
+  active_children: TaskItemDTO[];
+  completed_children: TaskItemDTO[];
+}
+
+export interface ParentTaskDTO {
+  id: string;
+  title: string;
+  status: string;
+  updated_at: string;
+  agent_groups: AgentGroupDTO[];
+}
+
+export interface WorkspaceTasksDTO {
+  parents: ParentTaskDTO[];
+}
+
 // ============ 内部工具 ============
 
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const start = performance.now();
   const method = options?.method || 'GET';
   try {
+    // Build headers with Bearer token if configured
+    const headers: Record<string, string> = {
+      ...(options?.headers as Record<string, string> || {}),
+    };
+    const authToken = getAuthToken();
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
     // API_BASE = '/api'（相对路径），请求通过 Vite dev server 或生产环境同源代理转发
     // credentials: 'include' 确保浏览器发送 cookie（用于会话认证）
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
+      headers,
       credentials: 'include'
     });
     const latency = Math.round(performance.now() - start);
@@ -299,4 +344,7 @@ export const api = {
     const query = params.toString() ? `?${params.toString()}` : '';
     return fetchJson<TokenSummaryResponseDTO>(`/agents/token-summary${query}`);
   },
+
+  // 任务
+  getWorkspaceTasks: () => fetchJson<WorkspaceTasksDTO>('/tasks/workspace'),
 };

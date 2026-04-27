@@ -37,6 +37,34 @@ interface AppConfig {
     claudeCode: { enabled: boolean; taskStorePath: string };
   };
   scheduler: { collectIntervalMs: number; cleanupIntervalMs: number; taskTtlDays: number };
+  auth?: { token?: string };
+}
+
+/**
+ * Get auth token: ICE_AUTH_TOKEN env var first, fallback to config value
+ */
+function getAuthToken(configToken?: string): string {
+  return process.env.ICE_AUTH_TOKEN || configToken || '';
+}
+
+/**
+ * Simple Bearer token auth middleware
+ * Skipped if no token configured (backward compatible)
+ */
+function createBearerAuthMiddleware(token: string) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction): void => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: '未提供认证令牌', code: 'UNAUTHORIZED' });
+      return;
+    }
+    const providedToken = authHeader.slice(7);
+    if (providedToken !== token) {
+      res.status(401).json({ error: '认证令牌无效', code: 'INVALID_TOKEN' });
+      return;
+    }
+    next();
+  };
 }
 
 function resolvePath(p: string): string {
@@ -60,6 +88,12 @@ export async function startTask(): Promise<void> {
 
   const app = express();
   app.use(express.json());
+
+  // Bearer token auth middleware (skipped if no token configured — backward compatible)
+  const authToken = getAuthToken(config.auth?.token);
+  if (authToken) {
+    app.use('/api', createBearerAuthMiddleware(authToken));
+  }
 
   const { host, port } = config.server;
 

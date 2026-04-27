@@ -62,7 +62,7 @@ const renderedContent = computed(() => renderMarkdown(props.content));
 .markdown-content :deep(pre code) {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   font-size: 0.85em;
-  line-height: 1.35;
+  line-height: 1.55;
   padding: 0;
 }
 
