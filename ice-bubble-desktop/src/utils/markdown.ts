@@ -57,6 +57,7 @@ const MAX_CACHE = 200;
 
 export function renderMarkdown(content: string): string {
   if (!content) return '';
+  content = content.trim();
 
   // 命中缓存
   const cached = cache.get(content);

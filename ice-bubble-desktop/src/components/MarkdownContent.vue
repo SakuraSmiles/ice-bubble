@@ -21,7 +21,7 @@ const renderedContent = computed(() => renderMarkdown(props.content));
 <style scoped>
 .markdown-content {
   overflow-y: auto;
-  line-height: 1.6;
+  line-height: 1.45;
   word-break: break-word;
   color: var(--el-text-color-regular);
 }
@@ -62,7 +62,7 @@ const renderedContent = computed(() => renderMarkdown(props.content));
 .markdown-content :deep(pre code) {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   font-size: 0.85em;
-  line-height: 1.5;
+  line-height: 1.35;
   padding: 0;
 }
 
@@ -152,4 +152,18 @@ const renderedContent = computed(() => renderMarkdown(props.content));
 /* ========== 文本样式 ========== */
 .markdown-content :deep(strong) { font-weight: 600; }
 .markdown-content :deep(em) { font-style: italic; }
+
+/* 末元素收底：消除最后一个块级元素的底部间距，与气泡 padding 对称 */
+.markdown-content :deep(p:last-of-type) { margin-bottom: 0; }
+.markdown-content :deep(pre:last-of-type) { margin-bottom: 0; }
+.markdown-content :deep(blockquote:last-of-type) { margin-bottom: 0; }
+.markdown-content :deep(ul:last-of-type),
+.markdown-content :deep(ol:last-of-type) { margin-bottom: 0; }
+.markdown-content :deep(table:last-of-type) { margin-bottom: 0; }
+.markdown-content :deep(h1:last-of-type),
+.markdown-content :deep(h2:last-of-type),
+.markdown-content :deep(h3:last-of-type),
+.markdown-content :deep(h4:last-of-type),
+.markdown-content :deep(h5:last-of-type),
+.markdown-content :deep(h6:last-of-type) { margin-bottom: 0; }
 </style>

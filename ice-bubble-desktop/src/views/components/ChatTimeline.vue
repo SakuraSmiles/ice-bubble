@@ -401,18 +401,23 @@ function toolSummary(grp: MsgGroup): string {
 
         <!-- Agent 消息 -->
         <div v-else class="msg-row msg-row--agent" :data-msg-id="grp.messages[0].id">
-          <div class="msg-header msg-header--agent">
+          <!-- 头像列 -->
+          <div class="agent-avatar-col">
             <img
               v-if="grp.avatar"
               :src="`/api/resources/avatars/${grp.avatar}`"
               class="avatar"
             />
             <div class="avatar-placeholder" v-else>{{ grp.agentName[0] }}</div>
-            <span class="agent-label-name">{{ grp.agentName }}</span>
-            <span v-if="grp.messages[0]?.model" class="model-tag">{{ grp.messages[0].model }}</span>
-            <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
           </div>
-          <div class="bubble bubble--agent">
+          <!-- 内容列 -->
+          <div class="agent-content-col">
+            <div class="msg-header msg-header--agent">
+              <span class="agent-label-name">{{ grp.agentName }}</span>
+              <span v-if="grp.messages[0]?.model" class="model-tag">{{ grp.messages[0].model }}</span>
+              <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
+            </div>
+            <div class="bubble bubble--agent">
               <div class="bubble-text" v-for="(m, mi) in grp.messages" :key="mi">
                 <MarkdownContent :content="m.content || ''" />
               </div>
@@ -425,6 +430,7 @@ function toolSummary(grp: MsgGroup): string {
               </details>
             </div>
           </div>
+        </div>
       </template>
     </div>
   </div>
@@ -511,7 +517,28 @@ function toolSummary(grp: MsgGroup): string {
   max-width: 90%;
 }
 .msg-row--user { align-self: flex-end; align-items: flex-end; }
-.msg-row--agent { align-self: flex-start; align-items: flex-start; }
+.msg-row--agent {
+  align-self: flex-start;
+  align-items: flex-start;
+  flex-direction: row;
+  gap: 10px;
+}
+
+/* Agent 头像列 */
+.agent-avatar-col {
+  width: 30px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+/* Agent 内容列 */
+.agent-content-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 
 .avatar, .avatar-placeholder {
   width: 30px;
@@ -559,9 +586,8 @@ function toolSummary(grp: MsgGroup): string {
 .bubble {
   padding: 10px 16px;
   font-size: 14px;
-  line-height: 1.65;
+  line-height: 1.45;
   word-break: break-word;
-  white-space: pre-wrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .bubble--user {

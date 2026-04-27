@@ -364,9 +364,9 @@ onUnmounted(() => {
 
 /* 左侧面板 */
 .left-panel {
-  max-width: 30%;
+  width: 24%;
   min-width: 280px;
-  flex-shrink: 1;
+  flex-shrink: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
