@@ -65,6 +65,7 @@ export function analyzeMessageMeta(msg: {
         meta.is_system_noise = true;
         meta.clean_content = '';
       } else {
+        meta.is_system_noise = true;
         meta.clean_content = afterDate;
       }
     }
@@ -144,6 +145,8 @@ export function isSystemNoise(messageType: string, content: string | null): bool
     if (/^\[(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2}/.test(content)) {
       const afterDate = content.replace(/^\[[^\]]+\]\s*/, '').trim();
       if (!afterDate || afterDate === 'HEARTBEAT_OK' || afterDate === 'NO_REPLY') return true;
+      // [date] 前缀且非空（截断版原文），也视为系统噪音
+      return true;
     }
   }
   if (messageType === 'agent') {

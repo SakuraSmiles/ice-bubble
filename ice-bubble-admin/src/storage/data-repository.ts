@@ -758,6 +758,12 @@ export class DataRepository {
         }
       }
 
+      // 相邻去重：当前消息与前一条 message_type 相同且 clean_content 相同则跳过
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.message_type === row.message_type && meta.clean_content === lastMsg.clean_content) {
+        continue;
+      }
+
       messages.push({
         id: row.id,
         session_key: row.session_key,

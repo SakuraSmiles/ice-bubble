@@ -104,8 +104,10 @@ async function loadMore() {
     if (data.messages.length > 0) {
       const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
       if (newMsgs.length > 0) {
-        messages.value = [...newMsgs, ...messages.value].sort(
-          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        messages.value = dedupAdjacent(
+          [...newMsgs, ...messages.value].sort(
+            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          )
         );
         newMsgs.forEach(m => knownIds.add(m.id));
       }
@@ -138,11 +140,12 @@ async function pollLatest() {
   const newMsgs = data.messages.filter(m => !knownIds.has(m.id) && !isEmptyUserMsg(m));
   if (newMsgs.length === 0) return;
 
-  // 加到列表末尾
-  // 按时间排序插入（新消息可能比现有最新消息更早）
+  // 加到列表末尾，按时间排序后去重
   newMsgs.forEach(m => knownIds.add(m.id));
-  messages.value = [...messages.value, ...newMsgs].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  messages.value = dedupAdjacent(
+    [...messages.value, ...newMsgs].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )
   );
 
   if (atBottom.value) {
@@ -200,12 +203,30 @@ function isEmptyUserMsg(m: TimelineMessage): boolean {
   return m.message_type === 'user' && !m.content && !m.clean_content;
 }
 
+/** 相邻去重：OpenClaw 同一消息写两次，内容清洗后会导致相邻重复 */
+function dedupAdjacent(msgs: TimelineMessage[]): TimelineMessage[] {
+  return msgs.filter((m, i, arr) => {
+    if (i === 0) return true;
+    const prev = arr[i - 1];
+    const curContent = m.clean_content || m.content;
+    const prevContent = prev.clean_content || prev.content;
+    if (curContent && curContent === prevContent && m.message_type === prev.message_type) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function setMessages(msgs: TimelineMessage[]) {
   knownIds.clear();
-  const filtered = msgs.filter(m => !isEmptyUserMsg(m));
-  messages.value = filtered.sort(
+  let filtered = msgs.filter(m => !isEmptyUserMsg(m));
+  // 按时间排序
+  filtered.sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
+  // 相邻去重
+  filtered = dedupAdjacent(filtered);
+  messages.value = filtered;
   filtered.forEach(m => knownIds.add(m.id));
 }
 
