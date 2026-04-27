@@ -423,7 +423,12 @@ export class ConfigLoader {
     const content = fs.readFileSync(filePath, 'utf-8');
 
     if (ext === '.json') {
-      return JSON.parse(content);
+      try {
+        return JSON.parse(content);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`配置文件 ${filePath} JSON 解析失败: ${msg}`);
+      }
     } else if (ext === '.yaml' || ext === '.yml') {
       // 如果需要支持 YAML，需要安装 js-yaml
       // const yaml = require('js-yaml');

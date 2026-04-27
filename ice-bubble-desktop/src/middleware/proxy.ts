@@ -6,10 +6,25 @@
 
 import net from 'net';
 import { Request, Response } from 'express';
-import { findModuleByPath } from '../config.server.js';
+import { findModuleByPath, getConfig } from '../config.server.js';
 
 export function createProxyMiddleware() {
   return async (req: Request, res: Response) => {
+    // Token 鉴权
+    const config = getConfig();
+    if (config.authToken) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        res.status(401).json({ error: '未提供认证令牌', code: 'UNAUTHORIZED' });
+        return;
+      }
+      const providedToken = authHeader.slice(7);
+      if (providedToken !== config.authToken) {
+        res.status(401).json({ error: '认证令牌无效', code: 'INVALID_TOKEN' });
+        return;
+      }
+    }
+
     const originalPath = req.originalUrl || req.url;
     console.log(`[Proxy] ${req.method} ${originalPath}`);
 

@@ -7,6 +7,7 @@
 import { Router, Request, Response } from 'express';
 import { readFileSync, writeFileSync, renameSync } from 'fs';
 import { join } from 'path';
+import { logger } from '../utils/index.js';
 import { ModuleScheduler } from '../modules/module-scheduler.js';
 
 // config.json 路径（使用 process.cwd() 获取项目根目录）
@@ -15,7 +16,13 @@ function getConfigPath(): string {
 }
 
 function readConfig(): Record<string, unknown> {
-  return JSON.parse(readFileSync(getConfigPath(), 'utf-8'));
+  try {
+    return JSON.parse(readFileSync(getConfigPath(), 'utf-8'));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`[modules] Failed to parse config.json: ${msg}`);
+    process.exit(1);
+  }
 }
 
 function writeConfig(config: Record<string, unknown>): void {

@@ -49,7 +49,14 @@ function resolvePath(p: string): string {
 export async function startTask(): Promise<void> {
   // 加载配置
   const configPath = join(__dirname, '..', 'config', 'config.json');
-  const config: AppConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
+  let config: AppConfig;
+  try {
+    config = JSON.parse(readFileSync(configPath, 'utf-8'));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[app] Failed to parse ${configPath}: ${msg}`);
+    process.exit(1);
+  }
 
   const app = express();
   app.use(express.json());

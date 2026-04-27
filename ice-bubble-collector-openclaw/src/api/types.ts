@@ -69,6 +69,11 @@ export interface ApiServerConfig {
     port: number;
     /** 监听地址 */
     host: string;
+    /** CORS 配置 */
+    cors?: {
+        enabled: boolean;
+        origins: string[];
+    };
     /** 认证配置 */
     auth?: {
         enabled: boolean;

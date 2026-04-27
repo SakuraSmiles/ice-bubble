@@ -661,7 +661,14 @@ export class FileCollector extends BaseCollector implements Collector {
         return;
       }
 
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { agents?: { list?: Array<{ id: string; name?: string; workspace?: string }> } };
+      let config: { agents?: { list?: Array<{ id: string; name?: string; workspace?: string }> } };
+      try {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`[FileCollector] Failed to parse ${configPath}: ${msg}`);
+        return;
+      }
       const agentsList = config.agents?.list ?? [];
 
       logger.info(`Syncing ${agentsList.length} agents from openclaw.json`);

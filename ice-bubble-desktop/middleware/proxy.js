@@ -1,7 +1,20 @@
 import net from "net";
-import { findModuleByPath } from "../config.server.js";
+import { findModuleByPath, getConfig } from "../config.server.js";
 function createProxyMiddleware() {
   return async (req, res) => {
+    const config = getConfig();
+    if (config.authToken) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        res.status(401).json({ error: "\u672A\u63D0\u4F9B\u8BA4\u8BC1\u4EE4\u724C", code: "UNAUTHORIZED" });
+        return;
+      }
+      const providedToken = authHeader.slice(7);
+      if (providedToken !== config.authToken) {
+        res.status(401).json({ error: "\u8BA4\u8BC1\u4EE4\u724C\u65E0\u6548", code: "INVALID_TOKEN" });
+        return;
+      }
+    }
     const originalPath = req.originalUrl || req.url;
     console.log(`[Proxy] ${req.method} ${originalPath}`);
     const targetModule = findModuleByPath(originalPath);

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
+import MarkdownContent from './MarkdownContent.vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../api/client.ts';
@@ -192,7 +193,7 @@ defineExpose({ fetchMessages });
               <div class="bubble-sender">
                 {{ isUserMessage(msg) ? '你' : msg.sender || 'Agent' }}
               </div>
-              <div class="bubble-content">{{ msg.content }}</div>
+              <MarkdownContent :content="msg.content" class="bubble-content" />
               <div class="bubble-time">{{ formatTime(msg.timestamp) }}</div>
             </div>
           </div>

@@ -110,6 +110,15 @@ const recentParentTask = computed<ParentTask | null>(() => {
   )[0];
 });
 
+/** 最近父任务是否包含子任务 */
+const hasSubTasks = computed(() => {
+  const groups = recentParentTask.value?.agent_groups ?? [];
+  return groups.some(g =>
+    (g.active_children && g.active_children.length > 0) ||
+    (g.completed_children && g.completed_children.length > 0)
+  );
+});
+
 // =========== 核心功能函数 ===========
 
 /** 获取/初始化 Agent 运行时状态 */
@@ -292,10 +301,15 @@ onUnmounted(() => {
           />
 
           <!-- 父任务进度条 -->
-          <ParentTaskProgress :parent-task="recentParentTask" :loading="loading" />
+          <ParentTaskProgress
+            :parent-task="recentParentTask"
+            :agents="onlineAgents"
+            :loading="loading"
+          />
 
-          <!-- Agent 任务树 -->
+          <!-- Agent 任务树（仅当有子任务时显示） -->
           <AgentTaskTree
+            v-if="hasSubTasks"
             :agents="onlineAgents"
             :parent-task="recentParentTask"
             :loading="loading"

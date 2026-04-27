@@ -23,8 +23,17 @@ export interface ModuleConfig {
   enabled: boolean;
 }
 
+export interface CorsConfig {
+  enabled: boolean;
+  origins: string[];
+}
+
 export interface ModulesConfig {
   modules: ModuleConfig[];
+  /** 可选：Bearer Token 鉴权 */
+  authToken?: string;
+  /** 可选：CORS 允许来源 */
+  cors?: CorsConfig;
 }
 
 const DEFAULT_CONFIG: ModulesConfig = {

@@ -32,9 +32,26 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '10mb' }));
 
-// CORS 头
-app.use((_req: Request, res: Response, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+// CORS 头 — 从 modules.json 读取允许来源
+app.use((req: Request, res: Response, next) => {
+  const isDev = process.env.NODE_ENV !== 'production';
+  const config = reloadConfig();
+  let allowedOrigins: string[];
+
+  if (isDev) {
+    // 开发环境允许本地开发服务器
+    allowedOrigins = ['http://localhost:1420', 'http://localhost:14000'];
+  } else if (config.cors?.origins && config.cors.origins.length > 0) {
+    allowedOrigins = config.cors.origins;
+  } else {
+    // 配置文件不存在或无 origins 时，默认只允许 localhost
+    allowedOrigins = ['http://localhost', 'http://127.0.0.1'];
+  }
+
+  const origin = req.header('origin');
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();

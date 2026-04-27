@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import MarkdownContent from '../../components/MarkdownContent.vue';
 
 // =========== 类型定义 ===========
 interface TimelineMessage {
@@ -133,8 +134,8 @@ async function pollLatest() {
   const data: TimelineResponse = await res.json();
   if (!data.messages || data.messages.length === 0) return;
 
-  // 过滤出真正的新消息
-  const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
+  // 过滤出真正的新消息，同时排除空内容用户消息
+  const newMsgs = data.messages.filter(m => !knownIds.has(m.id) && !isEmptyUserMsg(m));
   if (newMsgs.length === 0) return;
 
   // 加到列表末尾
@@ -194,12 +195,18 @@ async function fillScrollable() {
 }
 
 /** 设置消息 & 更新已知 ID 集合 */
+/** 空内容过滤：排除内容为空的用户消息（如 HEARTBEAT_OK, NO_REPLY 等系统注入） */
+function isEmptyUserMsg(m: TimelineMessage): boolean {
+  return m.message_type === 'user' && !m.content && !m.clean_content;
+}
+
 function setMessages(msgs: TimelineMessage[]) {
   knownIds.clear();
-  messages.value = msgs.sort(
+  const filtered = msgs.filter(m => !isEmptyUserMsg(m));
+  messages.value = filtered.sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
-  msgs.forEach(m => knownIds.add(m.id));
+  filtered.forEach(m => knownIds.add(m.id));
 }
 
 // =========== 滚动事件 ===========
@@ -367,7 +374,7 @@ function toolSummary(grp: MsgGroup): string {
             <span v-if="grp.messages[0]?.source_channel" class="channel-tag">{{ grp.messages[0].source_channel }}</span>
           </div>
           <div class="bubble bubble--user">
-            {{ grp.messages[0]?.clean_content || grp.messages[0]?.content }}
+            <MarkdownContent :content="grp.messages[0]?.clean_content || grp.messages[0]?.content || ''" />
           </div>
         </div>
 
@@ -386,7 +393,7 @@ function toolSummary(grp: MsgGroup): string {
           </div>
           <div class="bubble bubble--agent">
               <div class="bubble-text" v-for="(m, mi) in grp.messages" :key="mi">
-                {{ m.content }}
+                <MarkdownContent :content="m.content || ''" />
               </div>
               <!-- 工具消息折叠 -->
               <details v-if="grp.toolMsgs.length > 0" class="tool-details">

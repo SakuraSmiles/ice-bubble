@@ -15,6 +15,7 @@
 import { EventEmitter } from 'events';
 import type { SessionMessage } from '../types';
 import { SQLiteManager } from '../storage/sqlite-manager';
+import { Logger } from '../utils/logger.js';
 
 /**
  * BatchWriter 配置
@@ -67,6 +68,7 @@ export interface BatchWriterEvents {
 /**
  * 默认配置
  */
+const logger = new Logger('BatchWriter');
 const DEFAULT_CONFIG: Required<BatchWriterConfig> = {
     batchSize: 100,
     flushInterval: 5000,
@@ -240,6 +242,7 @@ export class BatchWriter extends EventEmitter {
             const totalFailed = messages.length;
             if (this.failedMessages.length + totalFailed > BatchWriter.MAX_RETRY_QUEUE) {
                 const overflow = (this.failedMessages.length + totalFailed) - BatchWriter.MAX_RETRY_QUEUE;
+                logger.error(`[BatchWriter] Retry queue overflow, dropping ${overflow} oldest failed messages (queue cap: ${BatchWriter.MAX_RETRY_QUEUE})`);
                 this.failedMessages.splice(0, overflow);
             }
             this.failedMessages.push(...messages);

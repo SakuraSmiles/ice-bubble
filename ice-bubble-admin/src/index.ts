@@ -30,7 +30,14 @@ export const VERSION = '1.0.0';
 
 // 读取配置 - 使用相对路径
 const configPath = './config/config.json';
-const configData = JSON.parse(readFileSync(configPath, 'utf-8'));
+let configData: any;
+try {
+  configData = JSON.parse(readFileSync(configPath, 'utf-8'));
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`[index] Failed to parse ${configPath}: ${msg}`);
+  process.exit(1);
+}
 
 /**
  * 启动时自动加载模块

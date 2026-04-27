@@ -281,8 +281,14 @@ export function createTasksRouter(repository: TaskRepository, taskStorePath?: st
 
       // T1+T4 fix: 用文件锁保护读-改-写整个临界区，防止并发 PATCH 互相覆盖
       withFileLock(taskStorePath, () => {
-        const content = readStore(taskStorePath);
-        const store: OpenClawTaskStore = JSON.parse(content);
+        let store: OpenClawTaskStore;
+        try {
+          store = JSON.parse(readStore(taskStorePath));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(`[tasks] Failed to parse task store: ${msg}`);
+          return;
+        }
         if (!store.statusUpdates) store.statusUpdates = {};
         store.statusUpdates[id] = {
           status,
@@ -335,8 +341,14 @@ export function createTasksRouter(repository: TaskRepository, taskStorePath?: st
 
       // T7: 同步写入 task-store.json statusUpdates（由 collector 持久化到 SQLite）
       withFileLock(taskStorePath, () => {
-        const content = readStore(taskStorePath);
-        const store: OpenClawTaskStore = JSON.parse(content);
+        let store: OpenClawTaskStore;
+        try {
+          store = JSON.parse(readStore(taskStorePath));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(`[tasks] Failed to parse task store: ${msg}`);
+          return;
+        }
         if (!store.statusUpdates) store.statusUpdates = {};
         for (const taskId of cancelledIds) {
           store.statusUpdates[taskId] = { status: 'cancelled', updated_at: now };

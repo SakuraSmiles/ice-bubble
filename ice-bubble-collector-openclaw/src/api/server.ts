@@ -98,9 +98,25 @@ export async function createApiServer(
         next();
     });
 
-    // CORS — 默认允许所有来源（仅内网使用）
+    // CORS — 从配置读取允许来源
     app.use((req, res, next) => {
-        res.header('Access-Control-Allow-Origin', '*');
+        const isDev = process.env.NODE_ENV !== 'production';
+        let allowedOrigins: string[];
+
+        if (isDev) {
+            // 开发环境允许本地开发服务器
+            allowedOrigins = ['http://localhost:1420', 'http://localhost:14000'];
+        } else if (_config.cors?.origins && _config.cors.origins.length > 0) {
+            allowedOrigins = _config.cors.origins;
+        } else {
+            // 配置文件不存在或无 origins 时，默认只允许 localhost
+            allowedOrigins = ['http://localhost', 'http://127.0.0.1'];
+        }
+
+        const origin = req.header('origin');
+        if (origin && allowedOrigins.includes(origin)) {
+            res.header('Access-Control-Allow-Origin', origin);
+        }
         res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.header('Access-Control-Allow-Headers', 'Content-Type');
         if (req.method === 'OPTIONS') {

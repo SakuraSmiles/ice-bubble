@@ -58,6 +58,16 @@ export function analyzeMessageMeta(msg: {
       const afterTime = afterMeta.replace(/^\[[^\]]+\]\s*/, '').trim();
       meta.clean_content = afterTime || content;
     }
+    // 处理仅有 [date] 前缀的消息（OpenClaw 上下文重建产生的截断版，缺少 Sender metadata）
+    else if (/^\[(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2} \d{2}:\d{2} GMT[^\]]*\] /.test(content)) {
+      const afterDate = content.replace(/^\[[^\]]+\]\s*/, '').trim();
+      if (afterDate === 'HEARTBEAT_OK' || afterDate === 'NO_REPLY' || !afterDate) {
+        meta.is_system_noise = true;
+        meta.clean_content = '';
+      } else {
+        meta.clean_content = afterDate;
+      }
+    }
     // 检测 HEARTBEAT_OK / NO_REPLY
     else if (content === 'HEARTBEAT_OK' || content === 'NO_REPLY') {
       meta.is_system_noise = true;
@@ -129,6 +139,11 @@ export function isSystemNoise(messageType: string, content: string | null): bool
         (/(added \d+ files?|modules transformed|built in)/.test(content) ||
          /^(feat|fix|style|refactor|chore|docs|test)\(/.test(content))) {
       return true;
+    }
+    // [date] 前缀 + 空内容/系统消息
+    if (/^\[(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2}/.test(content)) {
+      const afterDate = content.replace(/^\[[^\]]+\]\s*/, '').trim();
+      if (!afterDate || afterDate === 'HEARTBEAT_OK' || afterDate === 'NO_REPLY') return true;
     }
   }
   if (messageType === 'agent') {

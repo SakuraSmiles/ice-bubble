@@ -12,5 +12,10 @@
       "url": "http://localhost:13102",
       "enabled": true
     }
-  ]
+  ],
+  "authToken": "",
+  "cors": {
+    "enabled": true,
+    "origins": []
+  }
 }

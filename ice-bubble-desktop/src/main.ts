@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
 import ElementPlus from 'element-plus';
 import 'element-plus/dist/index.css';
+import 'highlight.js/styles/github-dark.css';
 import './assets/fonts.css';
 import * as ElementPlusIconsVue from '@element-plus/icons-vue';
 
