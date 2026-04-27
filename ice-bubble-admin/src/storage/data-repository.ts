@@ -725,6 +725,8 @@ export class DataRepository {
       totalInRange = countRow.cnt;
     } catch { /* ignore */ }
 
+    const seenContent = new Set<string>();
+
     for (const row of rows) {
       // Determine agent_id
       let agentId = row.agent_id;
@@ -747,6 +749,11 @@ export class DataRepository {
       if (params.exclude_system_noise && meta.is_system_noise) continue;
       if (params.exclude_cron && meta.is_cron) continue;
 
+      // 过滤空内容的 user 消息
+      if (row.message_type === 'user' && !(row.content || '').trim()) {
+        continue;
+      }
+
       let content = row.content;
       if (row.message_type === 'tool') {
         const trimmed = (content || '').trim();
@@ -758,11 +765,10 @@ export class DataRepository {
         }
       }
 
-      // 相邻去重：当前消息与前一条 message_type 相同且 clean_content 相同则跳过
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg && lastMsg.message_type === row.message_type && meta.clean_content === lastMsg.clean_content) {
-        continue;
-      }
+      // Set 去重：同 message_type + 同 clean_content 的消息只保留首次出现
+      const dedupKey = row.message_type + '|' + (meta.clean_content || '');
+      if (seenContent.has(dedupKey)) continue;
+      seenContent.add(dedupKey);
 
       messages.push({
         id: row.id,
@@ -1418,6 +1424,54 @@ export class DataRepository {
       messageCount: messageRow.count,
       agentCount: agentRow.count,
       lastSyncTime: syncRow.time
+    };
+  }
+
+  /**
+   * 获取系统状态统计（用于 timeline meta）
+   * 3 条轻量查询：今日噪音过滤数、最近内存整理时间、最近上下文刷新时间
+   *
+   * 注意：is_system_noise 是 analyzeMessageMeta() 的运行时计算结果，非存储字段。
+   * 此处用内容模式匹配近似复刻其判断逻辑（message_type='user' 的噪音消息）。
+   */
+  getSystemStatus(): { todayFiltered: number; lastCompaction: string | null; lastMemoryFlush: string | null } {
+    const db = this.db;
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 近似 is_system_noise 的 SQL 判断：message_type='user' 且匹配各类噪音内容模式
+    const filtered = db.prepare(`
+      SELECT COUNT(*) as c FROM admin_messages
+      WHERE message_type = 'user'
+        AND date(timestamp) = date(?)
+        AND (
+          content = 'HEARTBEAT_OK' OR content = 'NO_REPLY'
+          OR content GLOB '[cron:*'
+          OR (content GLOB 'System*' AND length(content) > 10 AND content NOT GLOB '*ocrates*')
+          OR content GLOB 'Read HEARTBEAT.md*'
+          OR content GLOB 'Exec completed*' OR content GLOB 'Exec failed*'
+          OR content GLOB '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>*'
+          OR content GLOB 'Pre-compaction memory flush*'
+          OR content GLOB 'An async command completion event was triggered*'
+          OR (content GLOB '[*' AND length(content) < 200 AND (
+            content GLOB '*added * files?*' OR content GLOB '*modules transformed*' OR content GLOB '*built in*'
+            OR content GLOB 'feat(*' OR content GLOB 'fix(*' OR content GLOB 'style(*'
+            OR content GLOB 'refactor(*' OR content GLOB 'chore(*' OR content GLOB 'docs(*' OR content GLOB 'test(*'
+          ))
+        )
+    `).get(today) as { c: number };
+
+    const compaction = db.prepare(
+      `SELECT MAX(timestamp) as t FROM admin_messages WHERE message_type = 'user' AND content LIKE ?`
+    ).get('Pre-compaction memory flush%') as { t: string | null };
+
+    const flush = db.prepare(
+      `SELECT MAX(timestamp) as t FROM admin_messages WHERE message_type = 'user' AND content LIKE ?`
+    ).get('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>%') as { t: string | null };
+
+    return {
+      todayFiltered: filtered.c || 0,
+      lastCompaction: compaction.t || null,
+      lastMemoryFlush: flush.t || null,
     };
   }
 

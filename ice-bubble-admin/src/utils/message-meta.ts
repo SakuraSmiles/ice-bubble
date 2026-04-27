@@ -90,6 +90,21 @@ export function analyzeMessageMeta(msg: {
       meta.is_system_noise = true;
       meta.clean_content = content.substring(0, 100);
     }
+    // 检测异步命令完成通知
+    else if (content.startsWith('An async command completion event was triggered')) {
+      meta.is_system_noise = true;
+      meta.clean_content = '';
+    }
+    // 检测预压缩内存写入
+    else if (content.startsWith('Pre-compaction memory flush')) {
+      meta.is_system_noise = true;
+      meta.clean_content = '';
+    }
+    // 检测 OpenClaw 内部上下文块
+    else if (content.startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) {
+      meta.is_system_noise = true;
+      meta.clean_content = '';
+    }
   }
 
   // 检测 agent 噪音
@@ -148,6 +163,9 @@ export function isSystemNoise(messageType: string, content: string | null): bool
       // [date] 前缀且非空（截断版原文），也视为系统噪音
       return true;
     }
+    if (content.startsWith('An async command completion event was triggered')) return true;
+    if (content.startsWith('Pre-compaction memory flush')) return true;
+    if (content.startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) return true;
   }
   if (messageType === 'agent') {
     if (content === 'NULL' || content === '') return true;

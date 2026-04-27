@@ -1,13 +1,13 @@
 /**
  * Data API - 数据管理 REST 接口
  *
- * GET /api/data/sessions
- * GET /api/data/sessions/:key
- * GET /api/data/messages
- * GET /api/data/messages/timeline  ← 群聊风格消息时间线
- * GET /api/data/agents
- * GET /api/data/agents/overview   ← Agent 概览（admin 层聚合）
- * GET /api/data/stats
+ * GET /api/sessions
+ * GET /api/sessions/:key
+ * GET /api/messages
+ * GET /api/messages/timeline  ← 群聊风格消息时间线
+ * GET /api/agents
+ * GET /api/agents/overview   ← Agent 概览（admin 层聚合）
+ * GET /api/stats
  */
 
 import { Router, Request, Response } from 'express';
@@ -29,7 +29,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   const router = Router();
 
   /**
-   * GET /api/data/stats
+   * GET /api/stats
    * 获取数据统计
    */
   router.get('/stats', (_req: Request, res: Response) => {
@@ -38,7 +38,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/sessions
+   * GET /api/sessions
    * 获取 sessions 列表
    */
   router.get('/sessions', (req: Request, res: Response) => {
@@ -58,7 +58,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/sessions/grouped
+   * GET /api/sessions/grouped
    * 获取按 agent 分组的 sessions（用于 Desktop 下拉列表）
    * Query: limitPerAgent - 每个 agent 最多返回的 session 数量，默认 5
    */
@@ -74,7 +74,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/sessions/:key
+   * GET /api/sessions/:key
    * 获取单个 session
    */
   router.get('/sessions/:key', (req: Request, res: Response) => {
@@ -87,7 +87,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/messages
+   * GET /api/messages
    * 获取 messages 列表
    */
   router.get('/messages', (req: Request, res: Response) => {
@@ -106,7 +106,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/messages/timeline
+   * GET /api/messages/timeline
    * 获取群聊风格的消息时间线
    *
    * Query params:
@@ -142,16 +142,17 @@ export function createDataRouter(config: DataRouterConfig): Router {
       exclude_system_noise,
       exclude_cron,
     });
+    const systemStatus = repository.getSystemStatus();
     res.json({
       messages: result.messages,
       has_more: result.has_more,
       pagination: result.pagination,
-      meta: result.meta,
+      meta: { ...result.meta, system_status: systemStatus },
     });
   });
 
   /**
-   * GET /api/data/agents
+   * GET /api/agents
    *
    * 获取 agents 列表（含统一状态计算）
    * 状态由 calculateAgentStatus 统一计算（与 /agents/overview 共用同一函数）
@@ -218,7 +219,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/agents/:id/avatar
+   * GET /api/agents/:id/avatar
    * 获取指定 agent 的头像
    */
   router.get('/agents/:id/avatar', (req: Request, res: Response) => {
@@ -227,7 +228,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * PUT /api/data/agents/:id/avatar
+   * PUT /api/agents/:id/avatar
    * 更新指定 agent 的头像
    */
   router.put('/agents/:id/avatar', (req: Request, res: Response) => {
@@ -237,7 +238,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
     /**
-   * GET /api/data/agents/with-activity
+   * GET /api/agents/with-activity
    * 批量获取所有 agent 及其活动热力图数据（一次请求）
    * Query: days - 返回最近 N 天的活动数据，默认 90，上限 365
    */
@@ -252,7 +253,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/agents/token-summary
+   * GET /api/agents/token-summary
    * 获取指定日期的 token 统计
    * Query: agentId - 可选，不传则返回所有 agent
    * Query: date - 可选，格式 YYYY-MM-DD，不传则返回所有日期
@@ -265,7 +266,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * POST /api/data/agents/token-summary/rebuild
+   * POST /api/agents/token-summary/rebuild
    * 重建 token_summary 表（从 admin_messages 全量聚合）
    */
   router.post('/agents/token-summary/rebuild', (_req: Request, res: Response) => {
@@ -279,7 +280,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/agents/overview
+   * GET /api/agents/overview
    *
    * Agent 概览：状态、当前任务、今日消息数
    * 由 AgentOverviewService 在 admin 层聚合 collector 原始数据后返回
@@ -300,7 +301,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/agents/:id/activity
+   * GET /api/agents/:id/activity
    * 获取指定 agent 的活动热力图数据
    */
   router.get('/agents/:id/activity', (req: Request, res: Response) => {
@@ -311,7 +312,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
   });
 
   /**
-   * GET /api/data/agents/:agent_id/tasks
+   * GET /api/agents/:agent_id/tasks
    * 代理 Task 服务的任务列表接口（解决 Desktop 直接请求 Task 的跨域问题）
    * 内部转发请求到 Task 服务 (http://localhost:13102)
    */

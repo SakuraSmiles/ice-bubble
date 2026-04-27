@@ -97,6 +97,11 @@ export interface TimelinePaginationDTO {
 export interface TimelineMetaDTO {
   agents_in_range: string[];
   filter_applied: Record<string, unknown>;
+  system_status?: {
+    todayFiltered: number;
+    lastCompaction: string | null;
+    lastMemoryFlush: string | null;
+  };
 }
 
 export interface TimelineResponseDTO {

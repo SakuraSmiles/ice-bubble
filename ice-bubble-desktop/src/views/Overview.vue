@@ -4,7 +4,7 @@ import { apiMonitor, type MonitorStats } from '../utils/monitor';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
-import type { ModuleDTO } from '../api/client';
+import type { ModuleDTO, TimelineResponseDTO } from '../api/client';
 // 子组件
 import SystemHealth from './components/SystemHealth.vue';
 import RecentSessions from './components/RecentSessions.vue';
@@ -76,6 +76,59 @@ interface WorkspaceTasks {
 
 const workspaceTasks = ref<WorkspaceTasks | null>(null);
 const latestTaskLoading = ref(false);
+
+// =========== 数据状态卡片 ===========
+
+interface DataStatus {
+  todayFiltered: number;
+  lastCompaction: string | null;
+  lastMemoryFlush: string | null;
+}
+
+const dataStatus = ref<DataStatus | null>(null);
+
+/** 从 timeline 响应中提取 system_status */
+function extractDataStatus(data: TimelineResponseDTO): void {
+  const ss = data.meta?.system_status;
+  if (ss) {
+    dataStatus.value = {
+      todayFiltered: ss.todayFiltered,
+      lastCompaction: ss.lastCompaction ?? null,
+      lastMemoryFlush: ss.lastMemoryFlush ?? null,
+    };
+  }
+}
+
+/** 定时拉取 timeline meta 以更新数据状态 */
+async function fetchDataStatus(): Promise<void> {
+  try {
+    const res = await fetch('/api/messages/timeline?limit=1');
+    if (!res.ok) return;
+    const data: TimelineResponseDTO = await res.json();
+    extractDataStatus(data);
+  } catch {
+    // 静默忽略，等待下次轮询
+  }
+}
+
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return '--';
+  const then = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - then.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMs / 3600000);
+  if (diffMin < 1) return '刚刚';
+  if (diffMin < 60) return `${diffMin}分钟前`;
+  if (diffHr < 24) return `${diffHr}小时前`;
+  const thenDay = then.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (thenDay === yesterday.toDateString()) {
+    return `昨天 ${then.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+  return `${then.getMonth() + 1}-${then.getDate().toString().padStart(2, '0')}`;
+}
 
 /** 获取工作区任务（按父任务聚合） */
 async function fetchLatestTask(): Promise<void> {
@@ -231,6 +284,7 @@ const stats = ref<MonitorStats>({
 const moduleList = ref<ModuleDTO[]>([]);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 let agentRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let dataStatusTimer: ReturnType<typeof setInterval> | null = null;
 
 function refreshData(): void { stats.value = apiMonitor.getStats(); }
 
@@ -272,13 +326,16 @@ const loading = ref(false);
 onMounted(() => {
   refreshData();
   fetchAll(true);
+  fetchDataStatus();
   refreshTimer = setInterval(() => { refreshData(); refreshModules(); }, 5000);
   agentRefreshTimer = setInterval(() => { fetchAgentOverview(); fetchLatestTask(); }, 30000);
+  dataStatusTimer = setInterval(() => { fetchDataStatus(); }, 30000);
 });
 
 onUnmounted(() => {
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
   if (agentRefreshTimer) { clearInterval(agentRefreshTimer); agentRefreshTimer = null; }
+  if (dataStatusTimer) { clearInterval(dataStatusTimer); dataStatusTimer = null; }
   for (const s of Object.values(agentRuntimeStates.value)) {
     if (s.streamTimer) { clearTimeout(s.streamTimer); s.streamTimer = null; }
   }
@@ -299,6 +356,32 @@ onUnmounted(() => {
             :modules="moduleList"
             :loading="loading"
           />
+
+          <!-- 数据状态 -->
+          <div v-if="dataStatus" class="data-status">
+            <div class="data-status-title">⚡ 数据状态</div>
+            <div class="data-status-rows">
+              <div class="data-status-row">
+                <span class="data-status-icon">🔇</span>
+                <span class="data-status-label">今日过滤</span>
+                <span class="data-status-value is-number">{{ dataStatus.todayFiltered ?? 0 }}</span>
+              </div>
+              <div class="data-status-row">
+                <span class="data-status-icon">🗜️</span>
+                <span class="data-status-label">最近压缩</span>
+                <span class="data-status-value" :class="{ 'is-empty': !dataStatus.lastCompaction }">
+                  {{ formatRelativeTime(dataStatus.lastCompaction) }}
+                </span>
+              </div>
+              <div class="data-status-row">
+                <span class="data-status-icon">💾</span>
+                <span class="data-status-label">最近记忆</span>
+                <span class="data-status-value" :class="{ 'is-empty': !dataStatus.lastMemoryFlush }">
+                  {{ formatRelativeTime(dataStatus.lastMemoryFlush) }}
+                </span>
+              </div>
+            </div>
+          </div>
 
           <!-- 父任务进度条 -->
           <ParentTaskProgress
@@ -523,4 +606,47 @@ onUnmounted(() => {
   justify-content: center;
   min-height: 300px;
 }
+
+/* ===== 数据状态 ===== */
+.data-status {
+  padding: 10px 12px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+}
+
+.data-status-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
+}
+
+.data-status-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.data-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.data-status-icon { font-size: 13px; flex-shrink: 0; }
+.data-status-label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+.data-status-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  flex-shrink: 0;
+  text-align: right;
+}
+.data-status-value.is-number { color: var(--el-color-primary); }
+.data-status-value.is-empty   { color: var(--el-text-color-placeholder); font-weight: 400; }
 </style>
