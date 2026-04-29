@@ -16,6 +16,7 @@ import { DBManager } from './storage/db-manager.js';
 import { ModuleRepository } from './storage/module-repository.js';
 import { DataRepository } from './storage/data-repository.js';
 import { createResourcesRouter } from './api/resources.js';
+import { createTasksRouter } from './api/tasks.js';
 import { DataSync } from './data/data-sync.js';
 import { AgentOverviewService } from './data/agent-overview.js';
 import { CollectorClient } from './data/collector-client.js';
@@ -142,7 +143,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(15);  // 执行数据库迁移（v15: admin_model_events 表）
+    await dbManager.migrate(17);  // 执行数据库迁移（v17: admin_tasks 表）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 
@@ -205,6 +206,7 @@ export async function startAdmin(): Promise<void> {
     }));
     app.use('/api/modules', createModulesRouter(scheduler));
     app.use('/api/resources', createResourcesRouter(dataRepository));
+    app.use('/api/tasks', createTasksRouter({ db: dbManager.getConnection() }));
     
     // 健康检查
     app.get('/health', (_req, res) => {

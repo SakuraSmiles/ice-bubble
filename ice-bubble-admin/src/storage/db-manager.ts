@@ -882,6 +882,50 @@ export class DBManager {
         `);
         logger.info('Migration v15: admin_model_events table created');
         break;
+      case 16:
+        // 迁移 v16: 给 admin_tool_calls 表添加 tool_name 和 tool_input 字段
+        {
+          const colInfo = this.db.prepare('PRAGMA table_info(admin_tool_calls)').all() as Array<{ name: string }>;
+          if (!colInfo.some(col => col.name === 'tool_name')) {
+            this.db.exec(`ALTER TABLE admin_tool_calls ADD COLUMN tool_name TEXT;`);
+            logger.info('Migration v16: added tool_name column to admin_tool_calls');
+          } else {
+            logger.info('Migration v16: tool_name column already exists, skipping');
+          }
+          if (!colInfo.some(col => col.name === 'tool_input')) {
+            this.db.exec(`ALTER TABLE admin_tool_calls ADD COLUMN tool_input TEXT;`);
+            logger.info('Migration v16: added tool_input column to admin_tool_calls');
+          } else {
+            logger.info('Migration v16: tool_input column already exists, skipping');
+          }
+        }
+        break;
+      case 17:
+        // 迁移 v17: 创建 admin_tasks 表（任务数据从 admin_tool_calls 的 sessions_spawn 记录推导）
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS admin_tasks (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'queued',
+            agent_id TEXT,
+            requester_session_key TEXT,
+            child_session_key TEXT,
+            run_id TEXT,
+            mode TEXT,
+            task_description TEXT,
+            result_summary TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+          );
+          CREATE INDEX IF NOT EXISTS idx_admin_tasks_agent ON admin_tasks(agent_id);
+          CREATE INDEX IF NOT EXISTS idx_admin_tasks_status ON admin_tasks(status);
+          CREATE INDEX IF NOT EXISTS idx_admin_tasks_created ON admin_tasks(created_at);
+          CREATE INDEX IF NOT EXISTS idx_admin_tasks_child_session ON admin_tasks(child_session_key);
+        `);
+        logger.info('Migration v17: admin_tasks table created');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

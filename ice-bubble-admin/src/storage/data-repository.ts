@@ -67,6 +67,8 @@ export interface AdminToolCall {
   cost_input: number | null;
   cost_output: number | null;
   metadata: string | null;
+  tool_name: string | null;
+  tool_input: string | null;
 }
 
 export interface AdminAgent {
@@ -597,8 +599,9 @@ export class DataRepository {
       const stmt = this.db.prepare(`
         INSERT OR IGNORE INTO admin_tool_calls (
           source_id, source_module, session_key, message_type, content,
-          created_at, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, metadata
-        ) VALUES (?, ?, ?, 'tool', ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+          created_at, model, tokens_input, tokens_output, cost_total, cost_input, cost_output, metadata,
+          tool_name, tool_input
+        ) VALUES (?, ?, ?, 'tool', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
       `);
 
       const insertTool = this.db.transaction((rows: AdminMessage[]) => {
@@ -614,7 +617,9 @@ export class DataRepository {
             row.tokens_output ?? 0,
             row.cost_total ?? null,
             row.cost_input ?? null,
-            row.cost_output ?? null
+            row.cost_output ?? null,
+            (row as any).tool_name ?? null,
+            (row as any).tool_input ?? null
           );
           if (result.changes > 0) inserted++;
         }
