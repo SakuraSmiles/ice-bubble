@@ -10,6 +10,7 @@ import StatusDropdown from './components/StatusDropdown.vue';
 import RecentSessions from './components/RecentSessions.vue';
 import AgentTaskTree from './components/AgentTaskTree.vue';
 import ParentTaskProgress from './components/ParentTaskProgress.vue';
+import TaskList from './components/TaskList.vue';
 
 
 // =========== 接口定义 ===========
@@ -343,6 +344,9 @@ onUnmounted(() => {
               :loading="loading"
             />
           </div>
+
+          <!-- 任务列表 -->
+          <TaskList />
         </div>
 
         <!-- 右侧：最近会话（ChatTimeline） -->
