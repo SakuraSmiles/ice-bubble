@@ -6,7 +6,7 @@ import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
 import type { ModuleDTO, TimelineResponseDTO, WorkspaceTasksDTO, AgentDTO, ParentTaskDTO, AgentGroupDTO } from '../api/client';
 // 子组件
-import SystemHealth from './components/SystemHealth.vue';
+import StatusDropdown from './components/StatusDropdown.vue';
 import RecentSessions from './components/RecentSessions.vue';
 import AgentTaskTree from './components/AgentTaskTree.vue';
 import ParentTaskProgress from './components/ParentTaskProgress.vue';
@@ -49,6 +49,8 @@ interface DataStatus {
   todayFiltered: number;
   lastCompaction: string | null;
   lastMemoryFlush: string | null;
+  todayRetryCount: number;
+  todayModelChangeCount: number;
 }
 
 const dataStatus = ref<DataStatus | null>(null);
@@ -61,6 +63,8 @@ function extractDataStatus(data: TimelineResponseDTO): void {
       todayFiltered: ss.todayFiltered,
       lastCompaction: ss.lastCompaction ?? null,
       lastMemoryFlush: ss.lastMemoryFlush ?? null,
+      todayRetryCount: (ss as any).todayRetryCount ?? 0,
+      todayModelChangeCount: (ss as any).todayModelChangeCount ?? 0,
     };
   }
 }
@@ -75,25 +79,6 @@ async function fetchDataStatus(): Promise<void> {
   } catch {
     // 静默忽略，等待下次轮询
   }
-}
-
-function formatRelativeTime(iso: string | null): string {
-  if (!iso) return '--';
-  const then = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - then.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHr = Math.floor(diffMs / 3600000);
-  if (diffMin < 1) return '刚刚';
-  if (diffMin < 60) return `${diffMin}分钟前`;
-  if (diffHr < 24) return `${diffHr}小时前`;
-  const thenDay = then.toDateString();
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (thenDay === yesterday.toDateString()) {
-    return `昨天 ${then.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
-  }
-  return `${then.getMonth() + 1}-${then.getDate().toString().padStart(2, '0')}`;
 }
 
 /** 获取工作区任务（按父任务聚合） */
@@ -332,42 +317,18 @@ onUnmounted(() => {
 
 <template>
   <div class="overview-page">
-    <PageHeader title="工作台" subtitle="系统概览" :loading="loading" @refresh="fetchAll(true)" />
+    <PageHeader title="工作台" subtitle="系统概览" :loading="loading" @refresh="fetchAll(true)">
+      <StatusDropdown
+        :stats="stats"
+        :modules="moduleList"
+        :data-status="dataStatus"
+      />
+    </PageHeader>
 
     <el-card class="content-area" shadow="never">
       <div class="main-layout">
         <!-- 左侧面板 -->
         <div class="left-panel">
-          <!-- 系统健康状态（延迟监控 + 模块延迟） -->
-          <SystemHealth
-            :stats="stats"
-            :modules="moduleList"
-            :loading="loading"
-          />
-
-          <!-- 数据状态 -->
-          <div v-if="dataStatus" class="data-status">
-            <div class="data-status-title">数据状态</div>
-            <div class="data-status-rows">
-              <div class="data-status-row">
-                <span class="data-status-label">今日过滤</span>
-                <span class="data-status-value is-number">{{ dataStatus.todayFiltered ?? 0 }}</span>
-              </div>
-              <div class="data-status-row">
-                <span class="data-status-label">最近压缩</span>
-                <span class="data-status-value" :class="{ 'is-empty': !dataStatus.lastCompaction }">
-                  {{ formatRelativeTime(dataStatus.lastCompaction) }}
-                </span>
-              </div>
-              <div class="data-status-row">
-                <span class="data-status-label">最近记忆</span>
-                <span class="data-status-value" :class="{ 'is-empty': !dataStatus.lastMemoryFlush }">
-                  {{ formatRelativeTime(dataStatus.lastMemoryFlush) }}
-                </span>
-              </div>
-            </div>
-          </div>
-
           <!-- 父任务 + 子任务（wrapper 容器） -->
           <div v-if="recentParentTask" class="task-section">
             <ParentTaskProgress
@@ -590,58 +551,6 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   min-height: 300px;
-}
-
-/* ===== 数据状态 ===== */
-.data-status {
-  padding: 10px 12px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
-}
-
-.data-status-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--el-text-color-secondary);
-  letter-spacing: 0.5px;
-  margin-bottom: 6px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-
-.data-status-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.data-status-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.data-status-label {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--el-text-color-secondary);
-}
-
-.data-status-value {
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-exo2, ui-monospace, monospace);
-  color: var(--el-text-color-primary);
-}
-
-.data-status-value.is-number {
-  color: var(--el-color-primary);
-}
-
-.data-status-value.is-empty {
-  color: var(--el-text-color-placeholder);
-  font-weight: 400;
 }
 
 /* ===== 父子任务 wrapper ===== */
