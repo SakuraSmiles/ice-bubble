@@ -4,6 +4,7 @@
  * 从 admin_tool_calls 中解析 sessions_spawn 记录，生成 admin_tasks 数据
  */
 
+import { readFileSync } from 'node:fs';
 import type { Database } from 'better-sqlite3';
 import { logger } from '../utils/index.js';
 
@@ -221,6 +222,65 @@ export class TaskParser {
     }
 
     return 'completed';
+  }
+
+  /**
+   * 刷新任务数据：解析 + upsert + 修复 running 状态
+   * 幂等操作，可安全重复调用
+   */
+  refreshTasks(): number {
+    const tasks = this.parseSessionsSpawnRecords();
+    const count = this.upsertTasks(tasks);
+    this.fixRunningStatus();
+    return count;
+  }
+
+  /**
+   * 读取 OpenClaw subagents/runs.json，将活跃 run 对应的任务标记为 running
+   */
+  private fixRunningStatus(): void {
+    const runsPath = '/home/dabai/.openclaw/subagents/runs.json';
+    try {
+      const raw = readFileSync(runsPath, 'utf-8');
+      const data = JSON.parse(raw);
+      const runs = data.runs as Record<string, { childSessionKey?: string; endedAt: number | null }>;
+      if (!runs) return;
+
+      // 找出活跃的 run（endedAt 为 null）
+      const activeRunIds: string[] = [];
+      for (const [runId, run] of Object.entries(runs)) {
+        if (run.endedAt === null || run.endedAt === undefined) {
+          activeRunIds.push(runId);
+        }
+      }
+
+      if (activeRunIds.length === 0) return;
+
+      // 先将所有 running 状态重置为 completed（上次标记为 running 的可能已结束）
+      this.db.prepare(`
+        UPDATE admin_tasks SET status = 'completed', updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'running' AND run_id NOT IN (${activeRunIds.map(() => '?').join(',')})
+      `).run(...activeRunIds);
+
+      // 将活跃 run 标记为 running
+      const stmt = this.db.prepare(`
+        UPDATE admin_tasks SET status = 'running', updated_at = CURRENT_TIMESTAMP
+        WHERE run_id = ? AND status != 'running'
+      `);
+      let updated = 0;
+      for (const runId of activeRunIds) {
+        const result = stmt.run(runId);
+        updated += result.changes;
+      }
+      if (updated > 0) {
+        logger.info(`[TaskParser] Marked ${updated} tasks as running from runs.json`);
+      }
+    } catch (err) {
+      // 文件不存在或解析失败时静默跳过
+      logger.debug('[TaskParser] Could not read runs.json, skipping running status fix', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

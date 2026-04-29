@@ -24,10 +24,11 @@ export function createTasksRouter(config: TasksRouterConfig): Router {
   router.get('/', (req: Request, res: Response) => {
     const agent_id = req.query.agent_id ? String(req.query.agent_id) : undefined;
     const status = req.query.status ? String(req.query.status) : undefined;
+    const since = req.query.since ? String(req.query.since) : undefined;
     const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
     const offset = parseInt(String(req.query.offset ?? '0'));
 
-    const tasks = getTasks(db, { agent_id, status, limit, offset });
+    const tasks = getTasks(db, { agent_id, status, since, limit, offset });
 
     res.json({
       count: tasks.length,
@@ -108,11 +109,12 @@ function getTasks(
   params: {
     agent_id?: string;
     status?: string;
+    since?: string;
     limit: number;
     offset: number;
   }
 ): AdminTask[] {
-  const { agent_id, status, limit, offset } = params;
+  const { agent_id, status, since, limit, offset } = params;
 
   const conditions: string[] = [];
   const values: unknown[] = [];
@@ -124,6 +126,10 @@ function getTasks(
   if (status) {
     conditions.push('status = ?');
     values.push(status);
+  }
+  if (since) {
+    conditions.push('created_at >= ?');
+    values.push(since);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

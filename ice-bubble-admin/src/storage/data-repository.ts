@@ -128,6 +128,11 @@ export class DataRepository {
     this.avatarsDir = avatarsDir;
   }
 
+  /** 获取底层 Database 连接（仅供需要直接 SQL 访问的组件使用） */
+  getDb(): Database {
+    return this.db;
+  }
+
   // ========== Avatar Files ==========
 
 
