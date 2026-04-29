@@ -122,10 +122,10 @@ export function disableHotReload(): void {
 export function findModuleByPath(path: string): ModuleConfig | null {
   const config = getConfig();
 
-  // 只有 /api/tasks/* 和 /api/agents/:agent_id/tasks 路由到 task 服务
+  // /api/tasks/* 路由到 admin 服务（任务数据已合并到Admin，task模块已废弃）
   if (path.startsWith('/api/tasks') || /\/api\/agents\/[^/]+\/tasks/.test(path)) {
-    const taskModule = config.modules.find(m => m.key === 'task');
-    return taskModule || null;
+    const adminModule = config.modules.find(m => m.key === 'admin');
+    return adminModule || null;
   }
 
   // 其他所有 /api/* 路由到 admin 服务（包括 /api/agents/overview, /api/agents 等）

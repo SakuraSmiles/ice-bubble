@@ -297,17 +297,18 @@ export class TaskParser {
         created_at, started_at, completed_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(id) DO UPDATE SET
-        title = excluded.title,
+        title = CASE WHEN excluded.title != 'Untitled Task' OR admin_tasks.title = 'Untitled Task' OR admin_tasks.title IS NULL
+          THEN excluded.title ELSE admin_tasks.title END,
         status = excluded.status,
-        agent_id = excluded.agent_id,
+        agent_id = CASE WHEN excluded.agent_id != '' THEN excluded.agent_id ELSE admin_tasks.agent_id END,
         requester_session_key = excluded.requester_session_key,
         child_session_key = excluded.child_session_key,
         run_id = excluded.run_id,
-        mode = excluded.mode,
-        task_description = excluded.task_description,
+        mode = CASE WHEN excluded.mode != '' THEN excluded.mode ELSE admin_tasks.mode END,
+        task_description = CASE WHEN excluded.task_description != '' THEN excluded.task_description ELSE admin_tasks.task_description END,
         result_summary = excluded.result_summary,
-        started_at = excluded.started_at,
-        completed_at = excluded.completed_at,
+        started_at = CASE WHEN excluded.started_at IS NOT NULL THEN excluded.started_at ELSE admin_tasks.started_at END,
+        completed_at = CASE WHEN excluded.completed_at IS NOT NULL THEN excluded.completed_at ELSE admin_tasks.completed_at END,
         updated_at = CURRENT_TIMESTAMP
     `);
 

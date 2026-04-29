@@ -8,9 +8,9 @@
     },
     {
       "key": "task",
-      "name": "任务管理",
+      "name": "任务管理（已废弃）",
       "url": "http://localhost:13102",
-      "enabled": true
+      "enabled": false
     }
   ],
   "authToken": "",
