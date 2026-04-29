@@ -98,11 +98,14 @@ const highLatencyCount = computed(() =>
   filteredModules.value.filter(m => getModuleLatency(m) >= 500).length
 );
 
+const totalModuleCount = computed(() => filteredModules.value.length);
+const normalModuleCount = computed(() => totalModuleCount.value - highLatencyCount.value);
+
 const healthSummary = computed(() => {
   if (!props.stats.totalRequests) return '暂无数据';
-  if (props.stats.successRate < 95) return `成功率下降至${props.stats.successRate}%`;
-  if (highLatencyCount.value > 0) return `${highLatencyCount.value}个模块响应较慢`;
-  return '所有模块正常运行';
+  if (highLatencyCount.value === 0) return `${normalModuleCount.value}/${totalModuleCount.value} 模块正常`;
+  if (props.stats.successRate < 95) return `${normalModuleCount.value}/${totalModuleCount.value} 模块正常，成功率下降`;
+  return `${normalModuleCount.value}/${totalModuleCount.value} 模块正常，${highLatencyCount.value}个响应较慢`;
 });
 
 const tooltipText = computed(() => healthSummary.value);
