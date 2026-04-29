@@ -126,7 +126,7 @@ export class TaskParser {
     const childSession = this.getChildSession(childSessionKey);
 
     // 推导任务状态
-    const status = this.deriveTaskStatus(childSession);
+    const status = this.deriveTaskStatus(childSessionKey, childSession);
 
     // 派生 started_at 和 completed_at
     let started_at: string | null = null;
@@ -168,11 +168,20 @@ export class TaskParser {
   } | null {
     if (!childSessionKey) return null;
 
+    // childSessionKey 格式: agent:{agentId}:subagent:{uuid}
+    // admin_sessions 中格式: agent:{agentId}:local:default:direct:{uuid}
+    // 提取 UUID 进行模糊匹配
+    const parts = childSessionKey.split(':');
+    const uuid = parts[parts.length - 1];
+    if (!uuid || uuid.length < 10) return null;
+
     const row = this.db.prepare(`
       SELECT first_message_at, last_message_at, message_count
       FROM admin_sessions
-      WHERE session_key = ?
-    `).get(childSessionKey) as {
+      WHERE session_key LIKE ?
+      ORDER BY last_message_at DESC
+      LIMIT 1
+    `).get(`%${uuid}%`) as {
       first_message_at: string | null;
       last_message_at: string | null;
       message_count: number;
@@ -184,29 +193,33 @@ export class TaskParser {
   /**
    * 推导任务状态
    * 规则：
-   * - 子 session 无记录 → queued
-   * - 子 session 有消息但未结束 → running
-   * - 子 session 结束 → completed
+   * - 无 runId → queued
+   * - 有 runId，检查 admin_sessions 中是否有对应的 session 记录
+   * - admin_sessions 有记录且有 last_message_at → completed
+   * - admin_sessions 有记录但无 last_message_at → running
+   * - admin_sessions 无记录（subagent session 已清理）→ completed（历史任务默认完成）
    */
   private deriveTaskStatus(
+    childSessionKey: string | null,
     childSession: { first_message_at: string | null; last_message_at: string | null; message_count: number } | null
   ): 'queued' | 'running' | 'completed' | 'failed' | 'timeout' {
-    if (!childSession) {
+    if (!childSessionKey) {
       return 'queued';
+    }
+
+    if (!childSession) {
+      // subagent session 已被清理，历史任务默认 completed
+      return 'completed';
     }
 
     if (childSession.message_count === 0) {
       return 'queued';
     }
 
-    // 子 session 有消息，检查是否有 last_message_at（session 是否结束）
     if (!childSession.last_message_at) {
-      // session 存在但没有 last_message，视为 running
       return 'running';
     }
 
-    // session 有 last_message_at，视为 completed
-    // 注：failed 和 timeout 需要更复杂的判断逻辑，此处简化处理
     return 'completed';
   }
 
