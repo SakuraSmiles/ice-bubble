@@ -41,8 +41,9 @@ function formatLatency(ms: number): string {
 }
 
 function getLatencyColor(ms: number): string {
-  if (ms < 50) return 'var(--el-color-success)';
-  if (ms < 100) return 'var(--el-color-warning)';
+  if (ms < 200) return 'var(--el-color-success)';
+  if (ms < 500) return 'var(--el-color-warning)';
+  if (ms < 1000) return '#E6A23C';
   return 'var(--el-color-danger)';
 }
 
@@ -90,17 +91,17 @@ function getModuleLatencyWidth(mod: ModuleDTO): string {
 
 // ===== 异常判定 =====
 const isAbnormal = computed(() => {
-  return props.stats.avgLatency >= 100 || props.stats.successRate < 95;
+  return props.stats.avgLatency >= 1000 || props.stats.successRate < 95;
 });
 
 const highLatencyCount = computed(() =>
-  filteredModules.value.filter(m => getModuleLatency(m) >= 100).length
+  filteredModules.value.filter(m => getModuleLatency(m) >= 500).length
 );
 
 const healthSummary = computed(() => {
   if (!props.stats.totalRequests) return '暂无数据';
   if (props.stats.successRate < 95) return `成功率下降至${props.stats.successRate}%`;
-  if (highLatencyCount.value > 0) return `${highLatencyCount.value}个模块延迟偏高`;
+  if (highLatencyCount.value > 0) return `${highLatencyCount.value}个模块响应较慢`;
   return '所有模块正常运行';
 });
 
