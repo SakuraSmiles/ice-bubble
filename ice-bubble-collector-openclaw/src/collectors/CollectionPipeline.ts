@@ -10,8 +10,8 @@
  */
 
 import { EventEmitter } from 'events';
-import { OpenClawEvent } from '../types/openclaw.js';
-import { SessionMessage, UnifiedMessage } from '../types/index.js';
+import { OpenClawEvent, isMessageEvent } from '../types/openclaw.js';
+import { SessionMessage, SessionEvent, UnifiedMessage } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
 import { DataValidator } from '../processors/DataValidator.js';
 import { Deduplicator } from '../processors/deduplicator.js';
@@ -136,6 +136,21 @@ export class CollectionPipeline extends EventEmitter {
       for (const event of batch) {
         try {
           this.stats.totalEvents++;
+
+          // 非 message 类型的事件直接存入 session_events 表
+          if (!isMessageEvent(event)) {
+            const sessionEvent: SessionEvent = {
+              session_key: sessionKey,
+              event_type: event.type,
+              event_id: event.id,
+              data_json: JSON.stringify(event),
+              timestamp: event.timestamp,
+            };
+            this.batchWriter.addEvent(sessionEvent);
+            this.stats.successEvents++;
+            logger.debug(`存储非 message 事件: ${event.type} (${event.id})`);
+            continue;
+          }
 
           // 步骤1: 转换为 UnifiedMessage
           const message = convertOpenClawEvent(event, sessionKey);

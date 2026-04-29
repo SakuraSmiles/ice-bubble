@@ -68,8 +68,25 @@ export function createTasksRouter(repository: TaskRepository, taskStorePath?: st
         idempotency_key: idempotency_key || undefined
       };
 
+      // 如果指定了父任务，先验证父任务存在
+      if (parent_id) {
+        const parent = repository.findById(parent_id);
+        if (!parent) {
+          res.status(404).json({ error: '父任务不存在', code: 'PARENT_NOT_FOUND', parent_id });
+          return;
+        }
+      }
+
       // 幂等插入
       const result = repository.upsertTask(task, idempotency_key);
+
+      if (result.isNew && parent_id) {
+        // 新建的子任务：追加 ID 到父任务的 children_ids
+        const updated = repository.appendChildId(parent_id, id);
+        if (!updated) {
+          logger.error(`Failed to update parent children_ids: parent=${parent_id}, child=${id}`);
+        }
+      }
 
       if (result.isNew) {
         res.status(201).json(result.task);

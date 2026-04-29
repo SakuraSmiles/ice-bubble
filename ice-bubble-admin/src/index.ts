@@ -142,7 +142,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(14);  // 执行数据库迁移（v14: tool 消息拆分到独立表）
+    await dbManager.migrate(15);  // 执行数据库迁移（v15: admin_model_events 表）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 

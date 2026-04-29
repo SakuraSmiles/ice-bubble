@@ -6,6 +6,7 @@
 
 import type { Database } from 'better-sqlite3';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { logger } from '../utils/index.js';
 import type { CollectorAgent } from '../data/collector-client.js';
@@ -1475,6 +1476,37 @@ export class DataRepository {
     return updated;
   }
 
+  // ========== Model Events ==========
+
+  /**
+   * 批量保存 model events（INSERT OR IGNORE 基于 event_id 去重）
+   */
+  saveModelEvents(events: Array<{
+    session_key: string;
+    event_type: string;
+    event_id: string | null;
+    data_json: string;
+    timestamp: string;
+  }>): number {
+    if (events.length === 0) return 0;
+
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO admin_model_events (
+        session_key, event_type, event_id, data_json, timestamp
+      ) VALUES (?, ?, ?, ?, ?)
+    `);
+
+    const insertMany = this.db.transaction((rows: typeof events) => {
+      for (const row of rows) {
+        stmt.run(row.session_key, row.event_type, row.event_id, row.data_json, row.timestamp);
+      }
+    });
+
+    insertMany(events);
+    // 无法精确获知 INSERT OR IGNORE 跳过了多少，返回总数
+    return events.length;
+  }
+
   // ========== Stats ==========
 
   /**
@@ -1506,7 +1538,7 @@ export class DataRepository {
    * 注意：is_system_noise 是 analyzeMessageMeta() 的运行时计算结果，非存储字段。
    * 此处用内容模式匹配近似复刻其判断逻辑（message_type='user' 的噪音消息）。
    */
-  getSystemStatus(): { todayFiltered: number; lastCompaction: string | null; lastMemoryFlush: string | null } {
+  getSystemStatus(): { todayFiltered: number; lastCompaction: string | null; lastMemoryFlush: string | null; todayRetryCount: number; todayModelChangeCount: number } {
     const db = this.db;
     const today = new Date().toISOString().slice(0, 10);
 
@@ -1533,17 +1565,37 @@ export class DataRepository {
     `).get(today) as { c: number };
 
     const compaction = db.prepare(
-      `SELECT MAX(timestamp) as t FROM admin_messages WHERE message_type = 'user' AND content LIKE ?`
+      `SELECT MAX(timestamp) as t FROM admin_messages WHERE content LIKE ?`
     ).get('Pre-compaction memory flush%') as { t: string | null };
 
-    const flush = db.prepare(
-      `SELECT MAX(timestamp) as t FROM admin_messages WHERE message_type = 'user' AND content LIKE ?`
-    ).get('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>%') as { t: string | null };
+    let lastMemoryFlush: string | null = null;
+    try {
+      const memoryPath = path.join(os.homedir(), '.openclaw/workspace/MEMORY.md');
+      const stat = fs.statSync(memoryPath);
+      lastMemoryFlush = stat.mtime.toISOString();
+    } catch {}
+
+    // 今日 Retry 消息数
+    const retryCount = db.prepare(`
+      SELECT COUNT(*) as c FROM admin_messages
+      WHERE date(timestamp) = date(?)
+        AND content LIKE '[Retry%'
+        AND message_type = 'user'
+    `).get(today) as { c: number };
+
+    // 今日 model_change 事件数
+    const modelChangeCount = db.prepare(`
+      SELECT COUNT(*) as c FROM admin_model_events
+      WHERE date(timestamp) = date(?)
+        AND event_type = 'model_change'
+    `).get(today) as { c: number };
 
     return {
       todayFiltered: filtered.c || 0,
       lastCompaction: compaction.t || null,
-      lastMemoryFlush: flush.t || null,
+      lastMemoryFlush,
+      todayRetryCount: retryCount.c || 0,
+      todayModelChangeCount: modelChangeCount.c || 0,
     };
   }
 

@@ -651,6 +651,10 @@ export class FileCollector extends BaseCollector implements Collector {
     return this.sqliteManager.getDataStats();
   }
 
+  async getEvents(params?: { sessionKey?: string; eventType?: string; since?: string; limit?: number; offset?: number }) {
+    return this.sqliteManager.getEvents(params);
+  }
+
   /**
    * 检查 agent_id 是否在 openclaw.json 配置中
    */

@@ -1,11 +1,11 @@
 <template>
   <div v-if="content" class="markdown-content" :style="{ maxHeight }">
-    <div v-html="renderedContent"></div>
+    <div ref="contentRef" v-html="renderedContent"></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { renderMarkdown } from '@/utils/markdown';
 
 interface Props {
@@ -16,6 +16,58 @@ interface Props {
 const props = defineProps<Props>();
 
 const renderedContent = computed(() => renderMarkdown(props.content));
+
+const contentRef = ref<HTMLElement | null>(null);
+let observer: MutationObserver | null = null;
+
+function insertCopyButton(pre: Element) {
+  if (pre.querySelector('.copy-code-btn')) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'copy-code-btn';
+  btn.textContent = 'Copy';
+  btn.type = 'button';
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const code = pre.querySelector('code');
+    const text = code ? code.textContent ?? '' : (pre.textContent ?? '');
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Copied ✓';
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+      }, 2000);
+    });
+  });
+
+  pre.appendChild(btn);
+}
+
+function processPreElements(container: Element) {
+  container.querySelectorAll('pre').forEach(insertCopyButton);
+}
+
+onMounted(() => {
+  if (!contentRef.value) return;
+
+  processPreElements(contentRef.value);
+
+  observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (node instanceof Element) {
+          processPreElements(node);
+        }
+      });
+    });
+  });
+
+  observer.observe(contentRef.value, { childList: true, subtree: true });
+});
+
+onUnmounted(() => {
+  observer?.disconnect();
+});
 </script>
 
 <style scoped>
@@ -46,17 +98,43 @@ const renderedContent = computed(() => renderMarkdown(props.content));
 
 /* ========== 段落 ========== */
 .markdown-content :deep(p) {
-  margin: 0 0 0.5em 0;
+  margin: 0 0 0.75em 0;
 }
 
 /* ========== 代码块 ========== */
 .markdown-content :deep(pre) {
+  position: relative;
   background: #282c34;
   border: 1px solid #30363d;
   border-radius: 6px;
   padding: 16px;
   overflow-x: auto;
   margin: 0.75em 0;
+}
+
+.markdown-content :deep(.copy-code-btn) {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+  border: none;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  z-index: 1;
+}
+
+.markdown-content :deep(pre:hover .copy-code-btn) {
+  opacity: 1;
+}
+
+.markdown-content :deep(.copy-code-btn:hover) {
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .markdown-content :deep(pre code) {

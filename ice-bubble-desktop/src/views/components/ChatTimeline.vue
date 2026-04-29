@@ -457,7 +457,6 @@ function toolSummary(grp: MsgGroup): string {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  scroll-behavior: smooth;
   background: #fff;
 }
 

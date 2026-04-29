@@ -13,7 +13,7 @@
  */
 
 import { EventEmitter } from 'events';
-import type { SessionMessage } from '../types';
+import type { SessionMessage, SessionEvent } from '../types';
 import { SQLiteManager } from '../storage/sqlite-manager';
 import { Logger } from '../utils/logger.js';
 
@@ -104,6 +104,9 @@ const DEFAULT_CONFIG: Required<BatchWriterConfig> = {
 export class BatchWriter extends EventEmitter {
     /** 消息缓冲区 */
     private buffer: SessionMessage[] = [];
+
+    /** 事件缓冲区（非 message 类型的原始行） */
+    private eventBuffer: SessionEvent[] = [];
 
     /**
      * 失败重试队列
@@ -200,6 +203,22 @@ export class BatchWriter extends EventEmitter {
     }
 
     /**
+     * 添加非 message 事件到缓冲区
+     */
+    addEvent(event: SessionEvent): void {
+        this.eventBuffer.push(event);
+
+        // 事件缓冲区满，立即刷新
+        if (this.eventBuffer.length >= this.config.batchSize) {
+            this.flush().catch((error) => {
+                this.emit('error', error);
+            });
+        } else if (this.isRunning) {
+            this.resetFlushTimer();
+        }
+    }
+
+    /**
      * 手动刷新缓冲区
      *
      * 工作流程：
@@ -215,15 +234,28 @@ export class BatchWriter extends EventEmitter {
      * - 抛出错误
      */
     async flush(): Promise<void> {
-        if (this.buffer.length === 0 && this.failedMessages.length === 0) {
+        if (this.buffer.length === 0 && this.failedMessages.length === 0 && this.eventBuffer.length === 0) {
             return;
         }
 
         // 优先消费失败重试队列（放在本批次最前面，保证时序）
         const messages = [...this.failedMessages, ...this.buffer];
+        const events = [...this.eventBuffer];
         this.failedMessages = [];
         this.buffer = [];
+        this.eventBuffer = [];
         this.stats.buffered = 0;
+
+        // 写入事件表
+        if (events.length > 0) {
+            try {
+                await this.sqliteManager.batchInsertEvents(events);
+                this.stats.totalBatches++;
+            } catch (eventError) {
+                // 事件写入失败不影响消息写入
+                logger.error('[BatchWriter] Event batch write failed', eventError as Error);
+            }
+        }
 
         try {
             // 批量写入

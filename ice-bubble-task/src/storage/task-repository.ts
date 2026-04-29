@@ -138,6 +138,26 @@ export class TaskRepository {
   }
 
   /**
+   * 追加子任务 ID 到父任务的 children_ids
+   * 使用事务保证原子性
+   */
+  appendChildId(parentId: string, childId: string): boolean {
+    const result = this.db.transaction(() => {
+      const row = this.db.prepare('SELECT children_ids FROM tasks WHERE id = ?').get(parentId) as { children_ids: string } | undefined;
+      if (!row) return false;
+
+      const ids: string[] = typeof row.children_ids === 'string' ? JSON.parse(row.children_ids) : row.children_ids;
+      if (!ids.includes(childId)) {
+        ids.push(childId);
+        this.db.prepare('UPDATE tasks SET children_ids = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(ids), new Date().toISOString(), parentId);
+      }
+      return true;
+    })();
+    return result;
+  }
+
+  /**
    * 根据 ID 获取单个任务
    */
   findById(id: string): Task | null {

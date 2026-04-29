@@ -6,7 +6,7 @@
 
 import Database from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
-import type { Session, SessionMessage, SQLiteManagerConfig } from '../types';
+import type { Session, SessionMessage, SessionEvent, SQLiteManagerConfig } from '../types';
 import { Logger } from '../utils/logger.js';
 import { SessionMessageMapper, SessionMapper, getDbColumns, getPlaceholders } from '../utils/type-mapper.js';
 
@@ -228,7 +228,25 @@ export class SQLiteManager {
             );
         `);
 
-        // 7. session_messages_archive 表（30天消息归档）
+        // 7. session_events 表（非 message 类型的原始事件）
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS session_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_key TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                event_id TEXT,
+                data_json TEXT NOT NULL,
+                timestamp TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(event_id),
+                FOREIGN KEY (session_key) REFERENCES sessions(session_key) ON DELETE CASCADE
+            );
+        `);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_session_key ON session_events(session_key)`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_event_type ON session_events(event_type)`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_timestamp ON session_events(timestamp)`);
+
+        // 8. session_messages_archive 表（30天消息归档）
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS session_messages_archive (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -788,6 +806,120 @@ export class SQLiteManager {
      */
     private rowToMessage(row: SqlRow): SessionMessage {
         return SessionMessageMapper.fromDb(row);
+    }
+
+    // ========== Event 操作 ==========
+
+    /**
+     * 批量插入事件（非 message 类型的原始行）
+     *
+     * @returns 实际插入的事件数量
+     */
+    async batchInsertEvents(events: SessionEvent[]): Promise<{ inserted: number; duplicates: number }> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        if (events.length === 0) return { inserted: 0, duplicates: 0 };
+
+        try {
+            const insertMany = this.db.transaction((evts: SessionEvent[]) => {
+                const stmt = this.db!.prepare(`
+                    INSERT OR IGNORE INTO session_events (session_key, event_type, event_id, data_json, timestamp)
+                    VALUES (?, ?, ?, ?, ?)
+                `);
+
+                let actualInserts = 0;
+                for (const evt of evts) {
+                    const result = stmt.run(
+                        evt.session_key,
+                        evt.event_type,
+                        evt.event_id || null,
+                        evt.data_json,
+                        evt.timestamp
+                    );
+                    if (result.changes > 0) {
+                        actualInserts++;
+                    }
+                }
+                return actualInserts;
+            });
+
+            const actualInserts = insertMany.immediate(events);
+            return { inserted: actualInserts, duplicates: events.length - actualInserts };
+        } catch (error) {
+            throw new SQLiteError(
+                'Failed to batch insert events',
+                'SQLITE_QUERY_FAILED',
+                error
+            );
+        }
+    }
+
+    /**
+     * 获取事件列表（分页）
+     */
+    async getEvents(options?: {
+        sessionKey?: string;
+        eventType?: string;
+        since?: string;
+        limit?: number;
+        offset?: number;
+    }): Promise<{ count: number; events: SessionEvent[] }> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        try {
+            const limit = options?.limit ?? 100;
+            const offset = options?.offset ?? 0;
+
+            const conditions: string[] = [];
+            const queryParams: unknown[] = [];
+
+            if (options?.sessionKey) {
+                conditions.push(`session_key = ?`);
+                queryParams.push(options.sessionKey);
+            }
+            if (options?.eventType) {
+                conditions.push(`event_type = ?`);
+                queryParams.push(options.eventType);
+            }
+            if (options?.since) {
+                conditions.push(`timestamp >= ?`);
+                queryParams.push(options.since);
+            }
+
+            const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+
+            const countSql = `SELECT COUNT(*) as count FROM session_events${whereClause}`;
+            const countStmt = this.db.prepare(countSql);
+            const countResult = countStmt.get(...queryParams) as SqlRow;
+
+            const dataSql = `SELECT * FROM session_events${whereClause} ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+            const dataParams = [...queryParams, limit, offset];
+            const stmt = this.db.prepare(dataSql);
+            const rows = stmt.all(...dataParams) as SqlRow[];
+
+            return {
+                count: countResult.count as number,
+                events: rows.map(row => ({
+                    id: row.id as number,
+                    session_key: row.session_key as string,
+                    event_type: row.event_type as string,
+                    event_id: row.event_id as string | undefined,
+                    data_json: row.data_json as string,
+                    timestamp: row.timestamp as string,
+                    created_at: row.created_at as string,
+                })),
+            };
+        } catch (error) {
+            throw new SQLiteError(
+                'Failed to get events',
+                'SQLITE_QUERY_FAILED',
+                error
+            );
+        }
     }
 
     // ========== Agent 操作 ==========

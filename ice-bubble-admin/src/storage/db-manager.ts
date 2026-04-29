@@ -863,6 +863,25 @@ export class DBManager {
           }
         }
         break;
+      case 15:
+        // 迁移 v15: 创建 admin_model_events 表（存储从 collector 同步的 session 事件）
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS admin_model_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_key TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_id TEXT,
+            data_json TEXT NOT NULL,
+            timestamp TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(event_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_admin_model_events_session ON admin_model_events(session_key);
+          CREATE INDEX IF NOT EXISTS idx_admin_model_events_timestamp ON admin_model_events(timestamp);
+          CREATE INDEX IF NOT EXISTS idx_admin_model_events_type ON admin_model_events(event_type);
+        `);
+        logger.info('Migration v15: admin_model_events table created');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

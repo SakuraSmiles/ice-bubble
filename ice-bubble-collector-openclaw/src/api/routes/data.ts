@@ -124,6 +124,44 @@ export function createDataRouter(collector: FileCollector): Router {
     });
 
     /**
+     * GET /api/data/events
+     *
+     * Query params:
+     *   - session_key: string (optional)
+     *   - event_type: string (optional, e.g. model_change)
+     *   - since: ISO timestamp string (optional)
+     *   - limit: number (default 100, max 1000)
+     *   - offset: number (default 0)
+     *
+     * Response:
+     *   { count: number, events: SessionEvent[] }
+     */
+    router.get('/events', async (req: Request, res: Response) => {
+        try {
+            const sessionKey = req.query.session_key ? String(req.query.session_key) : undefined;
+            const eventType = req.query.event_type ? String(req.query.event_type) : undefined;
+            const since = req.query.since ? String(req.query.since) : undefined;
+            const limit = Math.min(parseInt(String(req.query.limit ?? '100')), 1000);
+            const offset = parseInt(String(req.query.offset ?? '0'));
+
+            const result = await collector.getEvents({ sessionKey, eventType, since, limit, offset });
+
+            res.json({
+                count: result.count,
+                events: result.events,
+            });
+            const filterLog = [sessionKey && `session: ${sessionKey}`, eventType && `type: ${eventType}`].filter(Boolean).join(', ') || 'all';
+            dataLogger.debug(`返回 ${result.count} 条 events (${filterLog})`);
+        } catch (error) {
+            dataLogger.error('获取 events 失败', error as Error);
+            res.status(500).json({
+                error: '获取 events 失败',
+                code: 'EVENTS_FETCH_FAILED',
+            });
+        }
+    });
+
+    /**
      * GET /api/data/stats
      *
      * Response:

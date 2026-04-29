@@ -26,6 +26,16 @@ export interface Session {
     updatedAt: Date;
 }
 
+export interface SessionEvent {
+    id?: number;
+    session_key: string;
+    event_type: string;
+    event_id?: string;
+    data_json: string;
+    timestamp: string;
+    created_at?: string;
+}
+
 export interface SessionMessage {
     id?: number;
     /** OpenClaw 原始消息 ID（用于去重），格式: {sessionKey}:{timestamp}:{messageType}:{hash} */
