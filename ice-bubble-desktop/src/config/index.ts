@@ -18,7 +18,8 @@ export async function getProxyPort(): Promise<number> {
   return port;
 }
 
-// Admin 服务地址（服务端使用）
-export const ADMIN_API_BASE = typeof process !== 'undefined'
-  ? (process.env.ADMIN_API || 'http://localhost:13000')
-  : 'http://localhost:13000';
+// Admin 服务地址
+// 服务端直接请求Admin，浏览器端通过Desktop proxy（相对路径）
+export const ADMIN_API_BASE = typeof process !== 'undefined' && process.env.ADMIN_API
+  ? process.env.ADMIN_API
+  : (typeof process !== 'undefined' ? 'http://localhost:13000' : '');
