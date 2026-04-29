@@ -139,15 +139,13 @@ const sparklineColor = computed(() => getLatencyColor(props.stats.avgLatency));
     popper-class="status-dropdown-popper"
   >
     <template #reference>
-      <el-tooltip :content="tooltipText" placement="bottom" :show-after="300">
-        <div class="status-trigger" :class="{ 'is-abnormal': isAbnormal }">
-          <span
-            class="status-dot"
-            :style="{ backgroundColor: getLatencyColor(stats.avgLatency) }"
-          />
-          <span class="status-latency">{{ formatLatency(stats.avgLatency) }}</span>
-        </div>
-      </el-tooltip>
+      <div class="status-trigger" :class="{ 'is-abnormal': isAbnormal }" :title="tooltipText">
+        <span
+          class="status-dot"
+          :style="{ backgroundColor: getLatencyColor(stats.avgLatency) }"
+        />
+        <span class="status-latency">{{ formatLatency(stats.avgLatency) }}</span>
+      </div>
     </template>
 
     <!-- 面板内容 -->
