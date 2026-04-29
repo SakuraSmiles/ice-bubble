@@ -36,7 +36,8 @@ coverage/
 *.db
 *.sqlite
 *.sqlite3
-data/
+data/*.db
+data/*.sqlite
 
 # Misc
 *.bak
