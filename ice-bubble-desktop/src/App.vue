@@ -152,7 +152,7 @@ body {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(144, 147, 153, 0.4) transparent;
+  scrollbar-color: rgba(144, 147, 153, 0.5) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -165,12 +165,17 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(144, 147, 153, 0.4);
+  background: rgba(144, 147, 153, 0.5);
   border-radius: 3px;
+  border: none;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(144, 147, 153, 0.6);
+  background: rgba(144, 147, 153, 0.7);
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
 }
 
 *::-webkit-scrollbar-corner {
