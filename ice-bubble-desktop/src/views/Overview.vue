@@ -299,36 +299,17 @@ async function fetchAll(isLoading: boolean = false) {
 
 const loading = ref(false);
 
-// 左侧面板高度（传给TaskList用于计算展示数量）
-const leftPanelRef = ref<HTMLElement | null>(null);
-const leftPanelHeight = ref(0);
-
-onMounted(async () => {
+onMounted(() => {
   refreshData();
   fetchAll(true);
   fetchDataStatus();
   startPolling();
   document.addEventListener('visibilitychange', onVisibilityChange);
-  // 计算左侧面板高度
-  await nextTick();
-  const updateHeight = () => {
-    if (leftPanelRef.value) {
-      leftPanelHeight.value = leftPanelRef.value.clientHeight;
-    }
-  };
-  updateHeight();
-  window.addEventListener('resize', updateHeight);
-  // 清理在onUnmounted中
-  (window as any).__taskListResize = updateHeight;
 });
 
 onUnmounted(() => {
   stopPolling();
   document.removeEventListener('visibilitychange', onVisibilityChange);
-  if ((window as any).__taskListResize) {
-    window.removeEventListener('resize', (window as any).__taskListResize);
-    delete (window as any).__taskListResize;
-  }
   for (const s of Object.values(agentRuntimeStates.value)) {
     if (s.streamTimer) { clearTimeout(s.streamTimer); s.streamTimer = null; }
   }
@@ -348,7 +329,7 @@ onUnmounted(() => {
     <el-card class="content-area" shadow="never">
       <div class="main-layout">
         <!-- 左侧面板 -->
-        <div ref="leftPanelRef" class="left-panel">
+        <div class="left-panel">
           <!-- 父任务 + 子任务（wrapper 容器） -->
           <div v-if="recentParentTask" class="task-section">
             <ParentTaskProgress
@@ -365,7 +346,7 @@ onUnmounted(() => {
           </div>
 
           <!-- 任务列表 -->
-          <TaskList :container-height="leftPanelHeight" />
+          <TaskList />
         </div>
 
         <!-- 右侧：最近会话（ChatTimeline） -->

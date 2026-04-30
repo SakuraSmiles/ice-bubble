@@ -1,12 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { ADMIN_API_BASE } from '../../config';
-
-// =========== Props ===========
-
-const props = defineProps<{
-  containerHeight?: number;
-}>();
 
 // =========== DTO 接口 ===========
 
@@ -24,52 +18,59 @@ interface AdminTaskItem {
   completed_at: string;
 }
 
-interface AdminTasksResponse {
-  tasks: AdminTaskItem[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
 // =========== 状态 ===========
 
 const tasks = ref<AdminTaskItem[]>([]);
 const total = ref(0);
 const loading = ref(false);
 const expandedTaskId = ref<string | null>(null);
+const scrollContainerRef = ref<HTMLElement | null>(null);
+
+const PAGE_SIZE = 15;
+let currentOffset = 0;
+let allLoaded = false;
 
 // 30 秒自动刷新
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-// =========== 动态 Limit ===========
-// 根据父容器高度计算展示数量，避免滚动条
-const TASK_ROW_HEIGHT = 32;   // 每行任务高度
-const HEADER_HEIGHT = 40;     // 统计栏高度
-const MORE_HINT_HEIGHT = 28;  // 底部"更多"提示高度
-const BUFFER = 0;              // 不留余量，尽量多展示
-
-const taskLimit = computed(() => {
-  const h = props.containerHeight;
-  if (!h || h <= 0) return 10; // 容器高度未知时默认10
-  const available = h - HEADER_HEIGHT - MORE_HINT_HEIGHT - BUFFER;
-  return Math.max(3, Math.floor(available / TASK_ROW_HEIGHT));
-});
-
 // =========== 数据获取 ===========
 
-async function fetchTasks(): Promise<void> {
+async function fetchTasks(append = false): Promise<void> {
+  if (loading.value) return;
+  if (allLoaded && append) return;
+
   loading.value = true;
   try {
-    const res = await fetch(`${ADMIN_API_BASE}/api/tasks?limit=${taskLimit.value}&offset=0`);
+    const res = await fetch(`${ADMIN_API_BASE}/api/tasks?limit=${PAGE_SIZE}&offset=${append ? currentOffset : 0}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data: AdminTasksResponse = await res.json();
-    // 后端已按 created_at 倒序返回，前端保持原序
-    tasks.value = data.tasks;
+    const data = await res.json();
+    if (append) {
+      tasks.value = [...tasks.value, ...data.tasks];
+    } else {
+      tasks.value = data.tasks;
+      currentOffset = 0;
+    }
     total.value = data.total;
+    currentOffset += data.tasks.length;
+    if (tasks.value.length >= data.total) {
+      allLoaded = true;
+    }
   } catch (e) {
     console.error('获取任务列表失败:', e);
   } finally {
     loading.value = false;
+  }
+}
+
+// =========== 滚动加载 ===========
+
+function onScroll(): void {
+  const container = scrollContainerRef.value;
+  if (!container || loading.value || allLoaded) return;
+
+  // 距底部 50px 时触发加载
+  if (container.scrollHeight - container.scrollTop - container.clientHeight < 50) {
+    fetchTasks(true);
   }
 }
 
@@ -89,9 +90,10 @@ const stats = computed(() => {
   return { completed, running, queued, failed, timeout, total: tasks.value.length };
 });
 
+import { computed } from 'vue';
+
 // =========== 工具函数 ===========
 
-/** 状态对应的图标 */
 function statusIcon(status: string): string {
   switch (status) {
     case 'completed': return '✓';
@@ -103,7 +105,6 @@ function statusIcon(status: string): string {
   }
 }
 
-/** 状态对应的 Element Plus tag 类型 */
 function statusTagType(status: string): '' | 'success' | 'primary' | 'info' | 'danger' | 'warning' {
   switch (status) {
     case 'completed': return 'success';
@@ -115,7 +116,6 @@ function statusTagType(status: string): '' | 'success' | 'primary' | 'info' | 'd
   }
 }
 
-/** 状态中文标签 */
 function statusLabel(status: string): string {
   switch (status) {
     case 'completed': return '完成';
@@ -127,7 +127,6 @@ function statusLabel(status: string): string {
   }
 }
 
-/** 格式化时间：今天的显示 HH:mm，其他显示 MM-DD HH:mm */
 function formatTime(isoString: string): string {
   const date = new Date(isoString);
   const now = new Date();
@@ -136,16 +135,13 @@ function formatTime(isoString: string): string {
   const hh = String(date.getHours()).padStart(2, '0');
   const mm = String(date.getMinutes()).padStart(2, '0');
 
-  if (isToday) {
-    return `${hh}:${mm}`;
-  }
+  if (isToday) return `${hh}:${mm}`;
 
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${month}-${day} ${hh}:${mm}`;
 }
 
-/** 展开/收起任务详情 */
 function toggleTask(taskId: string): void {
   expandedTaskId.value = expandedTaskId.value === taskId ? null : taskId;
 }
@@ -154,12 +150,7 @@ function toggleTask(taskId: string): void {
 
 onMounted(() => {
   fetchTasks();
-  refreshTimer = setInterval(fetchTasks, 30_000);
-});
-
-// 容器高度变化时重新获取（不监听自身）
-watch(() => props.containerHeight, () => {
-  fetchTasks();
+  refreshTimer = setInterval(() => fetchTasks(), 30_000);
 });
 
 onUnmounted(() => {
@@ -176,15 +167,15 @@ onUnmounted(() => {
     <div class="task-list-header">
       <span class="header-title">任务列表</span>
       <span class="header-stats">
-        共 {{ stats.total }} 个任务 |
+        共 {{ total }} 个 |
         <span class="stat-completed">✅{{ stats.completed }}</span>
         <span class="stat-running">🔄{{ stats.running }}</span>
         <span class="stat-queued">⏳{{ stats.queued }}</span>
       </span>
     </div>
 
-    <!-- 任务列表 -->
-    <div class="task-list-body" v-loading="loading && tasks.length === 0">
+    <!-- 任务列表（独立滚动） -->
+    <div ref="scrollContainerRef" class="task-list-body" @scroll="onScroll">
       <div v-if="!loading && tasks.length === 0" class="empty-state">
         暂无任务
       </div>
@@ -195,7 +186,6 @@ onUnmounted(() => {
           :class="{ expanded: expandedTaskId === task.id }"
           @click="toggleTask(task.id)"
         >
-          <!-- 状态图标 -->
           <el-tag
             :type="statusTagType(task.status)"
             size="small"
@@ -206,19 +196,15 @@ onUnmounted(() => {
             {{ statusIcon(task.status) }} {{ statusLabel(task.status) }}
           </el-tag>
 
-          <!-- Agent 标签 -->
           <el-tag size="small" effect="plain" class="agent-tag">{{ task.agent_id }}</el-tag>
 
-          <!-- 标题 -->
           <el-tooltip :content="task.title" placement="top" :show-after="300">
             <span class="task-title">{{ task.title }}</span>
           </el-tooltip>
 
-          <!-- 时间 -->
           <span class="task-time">{{ formatTime(task.created_at) }}</span>
         </div>
 
-        <!-- 展开的详情 -->
         <div v-if="expandedTaskId === task.id" class="task-detail">
           <div class="detail-label">描述</div>
           <div class="detail-text">{{ task.task_description || '暂无描述' }}</div>
@@ -229,9 +215,13 @@ onUnmounted(() => {
           </div>
         </div>
       </template>
-      <!-- 更多提示 -->
-      <div v-if="total > tasks.length" class="more-hint">
-        还有 {{ total - tasks.length }} 个任务
+
+      <!-- 加载更多指示器 -->
+      <div v-if="loading && tasks.length > 0" class="loading-hint">
+        加载中...
+      </div>
+      <div v-if="allLoaded && tasks.length > 0" class="end-hint">
+        已加载全部 {{ total }} 个任务
       </div>
     </div>
   </div>
@@ -244,7 +234,8 @@ onUnmounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  max-height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .task-list-header {
@@ -276,7 +267,7 @@ onUnmounted(() => {
 .task-list-body {
   flex: 1;
   min-height: 0;
-  overflow-y: hidden;
+  overflow-y: auto;
   padding: 4px 0;
 }
 
@@ -287,7 +278,6 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-/* 任务行 */
 .task-row {
   display: flex;
   align-items: center;
@@ -306,7 +296,6 @@ onUnmounted(() => {
   background: var(--el-fill-color);
 }
 
-/* 状态标签 */
 .status-tag {
   flex-shrink: 0;
   font-size: 10px;
@@ -315,7 +304,6 @@ onUnmounted(() => {
   line-height: 18px;
 }
 
-/* Agent 标签 */
 .agent-tag {
   flex-shrink: 0;
   font-size: 10px;
@@ -326,7 +314,6 @@ onUnmounted(() => {
   text-align: center;
 }
 
-/* 标题 */
 .task-title {
   flex: 1;
   min-width: 0;
@@ -337,7 +324,6 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/* 时间 */
 .task-time {
   flex-shrink: 0;
   font-size: 10px;
@@ -346,7 +332,6 @@ onUnmounted(() => {
   margin-left: 4px;
 }
 
-/* 详情面板 */
 .task-detail {
   padding: 8px 12px 10px 12px;
   margin: 0 4px 4px 4px;
@@ -378,8 +363,15 @@ onUnmounted(() => {
   font-family: var(--font-exo2, monospace);
 }
 
-.more-hint {
-  padding: 6px 12px;
+.loading-hint {
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+}
+
+.end-hint {
+  padding: 8px 12px;
   text-align: center;
   font-size: 11px;
   color: var(--el-text-color-placeholder);
