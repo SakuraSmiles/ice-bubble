@@ -120,8 +120,8 @@ export class TaskParser {
     // 使用 runId 作为 task id
     const id = runId;
 
-    // 从 tool_input.task 中提取第一行作为标题
-    const title = task.split('\n')[0].trim().substring(0, 200) || 'Untitled Task';
+    // 从 tool_input.task 中提取简洁标题
+    const title = this.extractTitle(task) || 'Untitled Task';
 
     // 关联 admin_sessions 表获取子 session 的状态信息
     const childSession = this.getChildSession(childSessionKey);
@@ -157,6 +157,50 @@ export class TaskParser {
       started_at,
       completed_at,
     };
+  }
+
+  /**
+   * 从任务描述中提取简洁标题
+   */
+  private extractTitle(taskDescription: string): string {
+    const firstLine = taskDescription.split('\n')[0].trim();
+    if (!firstLine) return '';
+
+    // 1. ## 任务：xxx
+    const taskMatch = firstLine.match(/^##\s*任务[：:]\s*(.+)/);
+    if (taskMatch) return taskMatch[1].trim();
+
+    // 2. # agent: xxx  或  # xxx：xxx（一级标题，去掉 # 前缀和 agent 前缀）
+    const h1Match = firstLine.match(/^#\s+(.+)/);
+    if (h1Match) {
+      const rest = h1Match[1].trim();
+      // 去掉 "agent: " 前缀（如 "dev: "）
+      const agentPrefixMatch = rest.match(/^[\w-]+:\s*(.+)/);
+      if (agentPrefixMatch) return agentPrefixMatch[1].trim();
+      return rest;
+    }
+
+    // 3. [PARENT] xxx  或  [TODO] xxx 等方括号前缀
+    const bracketMatch = firstLine.match(/^\[[A-Z]+\]\s*(.+)/);
+    if (bracketMatch) return bracketMatch[1].trim();
+
+    // 4. 身份+任务描述格式（如 "你是xxx。执行xxx。"）
+    const actionMatch = firstLine.match(/(?:执行|完成)\s*(.+)/);
+    if (actionMatch && firstLine.includes('。')) {
+      return actionMatch[1].replace(/。$/, '').trim();
+    }
+    // 退而求其次：取第一个句号后的内容
+    const periodMatch = firstLine.match(/。\s*(.+)/);
+    if (periodMatch) return periodMatch[1].trim();
+
+    // 5. 请xxx 开头 → 直接取
+    if (firstLine.startsWith('请')) return firstLine;
+
+    // 6. 其他 → 取第一行，超过40字符截断
+    if (firstLine.length > 40) {
+      return firstLine.substring(0, 40) + '…';
+    }
+    return firstLine;
   }
 
   /**
