@@ -402,11 +402,11 @@ onUnmounted(() => {
 .left-panel {
   width: 24%;
   min-width: 280px;
-  min-height: 0;
+  height: calc(100vh - 240px);
   display: flex;
   flex-direction: column;
   gap: 16px;
-  overflow-y: hidden;
+  overflow: hidden;
 }
 
 /* Agent 列表 */
