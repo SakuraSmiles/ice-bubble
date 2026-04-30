@@ -21,6 +21,11 @@ import { DataSync } from './data/data-sync.js';
 import { AgentOverviewService } from './data/agent-overview.js';
 import { CollectorClient } from './data/collector-client.js';
 import { createBearerAuthMiddleware, getAuthToken } from './utils/auth-middleware.js';
+import { GatewayConnection } from './server/gateway/connection.js';
+import { GatewayRpc } from './server/gateway/rpc.js';
+import { SSEManager } from './server/chat/sse-manager.js';
+import { SessionCache } from './server/chat/session-cache.js';
+import { ChatController } from './server/chat/controller.js';
 
 // 加载环境变量
 config();
@@ -55,11 +60,17 @@ interface DataSyncConfig {
   subagentParserEnabled?: boolean;
 }
 
+interface GatewayConfig {
+  url?: string;
+  token?: string;
+}
+
 interface AppConfig {
   server?: ServerConfig;
   modules?: ModuleConfig[];
   dataSync?: DataSyncConfig;
   auth?: { token?: string };
+  gateway?: GatewayConfig;
 }
 
 let configData: AppConfig;
@@ -207,7 +218,40 @@ export async function startAdmin(): Promise<void> {
     app.use('/api/modules', createModulesRouter(scheduler));
     app.use('/api/resources', createResourcesRouter(dataRepository));
     app.use('/api/tasks', createTasksRouter({ db: dbManager.getConnection() }));
-    
+
+    // ── Chat Gateway Integration (B7) ──
+    const gwConfig = configData.gateway || {};
+    const gatewayUrl = gwConfig.url || 'ws://127.0.0.1:18789';
+    const gatewayToken = gwConfig.token || '';
+    const gatewayConn = new GatewayConnection(gatewayUrl, gatewayToken);
+    const gatewayRpc = new GatewayRpc(gatewayConn);
+    const sseManager = new SSEManager(gatewayRpc);
+    const sessionCache = new SessionCache(gatewayRpc);
+    const chatController = new ChatController(gatewayRpc, sseManager, sessionCache);
+
+    // Chat routes
+    app.post('/api/chat/send', (req, res) => chatController.send(req, res));
+    app.post('/api/chat/abort', (req, res) => chatController.abort(req, res));
+    app.get('/api/chat/stream', (req, res) => chatController.stream(req, res));
+
+    // Connect to Gateway in background — failure should NOT crash the server
+    gatewayConn.connect().catch((err) => {
+        logger.warn('[Admin] Gateway connection failed (will auto-retry)', {
+            error: err instanceof Error ? err.message : String(err),
+            url: gatewayUrl,
+        });
+    });
+
+    gatewayConn.on('reconnect', () => {
+        logger.info('[Admin] Gateway reconnecting...', { url: gatewayUrl });
+        sseManager.broadcastAll('status', { connected: false });
+    });
+
+    gatewayConn.on('disconnect', () => {
+        logger.warn('[Admin] Gateway disconnected');
+        sseManager.broadcastAll('status', { connected: false });
+    });
+
     // 健康检查
     app.get('/health', (_req, res) => {
         res.json({ status: 'ok', version: VERSION });

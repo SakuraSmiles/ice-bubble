@@ -58,5 +58,9 @@
         "batchSize": 500,
         "taskApiBaseUrl": "http://localhost:13102",
         "subagentParserEnabled": true
+    },
+    "gateway": {
+        "url": "ws://127.0.0.1:18789",
+        "token": "1a25db77ba80e41a3f4f54811fc92dba9525dce96f5a1c18"
     }
 }
