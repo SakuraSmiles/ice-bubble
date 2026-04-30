@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { ADMIN_API_BASE } from '../../config';
 
 // =========== DTO 接口 ===========
@@ -35,51 +35,12 @@ const expandedTaskId = ref<string | null>(null);
 // 30 秒自动刷新
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-// =========== 动态 Limit ===========
-
-const containerRef = ref<HTMLElement | null>(null);
-const taskLimit = ref(10);
-let resizeObserver: ResizeObserver | null = null;
-
-const TASK_ROW_HEIGHT = 32;  // 每行任务高度(px)
-const HEADER_HEIGHT = 40;    // 统计栏高度(px)
-const BUFFER = 20;           // 安全缓冲(px)
-const MIN_LIMIT = 5;
-const MAX_LIMIT = 20;
-
-function calcLimit(containerHeight: number): number {
-  const available = containerHeight - HEADER_HEIGHT - BUFFER;
-  const limit = Math.floor(available / TASK_ROW_HEIGHT);
-  return Math.min(MAX_LIMIT, Math.max(MIN_LIMIT, limit));
-}
-
-function initResizeObserver(): void {
-  if (!containerRef.value) return;
-  resizeObserver = new ResizeObserver((entries) => {
-    for (const entry of entries) {
-      const height = entry.contentRect.height;
-      if (height > 0) {
-        const newLimit = calcLimit(height);
-        if (newLimit !== taskLimit.value) {
-          taskLimit.value = newLimit;
-          fetchTasks();
-        }
-      }
-    }
-  });
-  resizeObserver.observe(containerRef.value);
-}
-
-// 是否有更多任务未显示
-const hasMore = computed(() => total.value > taskLimit.value);
-const moreCount = computed(() => total.value - tasks.value.length > 0 ? total.value - tasks.value.length : total.value - taskLimit.value);
-
 // =========== 数据获取 ===========
 
 async function fetchTasks(): Promise<void> {
   loading.value = true;
   try {
-    const res = await fetch(`${ADMIN_API_BASE}/api/tasks?limit=${taskLimit.value}&offset=0`);
+    const res = await fetch(`${ADMIN_API_BASE}/api/tasks?limit=50&offset=0`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data: AdminTasksResponse = await res.json();
     // 后端已按 created_at 倒序返回，前端保持原序
@@ -171,17 +132,8 @@ function toggleTask(taskId: string): void {
 
 // =========== 生命周期 ===========
 
-onMounted(async () => {
-  await nextTick();
-  // 初始计算limit
-  if (containerRef.value) {
-    const height = containerRef.value.clientHeight;
-    if (height > 0) {
-      taskLimit.value = calcLimit(height);
-    }
-  }
+onMounted(() => {
   fetchTasks();
-  initResizeObserver();
   refreshTimer = setInterval(fetchTasks, 30_000);
 });
 
@@ -189,10 +141,6 @@ onUnmounted(() => {
   if (refreshTimer) {
     clearInterval(refreshTimer);
     refreshTimer = null;
-  }
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
   }
 });
 </script>
@@ -211,7 +159,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 任务列表 -->
-    <div ref="containerRef" class="task-list-body" v-loading="loading && tasks.length === 0">
+    <div class="task-list-body" v-loading="loading && tasks.length === 0">
       <div v-if="!loading && tasks.length === 0" class="empty-state">
         暂无任务
       </div>
@@ -256,11 +204,6 @@ onUnmounted(() => {
           </div>
         </div>
       </template>
-
-      <!-- 更多提示 -->
-      <div v-if="hasMore && !loading" class="more-hint" @click="fetchTasks">
-        {{ moreCount > 0 ? `还有 ${moreCount} 个任务` : '查看更多' }}
-      </div>
     </div>
   </div>
 </template>
@@ -304,7 +247,7 @@ onUnmounted(() => {
 .task-list-body {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
   padding: 4px 0;
 }
 
@@ -404,19 +347,5 @@ onUnmounted(() => {
   font-size: 10px;
   color: var(--el-text-color-secondary);
   font-family: var(--font-exo2, monospace);
-}
-
-/* 更多提示 */
-.more-hint {
-  padding: 6px 12px;
-  text-align: center;
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  transition: color 0.15s;
-}
-
-.more-hint:hover {
-  color: var(--el-color-primary);
 }
 </style>
