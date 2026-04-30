@@ -151,34 +151,34 @@ body {
 /* =========== 全局滚动条样式 =========== */
 
 * {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(144, 147, 153, 0.5) transparent;
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(144, 147, 153, 0.6) transparent !important;
 }
 
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 6px !important;
+  height: 6px !important;
 }
 
 *::-webkit-scrollbar-track {
-  background: transparent;
+  background: transparent !important;
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(144, 147, 153, 0.5);
-  border-radius: 3px;
-  border: none;
+  background: rgba(144, 147, 153, 0.6) !important;
+  border-radius: 3px !important;
+  border: none !important;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(144, 147, 153, 0.7);
+  background: rgba(144, 147, 153, 0.8) !important;
 }
 
 *::-webkit-scrollbar-button {
-  display: none;
+  display: none !important;
 }
 
 *::-webkit-scrollbar-corner {
-  background: transparent;
+  background: transparent !important;
 }
 </style>
