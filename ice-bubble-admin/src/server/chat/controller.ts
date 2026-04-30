@@ -29,24 +29,37 @@ export class ChatController {
       return;
     }
 
-    try {
-      const result = (await this.rpc.request("chat.send", {
-        sessionKey,
-        message,
-        idempotencyKey: crypto.randomUUID(),
-      })) as { messageId?: string } | undefined;
+    const idempotencyKey = crypto.randomUUID();
 
-      res.json({
-        success: true,
-        messageId: result?.messageId,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      res.json({
+    if (!this.rpc.isConnected()) {
+      res.status(503).json({
         success: false,
-        error: message,
+        error: "Gateway not connected",
       });
+      return;
     }
+
+    // Fire-and-forget: send the RPC request but respond immediately.
+    // The Gateway's chat.send handler is async and waits for the agent turn,
+    // which can take much longer than a reasonable HTTP timeout.
+    // Message delivery is confirmed via SSE stream events (chat.delta/chat.final).
+    const rpcPromise = this.rpc.request("chat.send", {
+      sessionKey,
+      message,
+      idempotencyKey,
+    });
+
+    // Log errors from the RPC for debugging, but don't block the HTTP response.
+    rpcPromise.catch((err) => {
+      // RPC errors are logged but don't affect the HTTP response.
+      // The SSE stream will surface agent errors to the frontend.
+      console.error(`[ChatController] chat.send RPC failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+
+    res.json({
+      success: true,
+      idempotencyKey,
+    });
   }
 
   /**

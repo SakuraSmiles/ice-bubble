@@ -39,6 +39,11 @@ export class GatewayRpc {
   private subscriptions = new Map<string, Set<(result: unknown) => void>>();
   private subMethodToId = new Map<string, string>();
 
+  /** Check if the underlying Gateway connection is ready for requests. */
+  isConnected(): boolean {
+    return this.conn.isConnected;
+  }
+
   constructor(conn: GatewayConnection) {
     this.conn = conn;
 

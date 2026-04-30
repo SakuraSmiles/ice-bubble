@@ -298,6 +298,7 @@ async function fetchAll(isLoading: boolean = false) {
   if (isLoading) loading.value = false;
 }
 
+const rightActiveTab = ref('activity');
 const loading = ref(false);
 
 onMounted(() => {
@@ -350,12 +351,23 @@ onUnmounted(() => {
           <TaskList />
         </div>
 
-        <!-- 右侧：最近会话 + 聊天面板 -->
+        <!-- 右侧：Tab 切换面板 -->
         <div class="right-panel">
-          <RecentSessions :loading="loading" />
-          <div class="chat-section">
-            <ChatPanel />
-          </div>
+          <el-tabs v-model="rightActiveTab" class="right-tabs">
+            <el-tab-pane label="消息动态" name="activity">
+              <div class="tab-content">
+                <RecentSessions :loading="loading" />
+              </div>
+            </el-tab-pane>
+            <el-tab-pane name="chat">
+              <template #label>
+                <span>💬 对话</span>
+              </template>
+              <div class="tab-content">
+                <ChatPanel />
+              </div>
+            </el-tab-pane>
+          </el-tabs>
         </div>
       </div>
     </el-card>
@@ -549,15 +561,36 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-.right-panel > :first-child {
-  flex: 0 0 auto;
-  max-height: 40%;
+.right-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.chat-section {
+.right-tabs :deep(.el-tabs__header) {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.right-tabs :deep(.el-tabs__content) {
   flex: 1;
-  min-height: 200px;
+  min-height: 0;
   overflow: hidden;
+}
+
+.right-tabs :deep(.el-tab-pane) {
+  height: 100%;
+}
+
+.tab-content {
+  height: 100%;
+  overflow: hidden;
+}
+
+.tab-content :deep(.chat-panel) {
+  min-height: 0;
 }
 
 .main-card {
