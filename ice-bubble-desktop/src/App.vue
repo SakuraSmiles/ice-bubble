@@ -134,6 +134,14 @@
   padding: 0;
 }
 
+html,
+body,
+#app {
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: var(--color-text);

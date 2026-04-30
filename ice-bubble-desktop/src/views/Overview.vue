@@ -385,6 +385,8 @@ onUnmounted(() => {
   min-height: 0;
   padding: 16px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 左右分栏布局 */
@@ -393,13 +395,13 @@ onUnmounted(() => {
   gap: 16px;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* 左侧面板 */
 .left-panel {
   width: 24%;
   min-width: 280px;
-  flex-shrink: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
