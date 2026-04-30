@@ -11,6 +11,7 @@ import RecentSessions from './components/RecentSessions.vue';
 import AgentTaskTree from './components/AgentTaskTree.vue';
 import ParentTaskProgress from './components/ParentTaskProgress.vue';
 import TaskList from './components/TaskList.vue';
+import ChatPanel from './components/ChatPanel.vue';
 
 
 // =========== 接口定义 ===========
@@ -349,9 +350,12 @@ onUnmounted(() => {
           <TaskList />
         </div>
 
-        <!-- 右侧：最近会话（ChatTimeline） -->
+        <!-- 右侧：最近会话 + 聊天面板 -->
         <div class="right-panel">
           <RecentSessions :loading="loading" />
+          <div class="chat-section">
+            <ChatPanel />
+          </div>
         </div>
       </div>
     </el-card>
@@ -541,6 +545,13 @@ onUnmounted(() => {
   height: calc(100vh - 200px);
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.chat-section {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 

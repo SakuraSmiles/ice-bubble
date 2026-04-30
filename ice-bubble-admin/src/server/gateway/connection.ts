@@ -26,6 +26,7 @@ export class GatewayConnection extends EventEmitter<GatewayConnectionEvents> {
   private intentionalClose = false;
   // Gateway connect handshake state
   private connectNonce: string | null = null;
+  private connectRequestId: string | null = null;
   private connectSent = false;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingResolve: (() => void) | null = null;
@@ -64,6 +65,7 @@ export class GatewayConnection extends EventEmitter<GatewayConnectionEvents> {
     this.intentionalClose = false;
     this.connectNonce = null;
     this.connectSent = false;
+    this.connectRequestId = null;
     return this.tryConnect();
   }
 
@@ -105,6 +107,7 @@ export class GatewayConnection extends EventEmitter<GatewayConnectionEvents> {
         this.clearConnectChallengeTimeout();
         this.connectNonce = null;
         this.connectSent = false;
+        this.connectRequestId = null;
 
         // Resolve pending connect promise (in case we closed before handshake)
         if (this.pendingResolve) {
@@ -171,34 +174,37 @@ export class GatewayConnection extends EventEmitter<GatewayConnectionEvents> {
     if (parsed.type === "res" && parsed.id != null && parsed.ok !== undefined) {
       this.lastTick = Date.now();
 
-      // hello-ok: connect succeeded
-      if (parsed.ok && parsed.payload) {
-        // resolve the connect promise
-        this.state = "connected";
-        this.reconnectAttempt = 0;
-        this.tickIntervalMs =
-          typeof parsed.payload.policy?.tickIntervalMs === "number"
-            ? parsed.payload.policy.tickIntervalMs
-            : 30_000;
-        this.lastTick = Date.now();
-        this.startTickWatch();
+      // hello-ok: only treat as connect response if id matches the connect request
+      if (this.connectRequestId != null && parsed.id === this.connectRequestId) {
+        if (parsed.ok && parsed.payload) {
+          // resolve the connect promise
+          this.state = "connected";
+          this.reconnectAttempt = 0;
+          this.tickIntervalMs =
+            typeof parsed.payload.policy?.tickIntervalMs === "number"
+              ? parsed.payload.policy.tickIntervalMs
+              : 30_000;
+          this.lastTick = Date.now();
+          this.startTickWatch();
+          this.connectRequestId = null;
 
-        if (this.pendingResolve) {
-          this.pendingResolve();
-          this.pendingResolve = null;
+          if (this.pendingResolve) {
+            this.pendingResolve();
+            this.pendingResolve = null;
+          }
+          return;
         }
-        return;
+
+        // connect request error response
+        if (!parsed.ok && parsed.error) {
+          const errMsg = parsed.error?.message ?? "unknown gateway error";
+          this.emit("error", new Error(`gateway connect error: ${errMsg}`));
+          ws.close(1008, "gateway connect error");
+          return;
+        }
       }
 
-      // error response
-      if (!parsed.ok && parsed.error) {
-        const errMsg = parsed.error?.message ?? "unknown gateway error";
-        this.emit("error", new Error(`gateway rpc error: ${errMsg}`));
-        ws.close(1008, "gateway rpc error");
-        return;
-      }
-
-      // Forward other responses as raw messages
+      // Forward all other response frames as raw messages for rpc.ts to handle
       this.emit("message", raw);
       return;
     }
@@ -223,10 +229,11 @@ export class GatewayConnection extends EventEmitter<GatewayConnectionEvents> {
     }
     this.connectSent = true;
     this.clearConnectChallengeTimeout();
+    this.connectRequestId = this.nextId();
 
     const frame = {
       type: "req",
-      id: this.nextId(),
+      id: this.connectRequestId,
       method: "connect",
       params: {
         minProtocol: 3,
@@ -315,6 +322,7 @@ export class GatewayConnection extends EventEmitter<GatewayConnectionEvents> {
     this.clearConnectChallengeTimeout();
     this.connectNonce = null;
     this.connectSent = false;
+    this.connectRequestId = null;
     if (this.pendingResolve) {
       this.pendingResolve();
       this.pendingResolve = null;
