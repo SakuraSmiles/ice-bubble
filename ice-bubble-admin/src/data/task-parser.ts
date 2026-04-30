@@ -91,10 +91,32 @@ export class TaskParser {
     created_at: string;
   }): ParsedTask | null {
     // 解析 tool_input JSON → 获取 task、agentId、mode 等
+    // 如果 tool_input 为空或 {}，尝试从同 session 的 agent 消息中补充
     let toolInputObj: { task?: string; agentId?: string; mode?: string } = {};
     try {
-      if (row.tool_input) {
+      if (row.tool_input && row.tool_input !== '{}') {
         toolInputObj = JSON.parse(row.tool_input);
+      } else {
+        // 回填：从同 session 紧邻的 agent 消息中提取 sessions_spawn 的 input
+        const backfill = this.db.prepare(`
+          SELECT am.tools_json
+          FROM admin_messages am
+          WHERE am.session_key = ?
+            AND am.message_type = 'agent'
+            AND am.tools_json LIKE '%sessions_spawn%'
+            AND am.created_at <= ?
+          ORDER BY am.created_at DESC
+          LIMIT 1
+        `).get(row.requester_session_key, row.created_at) as { tools_json: string } | undefined;
+
+        if (backfill?.tools_json) {
+          try {
+            const tools = JSON.parse(backfill.tools_json);
+            if (Array.isArray(tools) && tools.length > 0) {
+              toolInputObj = tools[0].input ?? {};
+            }
+          } catch { /* ignore */ }
+        }
       }
     } catch {
       logger.warn('[TaskParser] Failed to parse tool_input JSON', { source_id: row.source_id });
