@@ -147,4 +147,33 @@ body {
   color: var(--color-text);
   background: var(--color-bg);
 }
+
+/* =========== 全局滚动条样式 =========== */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(144, 147, 153, 0.4) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(144, 147, 153, 0.4);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(144, 147, 153, 0.6);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
 </style>
