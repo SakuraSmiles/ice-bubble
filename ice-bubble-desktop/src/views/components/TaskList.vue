@@ -26,7 +26,7 @@ const loading = ref(false);
 const expandedTaskId = ref<string | null>(null);
 const scrollContainerRef = ref<HTMLElement | null>(null);
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 30;
 let currentOffset = 0;
 let allLoaded = false;
 
