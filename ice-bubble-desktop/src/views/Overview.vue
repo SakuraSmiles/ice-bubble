@@ -311,14 +311,24 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', onVisibilityChange);
   // 计算左侧面板高度
   await nextTick();
-  if (leftPanelRef.value) {
-    leftPanelHeight.value = leftPanelRef.value.clientHeight;
-  }
+  const updateHeight = () => {
+    if (leftPanelRef.value) {
+      leftPanelHeight.value = leftPanelRef.value.clientHeight;
+    }
+  };
+  updateHeight();
+  window.addEventListener('resize', updateHeight);
+  // 清理在onUnmounted中
+  (window as any).__taskListResize = updateHeight;
 });
 
 onUnmounted(() => {
   stopPolling();
   document.removeEventListener('visibilitychange', onVisibilityChange);
+  if ((window as any).__taskListResize) {
+    window.removeEventListener('resize', (window as any).__taskListResize);
+    delete (window as any).__taskListResize;
+  }
   for (const s of Object.values(agentRuntimeStates.value)) {
     if (s.streamTimer) { clearTimeout(s.streamTimer); s.streamTimer = null; }
   }

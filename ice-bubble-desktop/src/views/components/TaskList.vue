@@ -46,7 +46,7 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 const TASK_ROW_HEIGHT = 32;   // 每行任务高度
 const HEADER_HEIGHT = 40;     // 统计栏高度
 const MORE_HINT_HEIGHT = 28;  // 底部"更多"提示高度
-const BUFFER = 8;              // 安全余量
+const BUFFER = 0;              // 不留余量，尽量多展示
 
 const taskLimit = computed(() => {
   const h = props.containerHeight;
