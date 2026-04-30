@@ -549,9 +549,14 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.right-panel > :first-child {
+  flex: 0 0 auto;
+  max-height: 40%;
+}
+
 .chat-section {
   flex: 1;
-  min-height: 0;
+  min-height: 200px;
   overflow: hidden;
 }
 
