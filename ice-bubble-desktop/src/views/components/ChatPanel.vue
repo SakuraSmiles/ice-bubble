@@ -54,16 +54,18 @@ const {
 
 /**
  * 将 chatStore.sessions 映射为 SessionSelector 期望的格式。
- * Store: sessionKey / agentId / label / lastActivity
- * Selector: sessionKey / agent / channel / lastActive / title?
+ * Store: sessionKey / agentId / agentName / label / lastMessage / lastActivity
+ * Selector: sessionKey / agent / channel / lastActive / title? / agentName? / lastMessage?
  */
 const selectorSessions = computed<SelectorSessionItem[]>(() =>
   chatStore.sessions.map((s) => ({
     sessionKey: s.sessionKey,
-    agent: s.agentId,
+    agent: s.agentName ?? s.agentId,
     channel: s.label ?? '',
     lastActive: s.lastActivity ?? '',
     title: s.label,
+    agentName: s.agentName ?? null,
+    lastMessage: s.lastMessage ?? null,
   })),
 )
 

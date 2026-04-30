@@ -228,11 +228,7 @@ export async function startAdmin(): Promise<void> {
     const sseManager = new SSEManager(gatewayRpc);
     const chatController = new ChatController(gatewayRpc, sseManager);
 
-    // Sessions API (for Desktop client)
-    app.get('/api/sessions', (_req, res) => {
-      const result = dataRepository.getSessions({ limit: 200 });
-      res.json({ sessions: result.sessions });
-    });
+    // Sessions API: handled by createDataRouter in data.ts
 
     app.get('/api/sessions/:key/messages', (req, res) => {
       const limit = parseInt(req.query.limit as string, 10) || 50;

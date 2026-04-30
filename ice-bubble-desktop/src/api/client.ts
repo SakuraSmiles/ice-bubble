@@ -25,10 +25,12 @@ export interface StatsDTO {
 export interface SessionDTO {
   session_key: string;
   agent_id: string;
+  agent_name: string | null;
   channel: string;
   message_count: number;
   first_message_at: string | null;
   last_message_at: string | null;
+  last_message: string | null;
   created_at: string;
 }
 

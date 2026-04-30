@@ -15,6 +15,8 @@ export interface SessionItem {
   channel: string
   lastActive: string
   title?: string
+  agentName?: string | null
+  lastMessage?: string | null
 }
 
 // ============ Props / Emits ============
@@ -88,17 +90,32 @@ const selectedValue = computed({
 
 // ============ 方法 ============
 
-/** 生成 session 的短标签（省略前缀） */
+/** 格式化最后活跃时间（14:30 或 昨天 20:15） */
+function formatTime(lastActive: string): string {
+  if (!lastActive) return ''
+  const date = new Date(lastActive)
+  const now = new Date()
+  const todayStr = now.toDateString()
+  const dateStr = date.toDateString()
+  if (dateStr === todayStr) {
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (dateStr === yesterday.toDateString()) {
+    return '昨天 ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) + ' ' +
+    date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+/** 生成 session 的主标签：agent名称 · 最后消息摘要(前20字) */
 function formatLabel(item: SessionItem | undefined): string {
   if (!item) return '选择会话'
-  if (item.title) return item.title
-  const parts = item.sessionKey.split(':')
-  // agent:xxx:local:direct:UUID -> local:direct:UUID
-  const localIdx = parts.indexOf('local')
-  if (localIdx >= 0) {
-    return parts.slice(localIdx).join(':')
-  }
-  return item.sessionKey
+  const agentName = item.agentName ?? item.agent
+  const msg = item.lastMessage ? item.lastMessage.substring(0, 20) : ''
+  if (msg) return `${agentName} · ${msg}`
+  return agentName
 }
 
 /** 刷新列表 */
@@ -134,7 +151,7 @@ function handleRefresh() {
       <el-option-group
         v-for="group in groupedSessions"
         :key="group.agent"
-        :label="group.agent + ' (' + group.sessions.length + ')'"
+        :label="(group.sessions[0]?.agentName || group.agent) + ' (' + group.sessions.length + ')'"
       >
         <el-option
           v-for="item in group.sessions"
@@ -143,11 +160,14 @@ function handleRefresh() {
           :label="formatLabel(item)"
         >
           <div class="session-option-inner">
-            <span class="option-label">{{ formatLabel(item) }}</span>
-            <span
-              v-if="item.sessionKey === selectedValue"
-              class="option-active-dot"
-            ></span>
+            <div class="option-main">
+              <span class="option-label">{{ formatLabel(item) }}</span>
+              <span
+                v-if="item.sessionKey === selectedValue"
+                class="option-active-dot"
+              ></span>
+            </div>
+            <div class="option-sub">{{ formatTime(item.lastActive) }}</div>
           </div>
         </el-option>
       </el-option-group>
@@ -202,10 +222,19 @@ function handleRefresh() {
 
 .session-option-inner {
   display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.option-main {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
   gap: 8px;
+  width: 100%;
 }
 
 .option-label {
@@ -213,6 +242,14 @@ function handleRefresh() {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+}
+
+.option-sub {
+  font-size: 11px;
+  color: var(--el-text-color-secondary, #909399);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .option-active-dot {

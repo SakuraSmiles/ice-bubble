@@ -9,6 +9,7 @@ import type { SessionDTO } from '../api/client'
 export interface SessionItem {
   sessionKey: string
   agentId: string
+  agentName?: string | null
   label?: string
   lastMessage?: string
   lastActivity?: string
@@ -24,7 +25,9 @@ function mapDTOToSession(dto: SessionDTO): SessionItem {
   return {
     sessionKey: dto.session_key,
     agentId: dto.agent_id,
+    agentName: dto.agent_name,
     label: dto.channel,
+    lastMessage: dto.last_message ?? undefined,
     lastActivity: dto.last_message_at ?? undefined,
     messageCount: dto.message_count,
   }

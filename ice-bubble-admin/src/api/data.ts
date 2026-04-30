@@ -48,12 +48,54 @@ export function createDataRouter(config: DataRouterConfig): Router {
     const channel = req.query.channel ? String(req.query.channel) : undefined;
 
     const result = repository.getSessions({ limit, offset, agent_id, channel });
+
+    // Build agent name lookup map
+    const agents = repository.getAgents();
+    const agentMap = new Map(agents.map(a => [a.agent_id, a]));
+
+    // Enrich sessions with agent_name, avatar and last_message
+    const sessionKeys = result.sessions.map(s => s.session_key);
+    let lastMessageMap = new Map<string, string>();
+    if (sessionKeys.length > 0) {
+      // Direct DB access for batch last_message query
+      try {
+        const db = (repository as any).db;
+        if (db) {
+          const rows = db.prepare(`
+            SELECT m.session_key, substr(m.content, 1, 60) as content
+            FROM admin_messages m
+            INNER JOIN (
+              SELECT session_key, MAX(timestamp) as max_ts
+              FROM admin_messages
+              WHERE session_key IN (${sessionKeys.map(() => '?').join(',')})
+              GROUP BY session_key
+            ) latest ON m.session_key = latest.session_key AND m.timestamp = latest.max_ts
+          `).all(...sessionKeys) as { session_key: string; content: string }[];
+          for (const row of rows) {
+            lastMessageMap.set(row.session_key, row.content);
+          }
+        }
+      } catch (e) {
+        // Non-critical: last_message enrichment can fail silently
+      }
+    }
+
+    const sessions = result.sessions.map(s => {
+      const agent = agentMap.get(s.agent_id ?? '');
+      return {
+        ...s,
+        agent_name: agent?.agent_name ?? null,
+        avatar: agent?.avatar ?? null,
+        last_message: lastMessageMap.get(s.session_key) ?? null,
+      };
+    });
+
     res.json({
-      count: result.sessions.length,
+      count: sessions.length,
       total: result.total,
       limit,
       offset,
-      sessions: result.sessions
+      sessions,
     });
   });
 
