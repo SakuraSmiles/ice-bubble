@@ -71,42 +71,27 @@ const stats = computed(() => {
 
 // =========== 工具函数 ===========
 
-/** 从 title 中提取主标题：取第一行，如果是 "## 任务：xxx" 格式则取冒号后内容 */
-function extractMainTitle(title: string): string {
-  const firstLine = title.split('\n')[0].trim();
-  // 匹配 "## 任务："、"## Task：" 等格式
-  const headingMatch = firstLine.match(/^##\s*(?:任务|Task)[：:]\s*(.+)/i);
-  if (headingMatch) return headingMatch[1].trim();
-  return firstLine;
-}
-
-/** 截断标题，超过 maxLen 加省略号 */
-function truncateTitle(title: string, maxLen = 30): string {
-  if (title.length <= maxLen) return title;
-  return title.slice(0, maxLen) + '…';
-}
-
-/** 状态对应的色条颜色 */
-function statusColor(status: string): string {
+/** 状态对应的图标 */
+function statusIcon(status: string): string {
   switch (status) {
-    case 'completed': return 'var(--el-color-success)';
-    case 'running':   return 'var(--el-color-primary)';
-    case 'queued':    return 'var(--el-text-color-placeholder)';
-    case 'failed':    return 'var(--el-color-danger)';
-    case 'timeout':   return 'var(--el-color-warning)';
-    default:          return 'var(--el-border-color)';
+    case 'completed': return '✓';
+    case 'running':   return '↻';
+    case 'queued':    return '◷';
+    case 'failed':    return '✗';
+    case 'timeout':   return '⏱';
+    default:          return '?';
   }
 }
 
-/** 状态对应的小圆点颜色类名 */
-function statusDotClass(status: string): string {
+/** 状态对应的 Element Plus tag 类型 */
+function statusTagType(status: string): '' | 'success' | 'primary' | 'info' | 'danger' | 'warning' {
   switch (status) {
-    case 'completed': return 'dot--success';
-    case 'running':   return 'dot--primary';
-    case 'queued':    return 'dot--muted';
-    case 'failed':    return 'dot--danger';
-    case 'timeout':   return 'dot--warning';
-    default:          return 'dot--muted';
+    case 'completed': return 'success';
+    case 'running':   return 'primary';
+    case 'queued':    return 'info';
+    case 'failed':    return 'danger';
+    case 'timeout':   return 'warning';
+    default:          return '';
   }
 }
 
@@ -165,13 +150,12 @@ onUnmounted(() => {
     <!-- 头部统计 -->
     <div class="task-list-header">
       <span class="header-title">任务列表</span>
-      <div class="header-pills">
-        <span class="pill pill--muted">{{ stats.total }}</span>
-        <span v-if="stats.running > 0" class="pill pill--primary">{{ stats.running }}</span>
-        <span v-if="stats.completed > 0" class="pill pill--success">{{ stats.completed }}</span>
-        <span v-if="stats.failed > 0" class="pill pill--danger">{{ stats.failed }}</span>
-        <span v-if="stats.queued > 0" class="pill pill--queued">{{ stats.queued }}</span>
-      </div>
+      <span class="header-stats">
+        共 {{ stats.total }} 个任务 |
+        <span class="stat-completed">✅{{ stats.completed }}</span>
+        <span class="stat-running">🔄{{ stats.running }}</span>
+        <span class="stat-queued">⏳{{ stats.queued }}</span>
+      </span>
     </div>
 
     <!-- 任务列表 -->
@@ -186,44 +170,39 @@ onUnmounted(() => {
           :class="{ expanded: expandedTaskId === task.id }"
           @click="toggleTask(task.id)"
         >
-          <!-- 左侧状态色条 -->
-          <span class="status-bar" :style="{ backgroundColor: statusColor(task.status) }"></span>
+          <!-- 状态图标 -->
+          <el-tag
+            :type="statusTagType(task.status)"
+            size="small"
+            effect="plain"
+            class="status-tag"
+            round
+          >
+            {{ statusIcon(task.status) }} {{ statusLabel(task.status) }}
+          </el-tag>
 
-          <!-- 状态小圆点 + 标签 -->
-          <span class="status-indicator">
-            <span class="status-dot" :class="statusDotClass(task.status)"></span>
-            <span class="status-text">{{ statusLabel(task.status) }}</span>
-          </span>
+          <!-- Agent 标签 -->
+          <el-tag size="small" effect="plain" class="agent-tag">{{ task.agent_id }}</el-tag>
 
-          <!-- Agent 标签（小圆点 + 文字） -->
-          <span class="agent-label">
-            <span class="agent-dot"></span>
-            <span>{{ task.agent_id }}</span>
-          </span>
-
-          <!-- 标题（渐变遮罩截断） -->
-          <el-tooltip :content="extractMainTitle(task.title)" placement="top" :show-after="300">
-            <span class="task-title-wrapper">
-              <span class="task-title">{{ truncateTitle(extractMainTitle(task.title)) }}</span>
-            </span>
+          <!-- 标题 -->
+          <el-tooltip :content="task.title" placement="top" :show-after="300">
+            <span class="task-title">{{ task.title }}</span>
           </el-tooltip>
 
           <!-- 时间 -->
           <span class="task-time">{{ formatTime(task.created_at) }}</span>
         </div>
 
-        <!-- 展开的详情（带过渡动画） -->
-        <transition name="expand">
-          <div v-if="expandedTaskId === task.id" class="task-detail">
-            <div class="detail-label">描述</div>
-            <div class="detail-text">{{ task.task_description || '暂无描述' }}</div>
-            <div class="detail-meta">
-              <span>Agent: {{ task.agent_id }}</span>
-              <span>创建: {{ formatTime(task.created_at) }}</span>
-              <span v-if="task.completed_at">完成: {{ formatTime(task.completed_at) }}</span>
-            </div>
+        <!-- 展开的详情 -->
+        <div v-if="expandedTaskId === task.id" class="task-detail">
+          <div class="detail-label">描述</div>
+          <div class="detail-text">{{ task.task_description || '暂无描述' }}</div>
+          <div class="detail-meta">
+            <span>Agent: {{ task.agent_id }}</span>
+            <span>创建: {{ formatTime(task.created_at) }}</span>
+            <span v-if="task.completed_at">完成: {{ formatTime(task.completed_at) }}</span>
           </div>
-        </transition>
+        </div>
       </template>
     </div>
   </div>
@@ -239,13 +218,11 @@ onUnmounted(() => {
   max-height: 100%;
 }
 
-/* ===== 头部 ===== */
-
 .task-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 10px 12px;
   background: var(--el-fill-color-light);
   border-bottom: 1px solid var(--el-border-color-light);
   flex-shrink: 0;
@@ -257,59 +234,21 @@ onUnmounted(() => {
   color: var(--el-text-color-primary);
 }
 
-/* pill 统计栏 */
-.header-pills {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 9px;
-  font-size: 10px;
-  font-weight: 600;
-  font-family: var(--font-exo2, monospace);
-  line-height: 1;
-}
-
-.pill--muted {
-  background: var(--el-fill-color);
+.header-stats {
+  font-size: 11px;
   color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 
-.pill--success {
-  background: rgba(var(--el-color-success-rgb), 0.1);
-  color: var(--el-color-success);
-}
-
-.pill--primary {
-  background: rgba(var(--el-color-primary-rgb), 0.1);
-  color: var(--el-color-primary);
-}
-
-.pill--danger {
-  background: rgba(var(--el-color-danger-rgb), 0.1);
-  color: var(--el-color-danger);
-}
-
-.pill--queued {
-  background: var(--el-fill-color);
-  color: var(--el-text-color-placeholder);
-}
-
-/* ===== 列表体 ===== */
+.header-stats .stat-completed { color: var(--el-color-success); }
+.header-stats .stat-running   { color: var(--el-color-primary); }
+.header-stats .stat-queued    { color: var(--el-text-color-secondary); }
 
 .task-list-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 0;
+  padding: 4px 0;
 }
 
 .empty-state {
@@ -319,17 +258,15 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-/* ===== 任务行 ===== */
-
+/* 任务行 */
 .task-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px 5px 0;
+  padding: 6px 12px;
   cursor: pointer;
   transition: background 0.15s;
-  min-height: 30px;
-  position: relative;
+  min-height: 32px;
 }
 
 .task-row:hover {
@@ -340,103 +277,49 @@ onUnmounted(() => {
   background: var(--el-fill-color);
 }
 
-/* 左侧状态色条 */
-.status-bar {
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  transition: background-color 0.2s;
-}
-
-/* 状态指示器（圆点 + 文字） */
-.status-indicator {
+/* 状态标签 */
+.status-tag {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: 6px;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.dot--success { background: var(--el-color-success); }
-.dot--primary { background: var(--el-color-primary); }
-.dot--muted   { background: var(--el-text-color-placeholder); }
-.dot--danger  { background: var(--el-color-danger); }
-.dot--warning { background: var(--el-color-warning); }
-
-.status-text {
   font-size: 10px;
-  color: var(--el-text-color-secondary);
-  white-space: nowrap;
-  min-width: 28px;
+  padding: 0 6px;
+  height: 20px;
+  line-height: 18px;
 }
 
-/* Agent 标签（柔和样式） */
-.agent-label {
+/* Agent 标签 */
+.agent-tag {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 3px;
   font-size: 10px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color);
-  padding: 1px 6px 1px 5px;
-  border-radius: 8px;
-  max-width: 80px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  padding: 0 4px;
+  height: 20px;
+  line-height: 18px;
+  min-width: 36px;
+  text-align: center;
 }
 
-.agent-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--el-color-info-light-3);
-  flex-shrink: 0;
-}
-
-/* 标题（渐变遮罩截断） */
-.task-title-wrapper {
+/* 标题 */
+.task-title {
   flex: 1;
   min-width: 0;
-  position: relative;
-  overflow: hidden;
-  mask-image: linear-gradient(to right, #000 70%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, #000 70%, transparent 100%);
-}
-
-.task-title {
-  display: block;
   font-size: 12px;
   color: var(--el-text-color-regular);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 时间 */
 .task-time {
   flex-shrink: 0;
   font-size: 10px;
-  color: var(--el-text-color-placeholder);
+  color: var(--el-text-color-secondary);
   font-family: var(--font-exo2, monospace);
-  margin-left: 2px;
+  margin-left: 4px;
 }
 
-/* ===== 详情面板 ===== */
-
+/* 详情面板 */
 .task-detail {
-  padding: 8px 12px 10px 18px;
+  padding: 8px 12px 10px 12px;
   margin: 0 4px 4px 4px;
   background: var(--el-bg-color-page);
   border-radius: 4px;
@@ -464,32 +347,5 @@ onUnmounted(() => {
   font-size: 10px;
   color: var(--el-text-color-secondary);
   font-family: var(--font-exo2, monospace);
-}
-
-/* ===== 展开收起过渡动画 ===== */
-
-.expand-enter-active {
-  transition: max-height 0.25s ease, opacity 0.2s ease;
-  overflow: hidden;
-}
-
-.expand-leave-active {
-  transition: max-height 0.2s ease, opacity 0.15s ease;
-  overflow: hidden;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  max-height: 0;
-  opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  margin-bottom: 0;
-}
-
-.expand-enter-to,
-.expand-leave-from {
-  max-height: 300px;
-  opacity: 1;
 }
 </style>
