@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { ADMIN_API_BASE } from '../../config';
+
+// =========== Props ===========
+
+const props = defineProps<{
+  containerHeight?: number;
+}>();
 
 // =========== DTO 接口 ===========
 
@@ -35,12 +41,26 @@ const expandedTaskId = ref<string | null>(null);
 // 30 秒自动刷新
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+// =========== 动态 Limit ===========
+// 根据父容器高度计算展示数量，避免滚动条
+const TASK_ROW_HEIGHT = 32;   // 每行任务高度
+const HEADER_HEIGHT = 40;     // 统计栏高度
+const MORE_HINT_HEIGHT = 28;  // 底部"更多"提示高度
+const BUFFER = 8;              // 安全余量
+
+const taskLimit = computed(() => {
+  const h = props.containerHeight;
+  if (!h || h <= 0) return 10; // 容器高度未知时默认10
+  const available = h - HEADER_HEIGHT - MORE_HINT_HEIGHT - BUFFER;
+  return Math.max(3, Math.floor(available / TASK_ROW_HEIGHT));
+});
+
 // =========== 数据获取 ===========
 
 async function fetchTasks(): Promise<void> {
   loading.value = true;
   try {
-    const res = await fetch(`${ADMIN_API_BASE}/api/tasks?limit=50&offset=0`);
+    const res = await fetch(`${ADMIN_API_BASE}/api/tasks?limit=${taskLimit.value}&offset=0`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data: AdminTasksResponse = await res.json();
     // 后端已按 created_at 倒序返回，前端保持原序
@@ -137,6 +157,11 @@ onMounted(() => {
   refreshTimer = setInterval(fetchTasks, 30_000);
 });
 
+// 容器高度变化时重新获取（不监听自身）
+watch(() => props.containerHeight, () => {
+  fetchTasks();
+});
+
 onUnmounted(() => {
   if (refreshTimer) {
     clearInterval(refreshTimer);
@@ -204,9 +229,11 @@ onUnmounted(() => {
           </div>
         </div>
       </template>
+      <!-- 更多提示 -->
+      <div v-if="total > tasks.length" class="more-hint">
+        还有 {{ total - tasks.length }} 个任务
+      </div>
     </div>
-  </div>
-</template>
 
 <style scoped>
 .task-list-card {
@@ -247,7 +274,7 @@ onUnmounted(() => {
 .task-list-body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: hidden;
   padding: 4px 0;
 }
 
@@ -347,5 +374,12 @@ onUnmounted(() => {
   font-size: 10px;
   color: var(--el-text-color-secondary);
   font-family: var(--font-exo2, monospace);
+}
+
+.more-hint {
+  padding: 6px 12px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
 }
 </style>

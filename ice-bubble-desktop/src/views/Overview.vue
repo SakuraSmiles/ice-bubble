@@ -299,12 +299,21 @@ async function fetchAll(isLoading: boolean = false) {
 
 const loading = ref(false);
 
-onMounted(() => {
+// 左侧面板高度（传给TaskList用于计算展示数量）
+const leftPanelRef = ref<HTMLElement | null>(null);
+const leftPanelHeight = ref(0);
+
+onMounted(async () => {
   refreshData();
   fetchAll(true);
   fetchDataStatus();
   startPolling();
   document.addEventListener('visibilitychange', onVisibilityChange);
+  // 计算左侧面板高度
+  await nextTick();
+  if (leftPanelRef.value) {
+    leftPanelHeight.value = leftPanelRef.value.clientHeight;
+  }
 });
 
 onUnmounted(() => {
@@ -329,7 +338,7 @@ onUnmounted(() => {
     <el-card class="content-area" shadow="never">
       <div class="main-layout">
         <!-- 左侧面板 -->
-        <div class="left-panel">
+        <div ref="leftPanelRef" class="left-panel">
           <!-- 父任务 + 子任务（wrapper 容器） -->
           <div v-if="recentParentTask" class="task-section">
             <ParentTaskProgress
@@ -346,7 +355,7 @@ onUnmounted(() => {
           </div>
 
           <!-- 任务列表 -->
-          <TaskList />
+          <TaskList :container-height="leftPanelHeight" />
         </div>
 
         <!-- 右侧：最近会话（ChatTimeline） -->
