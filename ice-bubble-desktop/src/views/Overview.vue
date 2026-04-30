@@ -404,7 +404,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 
 /* Agent 列表 */
@@ -562,6 +562,9 @@ onUnmounted(() => {
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   overflow: hidden;
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
 }
 
 /* 子任务区用背景色自然区分，无需分割线 */
