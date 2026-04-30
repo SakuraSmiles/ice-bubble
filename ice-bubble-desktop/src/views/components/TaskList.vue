@@ -234,6 +234,8 @@ onUnmounted(() => {
         还有 {{ total - tasks.length }} 个任务
       </div>
     </div>
+  </div>
+</template>
 
 <style scoped>
 .task-list-card {
