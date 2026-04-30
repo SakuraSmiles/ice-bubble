@@ -1,232 +1,305 @@
 <script setup lang="ts">
 /**
- * MessageBubble.vue — 聊天消息气泡组件
+ * MessageBubble — 复用 ChatTimeline 消息时间线样式的消息气泡组件
  *
- * 支持三种角色：
- * - user:      右对齐蓝色气泡
- * - assistant: 左对齐灰色气泡（Markdown 渲染）
- * - system:    居中小字灰色提示
- *
- * 附加状态：isStreaming（闪烁光标）、isError（重试按钮）
+ * 支持 user / assistant / system 三种角色，复用时间线的头像、
+ * agent 名、Markdown 渲染、时间戳等展示方式。
  */
-
 import { computed } from 'vue'
-
-// ============ Props / Emits ============
+import MarkdownContent from '../../components/MarkdownContent.vue'
 
 interface Props {
   message: {
     id: string
     role: 'user' | 'assistant' | 'system'
     content: string
-    timestamp?: number | string
+    timestamp?: string | number
     isStreaming?: boolean
     isError?: boolean
+    // 时间线扩展字段（可选）
+    agentId?: string
+    agentName?: string
+    avatar?: string | null
+    model?: string | null
+    sourceChannel?: string | null
   }
 }
 
-const props = defineProps<Props>()
+const props = defineProps<{
+  message: Props['message']
+}>()
 
 const emit = defineEmits<{
   (e: 'retry', messageId: string): void
 }>()
 
-// ============ 计算属性 ============
-
-const isAssistant = computed(() => props.message.role === 'assistant')
+const isUser = computed(() => props.message.role === 'user')
 const isSystem = computed(() => props.message.role === 'system')
-
-/** 格式化时间戳 */
-const formattedTime = computed(() => {
-  const ts = props.message.timestamp
+function formatTime(ts?: string | number): string {
   if (!ts) return ''
-  const date = new Date(typeof ts === 'number' ? ts : ts)
-  if (isNaN(date.getTime())) return ''
-  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-})
-
-/** 简单 Markdown 转 HTML：代码块、行内代码、加粗、换行 */
-const renderedContent = computed(() => {
-  let text = props.message.content
-  // 代码块
-  text = text.replace(/```[\s\S]*?```/g, (match) => {
-    const code = match.slice(3, -3).replace(/^\w*\n/, '')
-    return `<pre class="code-block"><code>${escapeHtml(code)}</code></pre>`
-  })
-  // 行内代码
-  text = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-  // 加粗
-  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  // 换行
-  text = text.replace(/\n/g, '<br>')
-  return text
-})
-
-function escapeHtml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const d = typeof ts === 'number' ? new Date(ts) : new Date(ts as string)
+  if (isNaN(d.getTime())) return ''
+  const now = new Date()
+  const isToday = d.toDateString() === now.toDateString()
+  if (isToday) {
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  }
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
 }
+
+const agentInitial = computed(() => {
+  const name = props.message.agentName
+  return name ? name[0] : '🤖'
+})
 </script>
 
 <template>
-  <div
-    class="message-bubble"
-    :class="[`role-${message.role}`, { 'is-streaming': message.isStreaming, 'is-error': message.isError }]"
-  >
-    <!-- system 消息 -->
-    <template v-if="isSystem">
-      <span class="system-text">{{ message.content }}</span>
-    </template>
+  <!-- system 消息 -->
+  <div v-if="isSystem" class="msg-row msg-row--system">
+    <span class="system-text">{{ message.content }}</span>
+  </div>
 
-    <!-- user / assistant 消息 -->
-    <template v-else>
-      <div class="bubble-body">
-        <div v-if="isAssistant" class="bubble-content markdown-body" v-html="renderedContent" />
-        <div v-else class="bubble-content">{{ message.content }}</div>
+  <!-- user 消息 -->
+  <div v-else-if="isUser" class="msg-row msg-row--user">
+    <div class="msg-header msg-header--user">
+      <span v-if="message.sourceChannel" class="channel-tag">{{ message.sourceChannel }}</span>
+      <span class="msg-time">{{ formatTime(message.timestamp) }}</span>
+    </div>
+    <div class="bubble bubble--user">
+      <MarkdownContent :content="message.content" />
+    </div>
+  </div>
 
-        <!-- 流式输出光标 -->
-        <span v-if="message.isStreaming" class="streaming-cursor" />
+  <!-- assistant 消息 -->
+  <div v-else class="msg-row msg-row--agent">
+    <!-- 头像列 -->
+    <div class="agent-avatar-col">
+      <img
+        v-if="message.avatar"
+        :src="`/api/resources/avatars/${message.avatar}`"
+        class="avatar"
+        alt=""
+      />
+      <div v-else class="avatar-placeholder">{{ agentInitial }}</div>
+    </div>
+    <!-- 内容列 -->
+    <div class="agent-content-col">
+      <div class="msg-header msg-header--agent">
+        <span class="agent-label-name">{{ message.agentName || 'Assistant' }}</span>
+        <span v-if="message.model" class="model-tag">{{ message.model }}</span>
+        <span class="msg-time">{{ formatTime(message.timestamp) }}</span>
+        <span v-if="message.isStreaming" class="streaming-dot">●</span>
       </div>
-
-      <!-- 重试按钮 -->
+      <div class="bubble bubble--agent" :class="{ 'is-error': message.isError }">
+        <MarkdownContent :content="message.content" />
+      </div>
       <button
         v-if="message.isError"
-        class="btn-retry"
+        class="retry-btn"
         @click="emit('retry', message.id)"
       >
-        重试
+        🔄 重试
       </button>
-
-      <!-- 时间戳 -->
-      <span v-if="formattedTime" class="bubble-time">{{ formattedTime }}</span>
-    </template>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.message-bubble {
+/* 消息行 */
+.msg-row {
   display: flex;
   flex-direction: column;
-  max-width: 80%;
-  margin-bottom: 12px;
+  gap: 2px;
+  max-width: 90%;
 }
-
-/* ---------- 对齐 ---------- */
-.message-bubble.role-user {
-  align-items: flex-end;
+.msg-row--user {
   align-self: flex-end;
+  align-items: flex-end;
 }
-
-.message-bubble.role-assistant {
-  align-items: flex-start;
+.msg-row--agent {
   align-self: flex-start;
+  align-items: flex-start;
+  flex-direction: row;
+  gap: 10px;
 }
-
-.message-bubble.role-system {
-  align-items: center;
+.msg-row--system {
   align-self: center;
-  max-width: 100%;
+  padding: 6px 0;
 }
 
-/* ---------- system ---------- */
 .system-text {
   font-size: 12px;
-  color: var(--el-text-color-placeholder, #a0a0a0);
-  padding: 4px 0;
-}
-
-/* ---------- 气泡主体 ---------- */
-.bubble-body {
-  position: relative;
-  padding: 10px 14px;
+  color: #999;
+  background: #f5f5f5;
+  padding: 4px 14px;
   border-radius: 12px;
-  word-break: break-word;
-  line-height: 1.6;
-  font-size: 14px;
 }
 
-/* user 气泡 */
-.role-user .bubble-body {
-  background: var(--el-color-primary, #409eff);
+/* Agent 头像列 */
+.agent-avatar-col {
+  width: 30px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.agent-content-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.avatar,
+.avatar-placeholder {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.avatar-placeholder {
+  background: var(--el-color-primary-light-3);
   color: #fff;
-  border-bottom-right-radius: 4px;
-}
-
-/* assistant 气泡 */
-.role-assistant .bubble-body {
-  background: var(--el-fill-color-light, #f0f2f5);
-  color: var(--el-text-color-primary, #303133);
-  border-bottom-left-radius: 4px;
-}
-
-/* ---------- Markdown 渲染样式 ---------- */
-.markdown-body :deep(.code-block) {
-  margin: 8px 0;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 6px;
-  overflow-x: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 13px;
-  font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
-  line-height: 1.5;
-}
-
-.markdown-body :deep(.inline-code) {
-  padding: 2px 6px;
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 4px;
-  font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
-  font-size: 13px;
-}
-
-.markdown-body :deep(pre) {
-  margin: 0;
-}
-
-.markdown-body :deep(strong) {
   font-weight: 600;
 }
 
-/* ---------- 流式光标 ---------- */
-.streaming-cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 2px;
-  background: var(--el-color-primary, #409eff);
-  vertical-align: text-bottom;
-  animation: cursor-blink 0.8s steps(2) infinite;
-}
-
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-/* ---------- 重试按钮 ---------- */
-.btn-retry {
-  display: inline-flex;
+/* 消息头部 */
+.msg-header {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  margin-top: 4px;
-  padding: 2px 10px;
-  font-size: 12px;
-  color: var(--el-color-danger, #f56c6c);
-  background: transparent;
-  border: 1px solid var(--el-color-danger-light-5, #fab6b6);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.btn-retry:hover {
-  background: var(--el-color-danger-light-9, #fef0f0);
-}
-
-/* ---------- 时间戳 ---------- */
-.bubble-time {
+  gap: 6px;
   font-size: 11px;
-  color: var(--el-text-color-placeholder, #a0a0a0);
-  margin-top: 2px;
-  padding: 0 4px;
+  color: #999;
+  padding: 0 6px;
+}
+.msg-header--user {
+  justify-content: flex-end;
+}
+.msg-time {
+  white-space: nowrap;
+}
+.agent-label-name {
+  font-weight: 600;
+  color: #5a7fb5;
+  font-size: 12px;
+}
+
+/* 气泡 */
+.bubble {
+  padding: 10px 16px;
+  font-size: 14px;
+  line-height: 1.45;
+  word-break: break-word;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.bubble--user {
+  background: #e8eaf6;
+  color: #333;
+  border-radius: 14px 14px 4px 14px;
+}
+.bubble--agent {
+  background: #f7f8fa;
+  color: #222;
+  border-radius: 14px 14px 14px 4px;
+  max-width: 100%;
+}
+.bubble.is-error {
+  border: 1px solid var(--el-color-danger-light-5);
+  background: #fef0f0;
+}
+
+/* 渠道 & 模型标签 */
+.channel-tag {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 9px;
+  color: #9aa0a6;
+  background: #f0f1f3;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+}
+.model-tag {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 9px;
+  color: #8ab4f8;
+  background: #e8f0fe;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+/* 流式指示器 */
+.streaming-dot {
+  color: var(--el-color-primary);
+  animation: blink 1s ease-in-out infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+/* 重试按钮 */
+.retry-btn {
+  background: transparent;
+  border: 1px solid var(--el-color-danger-light-5);
+  color: var(--el-color-danger);
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: all 0.2s;
+}
+.retry-btn:hover {
+  background: var(--el-color-danger-light-9);
+}
+
+/* MarkdownContent 内部样式微调 */
+.bubble :deep(pre) {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: 8px;
+  font-size: 13px;
+  overflow-x: auto;
+}
+.bubble :deep(code) {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+}
+.bubble :deep(:not(pre) > code) {
+  background: #f0f1f3;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: #e06c75;
+}
+.bubble--user :deep(:not(pre) > code) {
+  background: rgba(0, 0, 0, 0.06);
+}
+.bubble :deep(p) {
+  margin: 6px 0;
+}
+.bubble :deep(p:first-child) {
+  margin-top: 0;
+}
+.bubble :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.bubble :deep(ul),
+.bubble :deep(ol) {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.bubble :deep(blockquote) {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--el-color-primary-light-3);
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 0 4px 4px 0;
 }
 </style>
