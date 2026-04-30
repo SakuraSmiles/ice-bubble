@@ -251,6 +251,9 @@ export async function startAdmin(): Promise<void> {
         agent_id: agentId,
         agent_name: agentInfo.name,
         avatar: agentInfo.avatar,
+        // 透传原始字段，供前端过滤
+        message_type: m.message_type,
+        is_system_context: m.is_system_context ?? 0,
       }));
       res.json({ messages, total: result.total });
     });

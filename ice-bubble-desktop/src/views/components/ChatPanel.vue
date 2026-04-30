@@ -74,17 +74,63 @@ const selectorSessions = computed<SelectorSessionItem[]>(() =>
 const messageListRef = ref<HTMLElement | null>(null)
 
 /**
- * 将 useChat 返回的 messages 适配为 MessageBubble 需要的格式。
- * ChatMessage 和 MessageBubble 的 message prop 接口一致，
- * 仅需补充 isStreaming / isError 标记。
+ * 将 useChat 返回的 messages 过滤并合并为 MessageBubble 需要的格式。
+ *
+ * 过滤规则：
+ *   1. 跳过 isSystemContext 的系统消息
+ *   2. 跳过 messageType='tool' 的工具调用结果
+ *   3. 跳过空内容消息
+ *
+ * 合并规则：
+ *   连续同 role 的消息合并为一条气泡（内容用换行拼接），
+ *   保留最后一条的 timestamp/agentName 等元数据。
  */
-const displayMessages = computed(() =>
-  rawMessages.value.map((msg) => ({
-    ...msg,
-    isStreaming: msg.role === 'assistant' && streaming.value,
-    isError: msg.sendFailed === true,
-  })),
-)
+const displayMessages = computed(() => {
+  // Step 1: 过滤
+  const filtered = rawMessages.value.filter((msg) => {
+    // 跳过系统上下文
+    if (msg.isSystemContext) return false
+    // 跳过 tool 类型
+    if (msg.messageType === 'tool') return false
+    // 跳过系统角色
+    if (msg.role === 'system') return false
+    // 跳过空内容（纯换行也跳过）
+    const trimmed = (msg.content ?? '').trim()
+    if (!trimmed) return false
+    return true
+  })
+
+  // Step 2: 合并连续同 role 消息
+  const merged: typeof filtered = []
+  for (const msg of filtered) {
+    const prev = merged[merged.length - 1]
+    if (prev && prev.role === msg.role) {
+      // 追加内容，换行分隔
+      prev.content += '\n\n' + (msg.content ?? '').trim()
+      prev.timestamp = msg.timestamp
+      // 更新元数据（取最新的）
+      if (msg.agentName) prev.agentName = msg.agentName
+      if (msg.model) prev.model = msg.model
+      if (msg.avatar) prev.avatar = msg.avatar
+    } else {
+      merged.push({
+        ...msg,
+        isStreaming: false,
+        isError: msg.sendFailed === true,
+      } as any)
+    }
+  }
+
+  // Step 3: 最后一条assistant消息标记streaming
+  if (merged.length > 0 && streaming.value) {
+    const last = merged[merged.length - 1] as any
+    if (last.role === 'assistant') {
+      last.isStreaming = true
+    }
+  }
+
+  return merged
+})
 
 // ============ Session 切换逻辑 ============
 

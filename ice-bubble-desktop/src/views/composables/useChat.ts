@@ -32,6 +32,9 @@ export interface ChatMessage {
   agentName?: string
   avatar?: string | null
   model?: string | null
+  // 原始字段（供前端过滤）
+  messageType?: string | null
+  isSystemContext?: number
 }
 
 interface UseChatOptions {
@@ -245,6 +248,8 @@ export function useChat(
         agentName: (m as any).agent_name,
         avatar: (m as any).avatar,
         model: (m as any).model,
+        messageType: (m as any).message_type,
+        isSystemContext: (m as any).is_system_context,
       }))
       messages.value = historical
     } catch (e: any) {
