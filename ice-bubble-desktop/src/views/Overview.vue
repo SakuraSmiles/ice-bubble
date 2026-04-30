@@ -384,7 +384,7 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   padding: 16px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 /* 左右分栏布局 */
