@@ -134,11 +134,6 @@ export class GatewayRpc {
     };
   }
 
-  /** Send a chat.abort request. */
-  abort(sessionId: string): Promise<unknown> {
-    return this.request("chat.abort", { sessionId });
-  }
-
   private handleResponse(msg: GatewayResponse): void {
     const entry = this.pending.get(msg.id);
     if (!entry) return;
@@ -154,11 +149,23 @@ export class GatewayRpc {
     }
   }
 
+  /**
+   * Map Gateway event names to subscription method prefixes.
+   * The Gateway sends events like "session.message" but subscriptions
+   * are made to methods like "sessions.messages.subscribe".
+   */
+  private static readonly EVENT_TO_SUB = new Map([
+    ["session.message", "sessions.messages.subscribe"],
+  ]);
+
   private handleNotification(msg: GatewayEvent): void {
-    // Route to any active subscription handler whose method matches
+    // Route to any active subscription handler whose method matches.
+    // First try direct match (event name === subscription method prefix),
+    // then try the event-to-subscription mapping.
     const methodKey = msg.event;
+    const mappedKey = GatewayRpc.EVENT_TO_SUB.get(methodKey) ?? methodKey;
     for (const [subId, handlers] of this.subscriptions) {
-      if (subId.startsWith(methodKey)) {
+      if (subId.startsWith(mappedKey)) {
         for (const h of handlers) {
           try {
             h(msg.payload);

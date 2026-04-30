@@ -238,7 +238,15 @@ export async function startAdmin(): Promise<void> {
       const limit = parseInt(req.query.limit as string, 10) || 50;
       const offset = parseInt(req.query.offset as string, 10) || 0;
       const result = dataRepository.getMessages({ session_key: req.params.key, limit, offset });
-      res.json({ messages: result.messages, total: result.total });
+      // Map admin_messages fields to frontend-expected MessageDTO format
+      const messages = result.messages.map((m) => ({
+        id: String(m.id ?? m.source_id ?? ''),
+        session_key: m.session_key,
+        role: m.message_type === 'agent' ? 'assistant' : (m.message_type ?? 'user'),
+        content: m.content ?? '',
+        created_at: m.created_at,
+      }));
+      res.json({ messages, total: result.total });
     });
 
     // Chat routes

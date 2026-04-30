@@ -19,6 +19,7 @@ export class SSEManager {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     });
     res.write("\n");
 
@@ -79,11 +80,37 @@ export class SSEManager {
 
     const unsub = this.rpc.subscribe(
       "sessions.messages.subscribe",
-      { sessionKey } as Record<string, unknown>,
+      { key: sessionKey } as Record<string, unknown>,
       (result: unknown) => {
-        // Gateway pushes messages; forward to SSE clients
-        const msg = result as { type?: string; [key: string]: unknown };
-        this.broadcast(sessionKey, msg.type ?? "message", msg);
+        // Gateway pushes session.message events with payload:
+        // { sessionKey, message: { role, content, timestamp, ... }, messageId, messageSeq, ...sessionSnapshot }
+        // Flatten to frontend-expected format before broadcasting via SSE.
+        const payload = result as {
+          sessionKey?: string;
+          message?: { role?: string; content?: unknown; timestamp?: string | number; [key: string]: unknown };
+          messageId?: string | number;
+          messageSeq?: number;
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw = (payload.message ?? payload) as any;
+        const role = String(raw.role ?? "assistant");
+        const rawContent = raw.content;
+        const content = typeof rawContent === "string"
+          ? rawContent
+          : (rawContent && typeof rawContent === "object" && Array.isArray(rawContent)
+            ? (rawContent as Array<{ type?: string; text?: string }>)
+              .map((c) => c.text ?? "")
+              .join("")
+            : String(rawContent ?? ""));
+        const messageId = String(payload.messageId ?? payload.messageSeq ?? Date.now());
+        const timestamp = String(raw.timestamp ?? new Date().toISOString());
+
+        this.broadcast(sessionKey, "message", {
+          role,
+          content,
+          timestamp,
+          messageId,
+        });
       },
     );
 
