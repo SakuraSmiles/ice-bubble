@@ -137,11 +137,9 @@ function handleRefresh() {
       placement="bottom-start"
       class="selector-inner"
     >
-      <!-- 工具栏：刷新按钮 -->
+      <!-- 前缀图标 -->
       <template #prefix>
-        <div class="selector-prefix">
-          <span class="current-key">{{ formatLabel(sessions.find(s => s.sessionKey === selectedValue) ?? sessions[0]) }}</span>
-        </div>
+        <span style="color:#999;font-size:12px;">💬</span>
       </template>
 
       <template #empty>
