@@ -228,6 +228,19 @@ export async function startAdmin(): Promise<void> {
     const sseManager = new SSEManager(gatewayRpc);
     const chatController = new ChatController(gatewayRpc, sseManager);
 
+    // Sessions API (for Desktop client)
+    app.get('/api/sessions', (_req, res) => {
+      const result = dataRepository.getSessions({ limit: 200 });
+      res.json({ sessions: result.sessions });
+    });
+
+    app.get('/api/sessions/:key/messages', (req, res) => {
+      const limit = parseInt(req.query.limit as string, 10) || 50;
+      const offset = parseInt(req.query.offset as string, 10) || 0;
+      const result = dataRepository.getMessages({ session_key: req.params.key, limit, offset });
+      res.json({ messages: result.messages, total: result.total });
+    });
+
     // Chat routes
     app.post('/api/chat/send', (req, res) => chatController.send(req, res));
     app.post('/api/chat/abort', (req, res) => chatController.abort(req, res));
