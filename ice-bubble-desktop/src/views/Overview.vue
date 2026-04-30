@@ -402,7 +402,7 @@ onUnmounted(() => {
 .left-panel {
   width: 24%;
   min-width: 280px;
-  height: calc(100vh - 240px);
+  height: calc(100vh - 200px);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -538,7 +538,7 @@ onUnmounted(() => {
 .right-panel {
   min-width: 0;
   flex: 1;
-  height: calc(100vh - 240px);
+  height: calc(100vh - 200px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
