@@ -28,6 +28,10 @@ export interface ChatMessage {
   isLocal: boolean
   /** 发送失败时可重试 */
   sendFailed?: boolean
+  // 时间线扩展字段（可选）
+  agentName?: string
+  avatar?: string | null
+  model?: string | null
 }
 
 interface UseChatOptions {
@@ -83,9 +87,13 @@ export function useChat(
   // ============ SSE 连接 ============
 
   function onSSEMessage(data: SSEMessageEvent) {
-    // 收到服务器消息说明 streaming 开始
-    streaming.value = true
     retryCount = 0
+
+    // Gateway pushes ALL messages (user + assistant) for the session.
+    // Skip user messages — they were already added via optimistic update in send().
+    if (data.role === 'user') {
+      return
+    }
 
     const assistantMsg: ChatMessage = {
       id: data.messageId,
@@ -94,6 +102,13 @@ export function useChat(
       timestamp: data.timestamp ? new Date(data.timestamp).getTime() : Date.now(),
       isLocal: false,
     }
+
+    // Dedup: skip if a message with the same id already exists (e.g. history reload race)
+    if (messages.value.some((m) => m.id === assistantMsg.id)) {
+      return
+    }
+
+    streaming.value = false // complete message received, streaming done
     messages.value.push(assistantMsg)
   }
 
@@ -129,8 +144,10 @@ export function useChat(
     })
 
     eventSource.value = es
-    streaming.value = true
     error.value = null
+    // Don't set streaming.value = true here.
+    // Streaming should be true only while waiting for a response after sending.
+    // The SSE connection stays open to receive messages at any time.
   }
 
   function disconnectSSE() {
@@ -225,6 +242,9 @@ export function useChat(
         content: m.content,
         timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
         isLocal: false,
+        agentName: (m as any).agent_name,
+        avatar: (m as any).avatar,
+        model: (m as any).model,
       }))
       messages.value = historical
     } catch (e: any) {

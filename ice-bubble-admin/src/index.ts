@@ -238,13 +238,23 @@ export async function startAdmin(): Promise<void> {
       const limit = parseInt(req.query.limit as string, 10) || 50;
       const offset = parseInt(req.query.offset as string, 10) || 0;
       const result = dataRepository.getMessages({ session_key: req.params.key, limit, offset });
-      // Map admin_messages fields to frontend-expected MessageDTO format
+      // 从 session_key 提取 agent_id，补充头像和名称
+      const agentId = req.params.key.split(':')[1] || '';
+      const agentInfo = (() => {
+        const agents = dataRepository.getAgents();
+        const a = agents.find(ag => ag.agent_id === agentId);
+        return { name: a?.agent_name ?? null, avatar: a?.avatar ?? null };
+      })();
       const messages = result.messages.map((m) => ({
         id: String(m.id ?? m.source_id ?? ''),
         session_key: m.session_key,
         role: m.message_type === 'agent' ? 'assistant' : (m.message_type ?? 'user'),
         content: m.content ?? '',
         created_at: m.created_at,
+        model: m.model ?? null,
+        agent_id: agentId,
+        agent_name: agentInfo.name,
+        avatar: agentInfo.avatar,
       }));
       res.json({ messages, total: result.total });
     });
