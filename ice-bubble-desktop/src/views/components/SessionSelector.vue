@@ -89,7 +89,8 @@ const selectedValue = computed({
 // ============ 方法 ============
 
 /** 生成 session 的短标签（省略前缀） */
-function formatLabel(item: SessionItem): string {
+function formatLabel(item: SessionItem | undefined): string {
+  if (!item) return '选择会话'
   if (item.title) return item.title
   const parts = item.sessionKey.split(':')
   // agent:xxx:local:direct:UUID -> local:direct:UUID
