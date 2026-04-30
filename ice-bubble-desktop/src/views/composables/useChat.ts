@@ -32,9 +32,10 @@ export interface ChatMessage {
   agentName?: string
   avatar?: string | null
   model?: string | null
+  sourceChannel?: string | null
   // 原始字段（供前端过滤）
   messageType?: string | null
-  isSystemContext?: number
+  sourceChannel?: string | null
 }
 
 interface UseChatOptions {
@@ -59,6 +60,11 @@ export interface UseChatReturn {
 // ============ 实现 ============
 
 let _localIdCounter = 0
+// 分页状态（供加载更多使用）
+let _hasMoreHistory = false
+let _oldestTimestamp: string | null = null
+// 导出供外部访问
+export function getHistoryPagination() { return { hasMore: _hasMoreHistory, oldest: _oldestTimestamp } }
 function genLocalId(): string {
   return `local_${Date.now()}_${++_localIdCounter}`
 }
@@ -233,25 +239,30 @@ export function useChat(
 
   // ============ 加载历史消息 ============
 
-  async function loadHistory(sessionKeyValue: string, limit = 50): Promise<void> {
+  async function loadHistory(sessionKeyValue: string, limit = 100): Promise<void> {
     loading.value = true
     error.value = null
     try {
-      const res = await api.getSessionMessages(sessionKeyValue, { limit })
+      // 使用 timeline API，自动继承噪音过滤（cron/Sender metadata/HEARTBEAT等）
+      const res = await api.getChatTimeline(sessionKeyValue, { limit })
       const msgs = res.messages ?? []
-      const historical: ChatMessage[] = msgs.map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+      // timeline按时间倒序返回，反转为正序
+      const historical: ChatMessage[] = msgs.reverse().map((m) => ({
+        id: String(m.id),
+        role: m.message_type === 'agent' ? 'assistant' : 'user',
+        content: m.clean_content || m.content || '',
+        timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
         isLocal: false,
-        agentName: (m as any).agent_name,
-        avatar: (m as any).avatar,
-        model: (m as any).model,
-        messageType: (m as any).message_type,
-        isSystemContext: (m as any).is_system_context,
+        agentName: m.agent_name || null,
+        avatar: m.avatar || null,
+        model: m.model || null,
+        messageType: m.message_type,
+        sourceChannel: m.source_channel || null,
       }))
       messages.value = historical
+      // 记录分页游标
+      _hasMoreHistory = res.has_more
+      _oldestTimestamp = res.pagination?.oldest ?? null
     } catch (e: any) {
       error.value = e.message ?? '加载历史消息失败'
     } finally {

@@ -734,6 +734,7 @@ export class DataRepository {
     before?: string;
     since?: string;
     agent_ids?: string[];
+    session_key?: string;
     message_types?: string;
     search?: string;
     exclude_system_noise?: boolean;
@@ -757,6 +758,11 @@ export class DataRepository {
         contentConditions[0] = `m.message_type IN (${types.map(() => '?').join(', ')})`;
         values.push(...types);
       }
+    }
+
+    if (params.session_key) {
+      contentConditions.push('m.session_key = ?');
+      values.push(params.session_key);
     }
 
     if (params.before) {
@@ -829,6 +835,10 @@ export class DataRepository {
     const toolConditions: string[] = [];
     const toolValues: unknown[] = [];
 
+    if (params.session_key) {
+      toolConditions.push('t.session_key = ?');
+      toolValues.push(params.session_key);
+    }
     if (params.before) {
       toolConditions.push('t.created_at < ?');
       toolValues.push(params.before);

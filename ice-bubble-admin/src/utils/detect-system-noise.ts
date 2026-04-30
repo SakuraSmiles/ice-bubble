@@ -32,9 +32,10 @@ export function isUserSystemNoise(content: string): boolean {
   // [date] 前缀检测（需先移除日期前缀再判断）
   if (/^\[(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2}/.test(content)) {
     const afterDate = content.replace(/^\[[^\]]+\]\s*/, '').trim();
+    // 只有 HEARTBEAT_OK / NO_REPLY / 空内容 才视为噪音
     if (!afterDate || afterDate === 'HEARTBEAT_OK' || afterDate === 'NO_REPLY') return true;
-    // 有内容但仍是 [date] 格式的截断版，视为噪音
-    return true;
+    // 其他 [date] 消息保留（可能是压缩后的用户对话）
+    return false;
   }
 
   for (const { pattern } of USER_NOISE_PATTERNS) {

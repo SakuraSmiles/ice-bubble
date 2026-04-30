@@ -275,6 +275,20 @@ export const api = {
     return fetchJson<{ messages: MessageDTO[] }>(`/sessions/${encodeURIComponent(sessionKey)}/messages${query}`);
   },
 
+  /** 获取对话面板用的timeline消息（复用timeline API的噪音过滤） */
+  getChatTimeline: (sessionKey: string, params?: { limit?: number; before?: string; since?: string }) => {
+    const qp = new URLSearchParams({
+      session_key: sessionKey,
+      limit: String(params?.limit ?? 100),
+      exclude_system_noise: 'true',
+      exclude_cron: 'true',
+      message_types: 'user,agent',
+    });
+    if (params?.before) qp.set('before', params.before);
+    if (params?.since) qp.set('since', params.since);
+    return fetchJson<{ messages: TimelineMessageDTO[]; has_more: boolean; pagination: { oldest: string | null; newest: string | null } }>(`/messages/timeline?${qp.toString()}`);
+  },
+
   // 消息
   getMessages: (params?: { session_key?: string; limit?: number; offset?: number }) => {
     const query = params ? '?' + new URLSearchParams(

@@ -191,6 +191,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
       : undefined;
     const message_types = req.query.message_types ? String(req.query.message_types) : undefined;
     const search = req.query.search ? String(req.query.search) : undefined;
+    const session_key = req.query.session_key ? String(req.query.session_key) : undefined;
     const exclude_system_noise = req.query.exclude_system_noise === 'true' || req.query.exclude_system_noise === '1';
     const exclude_cron = req.query.exclude_cron === 'true' || req.query.exclude_cron === '1';
 
@@ -199,6 +200,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
       before,
       since,
       agent_ids,
+      session_key,
       message_types,
       search,
       exclude_system_noise,

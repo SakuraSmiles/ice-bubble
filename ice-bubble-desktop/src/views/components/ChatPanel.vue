@@ -74,61 +74,35 @@ const selectorSessions = computed<SelectorSessionItem[]>(() =>
 const messageListRef = ref<HTMLElement | null>(null)
 
 /**
- * 将 useChat 返回的 messages 过滤并合并为 MessageBubble 需要的格式。
- *
- * 过滤规则：
- *   1. 跳过 isSystemContext 的系统消息
- *   2. 跳过 messageType='tool' 的工具调用结果
- *   3. 跳过空内容消息
- *
- * 合并规则：
- *   连续同 role 的消息合并为一条气泡（内容用换行拼接），
- *   保留最后一条的 timestamp/agentName 等元数据。
+ * 合并连续同 role 的消息为一条气泡。
+ * 后端 timeline API 已处理噪音过滤，这里只做合并。
  */
 const displayMessages = computed(() => {
-  // Step 1: 过滤
-  const filtered = rawMessages.value.filter((msg) => {
-    // 跳过系统上下文
-    if (msg.isSystemContext) return false
-    // 跳过 tool 类型
-    if (msg.messageType === 'tool') return false
-    // 跳过系统角色
-    if (msg.role === 'system') return false
-    // 跳过空内容（纯换行也跳过）
+  const merged: any[] = []
+  for (const msg of rawMessages.value) {
     const trimmed = (msg.content ?? '').trim()
-    if (!trimmed) return false
-    return true
-  })
-
-  // Step 2: 合并连续同 role 消息
-  const merged: typeof filtered = []
-  for (const msg of filtered) {
+    if (!trimmed) continue
     const prev = merged[merged.length - 1]
     if (prev && prev.role === msg.role) {
-      // 追加内容，换行分隔
-      prev.content += '\n\n' + (msg.content ?? '').trim()
+      prev.content += '\n\n' + trimmed
       prev.timestamp = msg.timestamp
-      // 更新元数据（取最新的）
       if (msg.agentName) prev.agentName = msg.agentName
       if (msg.model) prev.model = msg.model
       if (msg.avatar) prev.avatar = msg.avatar
+      if (msg.sourceChannel) prev.sourceChannel = msg.sourceChannel
     } else {
       merged.push({
         ...msg,
         isStreaming: false,
         isError: msg.sendFailed === true,
-      } as any)
+      })
     }
   }
-
-  // Step 3: 最后一条assistant消息标记streaming
+  // 标记最后一条assistant为streaming
   if (merged.length > 0 && streaming.value) {
-    const last = merged[merged.length - 1] as any
-    if (last.role === 'assistant') {
-      last.isStreaming = true
-    }
+    const last = merged[merged.length - 1]
+    if (last.role === 'assistant') last.isStreaming = true
   }
-
   return merged
 })
 

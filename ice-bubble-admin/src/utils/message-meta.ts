@@ -98,7 +98,7 @@ export function analyzeMessageMeta(msg: {
         meta.is_system_noise = true;
         meta.clean_content = '';
       } else {
-        meta.is_system_noise = true;
+        // 保留用户对话内容（带日期前缀的压缩消息）
         meta.clean_content = afterDate;
       }
     }
