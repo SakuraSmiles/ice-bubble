@@ -24,7 +24,7 @@ import { createBearerAuthMiddleware, getAuthToken } from './utils/auth-middlewar
 import { GatewayConnection } from './server/gateway/connection.js';
 import { GatewayRpc } from './server/gateway/rpc.js';
 import { SSEManager } from './server/chat/sse-manager.js';
-import { SessionCache } from './server/chat/session-cache.js';
+
 import { ChatController } from './server/chat/controller.js';
 
 // 加载环境变量
@@ -226,8 +226,7 @@ export async function startAdmin(): Promise<void> {
     const gatewayConn = new GatewayConnection(gatewayUrl, gatewayToken);
     const gatewayRpc = new GatewayRpc(gatewayConn);
     const sseManager = new SSEManager(gatewayRpc);
-    const sessionCache = new SessionCache(gatewayRpc);
-    const chatController = new ChatController(gatewayRpc, sseManager, sessionCache);
+    const chatController = new ChatController(gatewayRpc, sseManager);
 
     // Chat routes
     app.post('/api/chat/send', (req, res) => chatController.send(req, res));

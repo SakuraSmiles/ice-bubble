@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import type { GatewayRpc } from "../gateway/rpc.js";
 import { SSEManager } from "./sse-manager.js";
-import { SessionCache } from "./session-cache.js";
 
 /**
  * Chat Controller — handles message sending, aborting, and SSE streaming.
@@ -10,7 +9,6 @@ export class ChatController {
   constructor(
     private rpc: GatewayRpc,
     private sseManager: SSEManager,
-    private sessionCache: SessionCache,
   ) {}
 
   /**
@@ -31,24 +29,11 @@ export class ChatController {
       return;
     }
 
-    if (!this.rpc) {
-      res.status(503).json({
-        success: false,
-        error: "Gateway not available",
-      });
-      return;
-    }
-
     try {
-      const sessionId = await this.sessionCache.getOrCreate(
-        sessionKey,
-        "desktop",
-      );
-
       const result = (await this.rpc.request("chat.send", {
-        sessionId,
+        sessionKey,
         message,
-        channelId: "desktop",
+        idempotencyKey: crypto.randomUUID(),
       })) as { messageId?: string } | undefined;
 
       res.json({
@@ -69,7 +54,10 @@ export class ChatController {
    * Body: { sessionKey }
    */
   async abort(req: Request, res: Response): Promise<void> {
-    const { sessionKey } = req.body as { sessionKey?: string };
+    const { sessionKey, runId } = req.body as {
+      sessionKey?: string;
+      runId?: string;
+    };
 
     if (!sessionKey) {
       res.status(400).json({
@@ -79,14 +67,10 @@ export class ChatController {
       return;
     }
 
-    const sessionId = this.sessionCache.get(sessionKey);
-    if (!sessionId) {
-      res.json({ success: true, aborted: false, error: "Session not found" });
-      return;
-    }
-
     try {
-      await this.rpc.abort(sessionId);
+      const params: Record<string, unknown> = { sessionKey };
+      if (runId) params.runId = runId;
+      await this.rpc.request("chat.abort", params);
       res.json({ success: true, aborted: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
