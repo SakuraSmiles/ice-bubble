@@ -341,6 +341,28 @@ export class SQLiteManager {
             sqliteLogger.warn('Migration 1 skipped or failed: ' + (error instanceof Error ? error.message : String(error)));
         }
 
+        // Migration 3: sessions 表新增元数据列（label/status/model 等）
+        try {
+            const sessionsColumns = this.db.prepare("PRAGMA table_info('sessions')").all() as any[];
+            const sessionColNames = new Set(sessionsColumns.map(col => col.name));
+            const metaColumns = [
+                { name: 'label', sql: 'label TEXT' },
+                { name: 'status', sql: 'status TEXT' },
+                { name: 'model', sql: 'model TEXT' },
+                { name: 'model_provider', sql: 'model_provider TEXT' },
+                { name: 'spawned_by', sql: 'spawned_by TEXT' },
+                { name: 'spawn_depth', sql: 'spawn_depth INTEGER DEFAULT 0' },
+            ];
+            for (const col of metaColumns) {
+                if (!sessionColNames.has(col.name)) {
+                    this.db.exec(`ALTER TABLE sessions ADD COLUMN ${col.sql}`);
+                    sqliteLogger.info(`[Migration 3] Added ${col.name} column to sessions table`);
+                }
+            }
+        } catch (error) {
+            sqliteLogger.warn('Migration 3 skipped or failed: ' + (error instanceof Error ? error.message : String(error)));
+        }
+
         // Migration 2: 添加 cost 列（如果不存在）
         try {
             const hasCostTotal = this.db.prepare("SELECT name FROM pragma_table_info('session_messages') WHERE name='cost_total'").get();
@@ -489,7 +511,54 @@ export class SQLiteManager {
             guildId: row.guild_id as string | undefined,
             createdAt: new Date(row.created_at as string | number | Date),
             updatedAt: new Date(row.updated_at as string | number | Date),
+            // sessions.json 同步字段
+            label: row.label as string | undefined,
+            status: row.status as string | undefined,
+            model: row.model as string | undefined,
+            modelProvider: row.model_provider as string | undefined,
+            spawnedBy: row.spawned_by as string | undefined,
+            spawnDepth: row.spawn_depth as number | undefined,
         };
+    }
+
+    /**
+     * 更新 session 元数据（从 sessions.json 同步）
+     *
+     * 使用 COALESCE 避免空值覆盖已有值。
+     */
+    async updateSessionMetadata(sessionKey: string, meta: {
+        label?: string | null;
+        status?: string | null;
+        model?: string | null;
+        modelProvider?: string | null;
+        spawnedBy?: string | null;
+        spawnDepth?: number | null;
+    }): Promise<number> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        const stmt = this.db.prepare(`
+            UPDATE sessions SET
+                label = COALESCE(?, label),
+                status = COALESCE(?, status),
+                model = COALESCE(?, model),
+                model_provider = COALESCE(?, model_provider),
+                spawned_by = COALESCE(?, spawned_by),
+                spawn_depth = COALESCE(?, spawn_depth),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE session_key = ?
+        `);
+        const result = stmt.run(
+            meta.label ?? null,
+            meta.status ?? null,
+            meta.model ?? null,
+            meta.modelProvider ?? null,
+            meta.spawnedBy ?? null,
+            meta.spawnDepth ?? null,
+            sessionKey
+        );
+        return result.changes;
     }
 
     // ========== Message 操作 ==========

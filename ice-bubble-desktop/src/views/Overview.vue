@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { apiMonitor, type MonitorStats } from '../utils/monitor';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
-import type { ModuleDTO, TimelineResponseDTO, WorkspaceTasksDTO, AgentDTO, ParentTaskDTO, AgentGroupDTO } from '../api/client';
+import type { ModuleDTO, TimelineResponseDTO, AgentDTO } from '../api/client';
 // 子组件
 import StatusDropdown from './components/StatusDropdown.vue';
 import RecentSessions from './components/RecentSessions.vue';
-import AgentTaskTree from './components/AgentTaskTree.vue';
-import ParentTaskProgress from './components/ParentTaskProgress.vue';
 import TaskList from './components/TaskList.vue';
 import ChatPanel from './components/ChatPanel.vue';
 
@@ -36,14 +34,7 @@ const agentOverviewData = ref<{ agents: AgentDTO[] } | null>(null);
 
 
 
-// =========== 最近任务模块相关 ===========
 
-// TaskItemDTO, AgentGroupDTO, ParentTaskDTO 已从 api/client 导入
-// WorkspaceTasksDTO === WorkspaceTasks
-
-
-const workspaceTasks = ref<WorkspaceTasksDTO | null>(null);
-const latestTaskLoading = ref(false);
 
 // =========== 数据状态卡片 ===========
 
@@ -83,37 +74,7 @@ async function fetchDataStatus(): Promise<void> {
   }
 }
 
-/** 获取工作区任务（按父任务聚合） */
-async function fetchLatestTask(): Promise<void> {
-  latestTaskLoading.value = true;
-  try {
-    const data = await api.getWorkspaceTasks();
-    workspaceTasks.value = data as WorkspaceTasksDTO;
-  } catch (e) {
-    console.error('获取工作区任务失败', e);
-    workspaceTasks.value = null;
-  } finally {
-    latestTaskLoading.value = false;
-  }
-}
 
-/** 最近的父任务（按 updated_at 排序取第一个） */
-const recentParentTask = computed<ParentTaskDTO | null>(() => {
-  const parents = workspaceTasks.value?.parents ?? [];
-  if (!parents.length) return null;
-  return [...parents].sort((a, b) =>
-    new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-  )[0];
-});
-
-/** 最近父任务是否包含子任务 */
-const hasSubTasks = computed(() => {
-  const groups = recentParentTask.value?.agent_groups ?? [];
-  return groups.some((g: AgentGroupDTO) =>
-    (g.active_children && g.active_children.length > 0) ||
-    (g.completed_children && g.completed_children.length > 0)
-  );
-});
 
 // =========== 核心功能函数 ===========
 
@@ -183,21 +144,6 @@ function scrollMessageToTop(agentId: string) {
   if (el) el.scrollTop = 0;
 }
 
-/** Agent 列表：所有工作中 agent 全部展示，不足 3 个时用最近活跃离线 agent 补充 */
-const onlineAgents = computed(() => {
-  const agents = agentOverviewData.value?.agents ?? [];
-  // 工作中 / 活跃的 agent 全部展示（移除 slice(0, 3) 硬限制）
-  const working = agents
-    .filter(a => a.status === '活跃' || isWorkingStatus(a.status))
-    .sort((a, b) => (new Date(b.last_active_at ?? 0).getTime()) - (new Date(a.last_active_at ?? 0).getTime()));
-  // 不足 3 个时用最近活跃离线 agent 补充
-  if (working.length >= 3) return working;
-  const offline = agents
-    .filter(a => a.status !== '活跃' && !isWorkingStatus(a.status))
-    .sort((a, b) => (new Date(b.last_active_at ?? 0).getTime()) - (new Date(a.last_active_at ?? 0).getTime()));
-  return [...working, ...offline];
-});
-
 /** 监听 agent 数据变化 */
 watch(agentOverviewData, (newData) => {
   if (!newData?.agents) return;
@@ -240,11 +186,10 @@ function startPolling(): void {
     pollPending = true;
     refreshData();
     refreshModules().finally(() => { pollPending = false; });
-    // 30s 任务：fetchAgentOverview + fetchLatestTask + fetchDataStatus（每 3 ticks）
+    // 30s 任务：fetchAgentOverview + fetchDataStatus（每 3 ticks）
     if (tickCounter % 3 === 0) {
       pollPending = true;
       fetchAgentOverview();
-      fetchLatestTask().finally(() => { pollPending = false; });
       pollPending = true;
       fetchDataStatus().finally(() => { pollPending = false; });
     }
@@ -294,7 +239,7 @@ async function fetchAgentOverview() {
 
 async function fetchAll(isLoading: boolean = false) {
   if (isLoading) loading.value = true;
-  await Promise.all([refreshModules(), fetchAgentOverview(), fetchLatestTask()]);
+  await Promise.all([refreshModules(), fetchAgentOverview()]);
   if (isLoading) loading.value = false;
 }
 
@@ -332,21 +277,6 @@ onUnmounted(() => {
       <div class="main-layout">
         <!-- 左侧面板 -->
         <div class="left-panel">
-          <!-- 父任务 + 子任务（wrapper 容器） -->
-          <div v-if="recentParentTask" class="task-section">
-            <ParentTaskProgress
-              :parent-task="recentParentTask"
-              :agents="onlineAgents"
-              :loading="loading"
-            />
-            <AgentTaskTree
-              v-if="hasSubTasks"
-              :agents="onlineAgents"
-              :parent-task="recentParentTask"
-              :loading="loading"
-            />
-          </div>
-
           <!-- 任务列表 -->
           <TaskList />
         </div>
@@ -608,27 +538,5 @@ onUnmounted(() => {
   min-height: 300px;
 }
 
-/* ===== 父子任务 wrapper ===== */
-.task-section {
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
-  overflow: hidden;
-  flex-shrink: 0;
-  max-height: 40%;
-  overflow-y: auto;
-}
 
-/* 子任务区用背景色自然区分，无需分割线 */
-
-/* wrapper 内的 ParentTaskProgress 去掉自有边框 */
-.task-section .parent-task-progress {
-  border: none;
-  border-radius: 0;
-}
-
-/* AgentTaskTree 在 wrapper 内时去掉边框和圆角 */
-.task-section .tree-card {
-  border: none;
-  border-radius: 0;
-}
 </style>

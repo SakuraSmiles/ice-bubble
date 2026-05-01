@@ -25,6 +25,12 @@ export interface AdminSession {
   created_at: string;
   updated_at: string;
   source_created_at: string | null;
+  label: string | null;
+  session_status: string | null;
+  model: string | null;
+  model_provider: string | null;
+  spawned_by: string | null;
+  spawn_depth: number | null;
 }
 
 export interface AdminMessage {
@@ -180,8 +186,9 @@ export class DataRepository {
     const stmt = this.db.prepare(`
       INSERT INTO admin_sessions (
         session_key, source_module, agent_id, channel, message_count,
-        first_message_at, last_message_at, created_at, updated_at, source_created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        first_message_at, last_message_at, created_at, updated_at, source_created_at,
+        label, session_status, model, model_provider, spawned_by, spawn_depth
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_key) DO UPDATE SET
         source_module = excluded.source_module,
         agent_id = excluded.agent_id,
@@ -189,7 +196,13 @@ export class DataRepository {
         message_count = excluded.message_count,
         first_message_at = excluded.first_message_at,
         last_message_at = excluded.last_message_at,
-        updated_at = excluded.updated_at
+        updated_at = excluded.updated_at,
+        label = excluded.label,
+        session_status = excluded.session_status,
+        model = excluded.model,
+        model_provider = excluded.model_provider,
+        spawned_by = excluded.spawned_by,
+        spawn_depth = excluded.spawn_depth
     `);
 
     const now = new Date().toISOString();
@@ -205,7 +218,13 @@ export class DataRepository {
           row.last_message_at ?? null,
           now,
           now,
-          row.source_created_at ?? null
+          row.source_created_at ?? null,
+          row.label ?? null,
+          row.session_status ?? null,
+          row.model ?? null,
+          row.model_provider ?? null,
+          row.spawned_by ?? null,
+          row.spawn_depth ?? 0
         );
       }
     });

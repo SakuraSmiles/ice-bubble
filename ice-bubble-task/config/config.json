@@ -4,7 +4,7 @@
     "host": "localhost"
   },
   "database": {
-    "path": "../data/task.db",
+    "path": "/home/dabai/.local/share/ice-bubble/data/task.db",
     "walMode": true,
     "foreignKeys": false,
     "performance": {

@@ -22,6 +22,12 @@ export interface CollectorSession {
     updated_at: string;
     message_count: number;
     last_message_at: string | null;
+    label?: string | null;
+    status?: string | null;
+    model?: string | null;
+    model_provider?: string | null;
+    spawned_by?: string | null;
+    spawn_depth?: number | null;
 }
 
 export interface CollectorMessage {

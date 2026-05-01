@@ -1,7 +1,6 @@
 /**
  * Workspace 视图层验收测试
  *
- * 测试 /api/tasks/workspace 的前端消费逻辑
  * 覆盖场景：
  *   A-1: 空数据（无父任务） → recentParentTask 为 null
  *   A-2: 单个父任务，无子任务 → 进度显示 0/0
@@ -16,7 +15,7 @@
  *   - 最多返回3个 agent
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // ─── Mock fetch ───────────────────────────────────────
 
@@ -388,77 +387,4 @@ describe('onlineAgents 逻辑', () => {
   });
 });
 
-// ─── fetch 集成测试 ──────────────────────────────────
-
-describe('fetch /api/tasks/workspace', () => {
-  beforeEach(() => {
-    mockFetch.mockReset();
-  });
-
-  it('成功返回 workspace 数据结构', async () => {
-    const mockData = {
-      parents: [
-        {
-          id: 'p1',
-          title: '测试项目',
-          status: 'in_progress',
-          updated_at: '2024-01-15T10:00:00Z',
-          agent_groups: [
-            {
-              agent_id: 'agent-1',
-              active_children: [
-                { task_id: 't1', title: '任务1', status: 'pending', updated_at: '2024-01-15T11:00:00Z' },
-              ],
-              completed_children: [
-                { task_id: 't2', title: '任务2', status: 'completed', updated_at: '2024-01-15T12:00:00Z' },
-              ],
-            },
-          ],
-        },
-      ],
-    };
-
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockData),
-    });
-
-    const res = await fetch('/api/tasks/workspace');
-    const data = await res.json();
-
-    expect(data.parents).toHaveLength(1);
-    expect(data.parents[0].id).toBe('p1');
-    expect(data.parents[0].agent_groups[0].agent_id).toBe('agent-1');
-    expect(data.parents[0].agent_groups[0].active_children).toHaveLength(1);
-    expect(data.parents[0].agent_groups[0].completed_children).toHaveLength(1);
-  });
-
-  it('HTTP 错误时返回非 ok 响应（调用方应检查 ok 状态）', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
-
-    const res = await fetch('/api/tasks/workspace');
-    // fetch 本身不抛 HTTP 错误，只抛网络错误
-    // 调用方（如 Overview.vue）应根据 res.ok 检查并抛出
-    expect(res.ok).toBe(false);
-    expect(res.status).toBe(500);
-  });
-
-  it('网络错误时抛出异常', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network failure'));
-
-    await expect(fetch('/api/tasks/workspace')).rejects.toThrow('Network failure');
-  });
-
-  it('空 parents 返回空数组', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ parents: [] }),
-    });
-
-    const res = await fetch('/api/tasks/workspace');
-    const data = await res.json();
-
-    expect(data.parents).toEqual([]);
-    expect(getRecentParentTask(data)).toBeNull();
-  });
-});
+// ─── (removed: fetch /api/tasks/workspace integration tests — endpoint deprecated) ─

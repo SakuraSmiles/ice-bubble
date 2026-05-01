@@ -24,18 +24,30 @@ export interface ParsedTask {
   completed_at: string | null;
 }
 
+interface TaskRow {
+  source_id: string;
+  source_module: string;
+  requester_session_key: string;
+  tool_name: string;
+  tool_input: string;
+  content: string;
+  created_at: string;
+}
+
 export class TaskParser {
   private db: Database;
+  private collectorBaseUrl: string;
 
-  constructor(db: Database) {
+  constructor(db: Database, collectorBaseUrl?: string) {
     this.db = db;
+    this.collectorBaseUrl = collectorBaseUrl || 'http://localhost:13100';
   }
 
   /**
    * 从 admin_tool_calls 中解析所有 sessions_spawn 记录
    * 生成 admin_tasks 数据并返回
    */
-  parseSessionsSpawnRecords(): ParsedTask[] {
+  async parseSessionsSpawnRecords(): Promise<ParsedTask[]> {
     // 查询 sessions_spawn 记录
     const rows = this.db.prepare(`
       SELECT
@@ -49,15 +61,17 @@ export class TaskParser {
       FROM admin_tool_calls tc
       WHERE tc.tool_name = 'sessions_spawn'
       ORDER BY tc.created_at DESC
-    `).all() as Array<{
-      source_id: string;
-      source_module: string;
-      requester_session_key: string;
-      tool_name: string;
-      tool_input: string;
-      content: string;
-      created_at: string;
-    }>;
+    `).all() as TaskRow[];
+
+    // 收集需要回填的 session keys（tool_input 为空或 {}）
+    const sessionKeysToFetch = [...new Set(
+      rows
+        .filter(r => !r.tool_input || r.tool_input === '{}')
+        .map(r => r.requester_session_key)
+    )];
+
+    // 批量从 collector API 回填 sessions_spawn input
+    await this.batchBackfill(sessionKeysToFetch);
 
     const tasks: ParsedTask[] = [];
 
@@ -79,43 +93,63 @@ export class TaskParser {
   }
 
   /**
+   * 批量从 collector API 回填 sessions_spawn input
+   * admin_tool_calls 表的 tool_input 字段在 sessions_spawn 记录中可能为空，
+   * 需要从 collector 的 session_messages.tools_json 中获取（通过 collector HTTP API）
+   */
+  private async batchBackfill(sessionKeys: string[]): Promise<void> {
+    for (const sessionKey of sessionKeys) {
+      try {
+        const url = `${this.collectorBaseUrl}/api/data/messages?session_key=${encodeURIComponent(sessionKey)}&limit=100`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        if (!response.ok) continue;
+
+        const data = (await response.json()) as { messages: Array<{ tools_json: string | null; created_at?: string }> };
+        for (const msg of data.messages ?? []) {
+          if (!msg.tools_json) continue;
+          try {
+            const tools = JSON.parse(msg.tools_json);
+            if (Array.isArray(tools)) {
+              for (const t of tools) {
+                if (t.name === 'sessions_spawn' && t.input) {
+                  // 缓存，用 sessionKey 做 key（同一个 session 只取第一条 sessions_spawn）
+                  this.cacheBackfill(sessionKey, t.input as { task?: string; agentId?: string; mode?: string });
+                  return; // 找到就停止
+                }
+              }
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      } catch (err) {
+        logger.warn('[TaskParser] Backfill fetch failed', { session_key: sessionKey, error: String(err) });
+      }
+    }
+  }
+
+  /** 单条回填结果缓存（sessionKey → input） */
+  private backfillCache = new Map<string, { task?: string; agentId?: string; mode?: string }>();
+
+  private cacheBackfill(sessionKey: string, input: { task?: string; agentId?: string; mode?: string }): void {
+    if (!this.backfillCache.has(sessionKey)) {
+      this.backfillCache.set(sessionKey, input);
+    }
+  }
+
+  /**
    * 解析单条 sessions_spawn 记录
    */
-  private parseSingleRecord(row: {
-    source_id: string;
-    source_module: string;
-    requester_session_key: string;
-    tool_name: string;
-    tool_input: string;
-    content: string;
-    created_at: string;
-  }): ParsedTask | null {
+  private parseSingleRecord(row: TaskRow): ParsedTask | null {
     // 解析 tool_input JSON → 获取 task、agentId、mode 等
-    // 如果 tool_input 为空或 {}，尝试从同 session 的 agent 消息中补充
+    // 如果 tool_input 为空或 {}，使用回填缓存
     let toolInputObj: { task?: string; agentId?: string; mode?: string } = {};
     try {
       if (row.tool_input && row.tool_input !== '{}') {
         toolInputObj = JSON.parse(row.tool_input);
       } else {
-        // 回填：从同 session 紧邻的 agent 消息中提取 sessions_spawn 的 input
-        const backfill = this.db.prepare(`
-          SELECT am.tools_json
-          FROM admin_messages am
-          WHERE am.session_key = ?
-            AND am.message_type = 'agent'
-            AND am.tools_json LIKE '%sessions_spawn%'
-            AND am.created_at <= ?
-          ORDER BY am.created_at DESC
-          LIMIT 1
-        `).get(row.requester_session_key, row.created_at) as { tools_json: string } | undefined;
-
-        if (backfill?.tools_json) {
-          try {
-            const tools = JSON.parse(backfill.tools_json);
-            if (Array.isArray(tools) && tools.length > 0) {
-              toolInputObj = tools[0].input ?? {};
-            }
-          } catch { /* ignore */ }
+        // 从回填缓存中获取（batchBackfill 已预加载）
+        const cached = this.backfillCache.get(row.requester_session_key);
+        if (cached) {
+          toolInputObj = cached;
         }
       }
     } catch {
@@ -182,7 +216,7 @@ export class TaskParser {
   }
 
   /**
-   * 从任务描述中提取简洁标题
+   * 从 taskDescription 中提取简洁标题
    */
   private extractTitle(taskDescription: string): string {
     const firstLine = taskDescription.split('\n')[0].trim();
@@ -245,38 +279,23 @@ export class TaskParser {
     const row = this.db.prepare(`
       SELECT first_message_at, last_message_at, message_count
       FROM admin_sessions
-      WHERE session_key LIKE ?
-      ORDER BY last_message_at DESC
+      WHERE session_key LIKE '%' || ? || '%'
       LIMIT 1
-    `).get(`%${uuid}%`) as {
-      first_message_at: string | null;
-      last_message_at: string | null;
-      message_count: number;
-    } | undefined;
+    `).get(uuid) as { first_message_at: string | null; last_message_at: string | null; message_count: number } | undefined;
 
     return row ?? null;
   }
 
   /**
    * 推导任务状态
-   * 规则：
-   * - 无 runId → queued
-   * - 有 runId，检查 admin_sessions 中是否有对应的 session 记录
-   * - admin_sessions 有记录且有 last_message_at → completed
-   * - admin_sessions 有记录但无 last_message_at → running
-   * - admin_sessions 无记录（subagent session 已清理）→ completed（历史任务默认完成）
    */
-  private deriveTaskStatus(
-    childSessionKey: string | null,
-    childSession: { first_message_at: string | null; last_message_at: string | null; message_count: number } | null
-  ): 'queued' | 'running' | 'completed' | 'failed' | 'timeout' {
-    if (!childSessionKey) {
+  private deriveTaskStatus(childSessionKey: string, childSession: {
+    first_message_at: string | null;
+    last_message_at: string | null;
+    message_count: number;
+  } | null): 'queued' | 'running' | 'completed' | 'failed' | 'timeout' {
+    if (!childSessionKey || !childSession) {
       return 'queued';
-    }
-
-    if (!childSession) {
-      // subagent session 已被清理，历史任务默认 completed
-      return 'completed';
     }
 
     if (childSession.message_count === 0) {
@@ -294,8 +313,8 @@ export class TaskParser {
    * 刷新任务数据：解析 + upsert + 修复 running 状态
    * 幂等操作，可安全重复调用
    */
-  refreshTasks(): number {
-    const tasks = this.parseSessionsSpawnRecords();
+  async refreshTasks(): Promise<number> {
+    const tasks = await this.parseSessionsSpawnRecords();
     const count = this.upsertTasks(tasks);
     this.fixRunningStatus();
     return count;
@@ -328,24 +347,9 @@ export class TaskParser {
         WHERE status = 'running' AND run_id NOT IN (${activeRunIds.map(() => '?').join(',')})
       `).run(...activeRunIds);
 
-      // 将活跃 run 标记为 running
-      const stmt = this.db.prepare(`
-        UPDATE admin_tasks SET status = 'running', updated_at = CURRENT_TIMESTAMP
-        WHERE run_id = ? AND status != 'running'
-      `);
-      let updated = 0;
-      for (const runId of activeRunIds) {
-        const result = stmt.run(runId);
-        updated += result.changes;
-      }
-      if (updated > 0) {
-        logger.info(`[TaskParser] Marked ${updated} tasks as running from runs.json`);
-      }
+      logger.info(`[TaskParser] Fixed running status for ${activeRunIds.length} active runs`);
     } catch (err) {
-      // 文件不存在或解析失败时静默跳过
-      logger.debug('[TaskParser] Could not read runs.json, skipping running status fix', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      logger.warn('[TaskParser] fixRunningStatus failed', { error: String(err) });
     }
   }
 

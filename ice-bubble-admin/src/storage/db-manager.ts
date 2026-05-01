@@ -926,6 +926,28 @@ export class DBManager {
         `);
         logger.info('Migration v17: admin_tasks table created');
         break;
+      case 18:
+        // 迁移 v18: 给 admin_sessions 表新增 label/session_status/model/model_provider/spawned_by/spawn_depth 字段
+        {
+          const colInfo = this.db.prepare('PRAGMA table_info(admin_sessions)').all() as Array<{ name: string }>;          if (!colInfo.some(col => col.name === 'label')) {
+            this.db.exec(`ALTER TABLE admin_sessions ADD COLUMN label TEXT;`);
+            logger.info('Migration v18: added label column to admin_sessions');
+          } else {
+            logger.info('Migration v18: label column already exists, skipping');
+          }          if (!colInfo.some(col => col.name === 'session_status')) {
+            this.db.exec(`ALTER TABLE admin_sessions ADD COLUMN session_status TEXT DEFAULT 'unknown';`);
+          }          if (!colInfo.some(col => col.name === 'model')) {
+            this.db.exec(`ALTER TABLE admin_sessions ADD COLUMN model TEXT;`);
+          }          if (!colInfo.some(col => col.name === 'model_provider')) {
+            this.db.exec(`ALTER TABLE admin_sessions ADD COLUMN model_provider TEXT;`);
+          }          if (!colInfo.some(col => col.name === 'spawned_by')) {
+            this.db.exec(`ALTER TABLE admin_sessions ADD COLUMN spawned_by TEXT;`);
+          }          if (!colInfo.some(col => col.name === 'spawn_depth')) {
+            this.db.exec(`ALTER TABLE admin_sessions ADD COLUMN spawn_depth INTEGER DEFAULT 0;`);
+          }
+          logger.info('Migration v18: added session metadata columns to admin_sessions');
+        }
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

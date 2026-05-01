@@ -32,6 +32,12 @@ export interface SessionDTO {
   last_message_at: string | null;
   last_message: string | null;
   created_at: string;
+  label?: string | null;
+  session_status?: string | null;
+  model?: string | null;
+  model_provider?: string | null;
+  spawned_by?: string | null;
+  spawn_depth?: number | null;
 }
 
 export interface SessionsResponseDTO {
@@ -188,7 +194,7 @@ export interface TokenSummaryResponseDTO {
   summary: TokenSummaryDTO[];
 }
 
-// ============ 任务 DTO ============
+// ============ 任务 DTO（由 AgentTaskTree / ParentTaskProgress 使用） ============
 
 export interface TaskItemDTO {
   task_id: string;
@@ -209,10 +215,6 @@ export interface ParentTaskDTO {
   status: string;
   updated_at: string;
   agent_groups: AgentGroupDTO[];
-}
-
-export interface WorkspaceTasksDTO {
-  parents: ParentTaskDTO[];
 }
 
 // ============ 内部工具 ============
@@ -361,6 +363,5 @@ export const api = {
     return fetchJson<TokenSummaryResponseDTO>(`/agents/token-summary${query}`);
   },
 
-  // 任务
-  getWorkspaceTasks: () => fetchJson<WorkspaceTasksDTO>('/tasks/workspace'),
+
 };

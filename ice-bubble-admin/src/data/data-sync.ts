@@ -61,7 +61,7 @@ export class DataSync {
 
         // 初始化 TaskParser
         try {
-            this.taskParser = new TaskParser(this.repository.getDb());
+            this.taskParser = new TaskParser(this.repository.getDb(), this.config.collectorBaseUrl);
         } catch (err) {
             logger.warn('[DataSync] Failed to initialize TaskParser', { error: String(err) });
         }
@@ -121,11 +121,9 @@ export class DataSync {
 
             // 消息同步完成后，刷新任务数据
             if (this.taskParser) {
-                try {
-                    this.taskParser.refreshTasks();
-                } catch (err) {
+                this.taskParser.refreshTasks().catch(err => {
                     logger.warn('[DataSync] Task refresh failed', { error: String(err) });
-                }
+                });
             }
 
             logger.info(`[DataSync] Sync completed in ${Date.now() - start}ms`);

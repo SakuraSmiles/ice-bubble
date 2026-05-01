@@ -151,10 +151,10 @@ export async function startAdmin(): Promise<void> {
     const HOST = configData.server?.host || 'localhost';
 
     // 初始化数据库
-    const dbPath = join(__dirname, '..', '..', 'data', 'admin.db');
+    const dbPath = process.env.ADMIN_DB_PATH || join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(17);  // 执行数据库迁移（v17: admin_tasks 表）
+    await dbManager.migrate(18);  // 执行数据库迁移（v18: admin_sessions 新增 label/session_status/model 等字段）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 
@@ -210,6 +210,7 @@ export async function startAdmin(): Promise<void> {
     // 注册 API 路由
     app.use('/api', createDataRouter({
       repository: dataRepository,
+      db: dbManager.getConnection(),
       agentOverviewService: new AgentOverviewService(
         dataRepository,
         new CollectorClient({ baseUrl: dataSyncConfig.collectorBaseUrl || 'http://localhost:13100' })

@@ -104,7 +104,7 @@ interface TaskRow {
 /**
  * 获取任务列表（从 admin_tasks 表）
  */
-function getTasks(
+export function getTasks(
   db: Database,
   params: {
     agent_id?: string;

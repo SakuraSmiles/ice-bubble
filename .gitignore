@@ -46,3 +46,11 @@ data/*.sqlite
 
 # Coverage reports
 coverage/
+
+# SQLite runtime files
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Corrupted backups
+*.corrupted.*

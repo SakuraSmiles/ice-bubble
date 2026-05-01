@@ -24,6 +24,13 @@ export interface Session {
     guildId?: string;
     createdAt: Date;
     updatedAt: Date;
+    // sessions.json 同步字段
+    label?: string;
+    status?: string;
+    model?: string;
+    modelProvider?: string;
+    spawnedBy?: string;
+    spawnDepth?: number;
 }
 
 export interface SessionEvent {

@@ -26,7 +26,7 @@ function mapDTOToSession(dto: SessionDTO): SessionItem {
     sessionKey: dto.session_key,
     agentId: dto.agent_id,
     agentName: dto.agent_name,
-    label: dto.channel,
+    label: dto.label ?? undefined,
     lastMessage: dto.last_message ?? undefined,
     lastActivity: dto.last_message_at ?? undefined,
     messageCount: dto.message_count,

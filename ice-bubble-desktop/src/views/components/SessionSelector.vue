@@ -2,6 +2,7 @@
 /**
  * SessionSelector.vue — 会话选择下拉组件
  * 位于输入框下方，按 agent 分组展示 session 列表
+ * 每个 agent 最多展示最近 3 个 session，顶部固定「主会话」选项
  */
 import { computed } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
@@ -41,9 +42,16 @@ const emit = defineEmits<{
 
 // ============ 计算属性 ============
 
-const DEFAULT_SESSION = 'agent:main:main'
+const MAIN_SESSION_KEY = 'agent:main:main'
 
-/** 按 agent 分组后的 session 列表 */
+/** 固定的主会话选项（始终在最顶部） */
+const mainSessionOption = {
+  sessionKey: MAIN_SESSION_KEY,
+  label: '🏠 主会话（冰镇虾头）',
+  isMainSession: true as const,
+}
+
+/** 按 agent 分组后的 session 列表（每个 agent 最多 3 个） */
 const groupedSessions = computed(() => {
   const map = new Map<string, SessionItem[]>()
 
@@ -55,13 +63,17 @@ const groupedSessions = computed(() => {
     map.get(agent)!.push(session)
   }
 
-  // 每组内按 lastActive 倒序
+  // 每组内按 lastActive 倒序，只保留最近 3 个
   for (const list of map.values()) {
     list.sort((a, b) => {
       const ta = a.lastActive ? new Date(a.lastActive).getTime() : 0
       const tb = b.lastActive ? new Date(b.lastActive).getTime() : 0
       return tb - ta
     })
+    // 限制每 agent 最多 3 个
+    if (list.length > 3) {
+      list.splice(3)
+    }
   }
 
   // 转为数组，main 组排第一，其余按最新 lastActive 排序
@@ -80,11 +92,9 @@ const groupedSessions = computed(() => {
     })
 })
 
-/** 当前选中值（确保有默认值） */
+/** 当前选中值（默认为主会话） */
 const selectedValue = computed({
-  get: () =>
-    props.modelValue ||
-    (props.sessions.length > 0 ? props.sessions[0].sessionKey : DEFAULT_SESSION),
+  get: () => props.modelValue || MAIN_SESSION_KEY,
   set: (val: string) => emit('update:modelValue', val),
 })
 
@@ -109,9 +119,11 @@ function formatTime(lastActive: string): string {
     date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-/** 生成 session 的主标签：agent名称 · 最后消息摘要(前20字) */
+/** 生成 session 的主标签：有label优先显示label，否则 agent名称 · 最后消息摘要(前20字) */
 function formatLabel(item: SessionItem | undefined): string {
   if (!item) return '选择会话'
+  // 有 label 的 session 直接显示 label（如 "审计-前端可用性"、"拆分-dev"）
+  if (item.title) return item.title
   const agentName = item.agentName ?? item.agent
   const msg = item.lastMessage ? item.lastMessage.substring(0, 20) : ''
   if (msg) return `${agentName} · ${msg}`
@@ -145,6 +157,31 @@ function handleRefresh() {
       <template #empty>
         <div class="dropdown-empty">暂无 session</div>
       </template>
+
+      <!-- 主会话固定选项（不分组，始终在最顶部） -->
+      <el-option
+        :key="mainSessionOption.sessionKey"
+        :value="mainSessionOption.sessionKey"
+        :label="mainSessionOption.label"
+      >
+        <div class="session-option-inner main-session-option">
+          <div class="option-main">
+            <span class="option-label">{{ mainSessionOption.label }}</span>
+            <span
+              v-if="mainSessionOption.sessionKey === selectedValue"
+              class="option-active-dot"
+            ></span>
+          </div>
+        </div>
+      </el-option>
+
+      <!-- 分隔 -->
+      <el-option
+        disabled
+        value="__divider__"
+        label="──────────────"
+        class="dropdown-divider"
+      />
 
       <el-option-group
         v-for="group in groupedSessions"
@@ -189,8 +226,9 @@ function handleRefresh() {
 .session-selector {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
+  font-size: 12px;
 }
 
 .selector-inner {
@@ -216,6 +254,20 @@ function handleRefresh() {
 
 .refresh-btn {
   flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.main-session-option {
+  font-weight: 600;
+}
+
+.dropdown-divider {
+  pointer-events: none;
+  opacity: 0.5;
+  font-size: 11px;
+  text-align: center;
 }
 
 .session-option-inner {

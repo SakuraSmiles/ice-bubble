@@ -15,17 +15,19 @@ import { logger } from '../utils/index.js';
 import { DataRepository } from '../storage/data-repository.js';
 import type { AgentOverviewService } from '../data/agent-overview.js';
 import { TaskEnhancementStatus, normalizeAgentStatus, type TaskEnhancement } from '../data/agent-overview.js';
-import http from 'http';
-import { URL } from 'url';
+import { getTasks } from './tasks.js';
+import type { Database } from 'better-sqlite3';
 
 export interface DataRouterConfig {
   repository: DataRepository;
+  /** Admin 数据库实例（用于直接查询 admin_tasks 表） */
+  db: Database;
   /** Agent 概览聚合服务（可选，不提供则 /agents/overview 返回 503） */
   agentOverviewService?: AgentOverviewService;
 }
 
 export function createDataRouter(config: DataRouterConfig): Router {
-  const { repository, agentOverviewService } = config;
+  const { repository, db, agentOverviewService } = config;
   const router = Router();
 
   /**
@@ -233,11 +235,10 @@ export function createDataRouter(config: DataRouterConfig): Router {
         const overviewMap = new Map(
           (await agentOverviewService.getAgentsOverview()).agents.map(a => [a.agent_id, a])
         );
-        // 并发获取所有 agent 的待办任务数
-        const pendingCountPromises = fullAgents.map(a =>
-          getAgentPendingCount(a.agent_id).then(count => [a.agent_id, count] as [string, number])
-        );
-        const pendingCounts = new Map(await Promise.all(pendingCountPromises));
+        // 同步获取所有 agent 的待办任务数
+        const pendingCounts = new Map(fullAgents.map(a =>
+          [a.agent_id, getAgentPendingCount(db, a.agent_id)] as [string, number]
+        ));
 
         agents = fullAgents.map(a => {
           const ov = overviewMap.get(a.agent_id);
@@ -257,12 +258,11 @@ export function createDataRouter(config: DataRouterConfig): Router {
       } else {
         // 降级：只用 admin_agents 表数据 + lastActiveAt 算 status
         const { calculateAgentStatus } = await import('../data/agent-overview.js');
-        // 并发获取所有 agent 的待办任务数
+        // 同步获取所有 agent 的待办任务数
         const fullAgents = repository.getAgents();
-        const pendingCountPromises = fullAgents.map(a =>
-          getAgentPendingCount(a.agent_id).then(count => [a.agent_id, count] as [string, number])
-        );
-        const pendingCounts = new Map(await Promise.all(pendingCountPromises));
+        const pendingCounts = new Map(fullAgents.map(a =>
+          [a.agent_id, getAgentPendingCount(db, a.agent_id)] as [string, number]
+        ));
 
         agents = fullAgents.map(a => {
           const calculatedStatus = calculateAgentStatus(0, a.last_active_at, true);
@@ -375,27 +375,6 @@ export function createDataRouter(config: DataRouterConfig): Router {
     res.json({ agent_id: id, activity });
   });
 
-  /**
-   * GET /api/agents/:agent_id/tasks
-   * 代理 Task 服务的任务列表接口（解决 Desktop 直接请求 Task 的跨域问题）
-   * 内部转发请求到 Task 服务 (http://localhost:13102)
-   */
-  router.get('/agents/:agent_id/tasks', async (req: Request, res: Response) => {
-    const { agent_id } = req.params;
-    const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
-    const offset = parseInt(String(req.query.offset ?? '0'));
-    const taskServiceUrl = `http://localhost:13102/api/agents/${agent_id}/tasks?limit=${limit}&offset=${offset}`;
-
-    try {
-      const result = await proxyGet(taskServiceUrl);
-      res.setHeader('Content-Type', 'application/json');
-      res.status(result.status).send(result.body);
-    } catch (err: any) {
-      logger.error(`[DataAPI] /agents/:agent_id/tasks proxy failed:`, err);
-      res.status(502).json({ error: '代理 Task 服务失败', code: 'TASK_PROXY_FAILED' });
-    }
-  });
-
   return router;
 }
 
@@ -404,26 +383,15 @@ export function createDataRouter(config: DataRouterConfig): Router {
 // ============================================================================
 
 /**
- * 获取指定 agent 的待办任务数
- * @param agentId agent ID
- * @returns pending 任务数；-1 表示 task 模块不可用；-2 表示超时
+ * 获取指定 agent 的待办任务数（从本地 admin_tasks 表查询）
  */
-async function getAgentPendingCount(agentId: string): Promise<number> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3000);
+function getAgentPendingCount(db: Database, agentId: string): number {
   try {
-    const res = await fetch(
-      `http://localhost:13102/api/agents/${encodeURIComponent(agentId)}/tasks?status=pending&limit=1`,
-      { signal: controller.signal }
-    );
-    clearTimeout(timeout);
-    if (!res.ok) return -1;
-    const data = await res.json() as { count?: number; total?: number };
-    // 支持 { count } 或 { total } 两种响应格式
-    return typeof data.count === 'number' ? data.count : (typeof data.total === 'number' ? data.total : 0);
-  } catch {
-    clearTimeout(timeout);
-    return -1; // 不可用或超时均视为不可用
+    const tasks = getTasks(db, { agent_id: agentId, status: 'pending', limit: 1, offset: 0 });
+    return tasks.length;
+  } catch (err: any) {
+    logger.error(`[DataAPI] getAgentPendingCount error:`, err);
+    return 0;
   }
 }
 
@@ -432,14 +400,6 @@ async function getAgentPendingCount(agentId: string): Promise<number> {
  * @param pendingCount getAgentPendingCount 的返回值
  */
 function buildTaskEnhancement(pendingCount: number): TaskEnhancement {
-  if (pendingCount < 0) {
-    // task 模块不可用或超时
-    return {
-      status: TaskEnhancementStatus.none,
-      pending_count: 0,
-      source: pendingCount === -2 ? 'unavailable' : 'unavailable',
-    };
-  }
   return {
     status: pendingCount > 0 ? TaskEnhancementStatus.working : TaskEnhancementStatus.idle,
     pending_count: pendingCount,
@@ -447,36 +407,4 @@ function buildTaskEnhancement(pendingCount: number): TaskEnhancement {
   };
 }
 
-// ============================================================================
-// 简单的 GET 请求代理（内部服务调用，不走外部网络）
-// ============================================================================
-function proxyGet(url: string): Promise<{ status: number; body: string }> {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(url);
-    const options = {
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
-      path: parsedUrl.pathname + parsedUrl.search,
-      method: 'GET',
-      timeout: 10000,
-    };
 
-    const req = http.request(options, (res) => {
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8');
-        resolve({ status: res.statusCode || 500, body });
-      });
-      res.on('error', reject);
-    });
-
-    req.on('error', reject);
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('Request timeout'));
-    });
-
-    req.end();
-  });
-}

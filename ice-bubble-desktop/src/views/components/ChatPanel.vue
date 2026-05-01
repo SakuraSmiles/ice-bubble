@@ -7,14 +7,13 @@
  *
  * 布局：
  * ┌─────────────────────────────────────────┐
- * │  [SessionSelector v-model="currentKey"] │  ← 顶部
- * ├─────────────────────────────────────────┤
- * │  MessageList (滚动区域)                  │  ← 中部
+ * │  MessageList (滚动区域)                  │  ← 中部（flex:1 占满）
  * │    ├─ MessageBubble (user)              │
  * │    ├─ MessageBubble (assistant)        │
  * │    └─ MessageBubble (system)           │
  * ├─────────────────────────────────────────┤
  * │  [MessageInput @send @abort]            │  ← 底部
+ * │  [SessionSelector v-model="currentKey"] │  ← 输入框下方，紧凑
  * └─────────────────────────────────────────┘
  */
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
@@ -68,6 +67,8 @@ const selectorSessions = computed<SelectorSessionItem[]>(() =>
     lastMessage: s.lastMessage ?? null,
   })),
 )
+
+
 
 // ============ 消息引用（auto-scroll） ============
 
@@ -177,16 +178,6 @@ onMounted(async () => {
 
 <template>
   <div class="chat-panel">
-    <!-- ========== 顶部：Session 选择器 ========== -->
-    <header class="chat-header">
-      <SessionSelector
-        v-model="currentSessionKey"
-        :sessions="selectorSessions"
-        :loading="chatStore.loading"
-        @refresh="handleRefreshSessions"
-      />
-    </header>
-
     <!-- ========== 中部：消息列表 ========== -->
     <div
       ref="messageListRef"
@@ -234,7 +225,7 @@ onMounted(async () => {
       <span class="error-text">{{ error }}</span>
     </div>
 
-    <!-- ========== 底部：消息输入 ========== -->
+    <!-- ========== 底部：消息输入 + Session 选择器 ========== -->
     <footer class="chat-footer">
       <MessageInput
         :disabled="false"
@@ -244,6 +235,12 @@ onMounted(async () => {
         placeholder="输入消息，Enter 发送，Shift+Enter 换行"
         @send="handleSend"
         @abort="handleAbort"
+      />
+      <SessionSelector
+        v-model="currentSessionKey"
+        :sessions="selectorSessions"
+        :loading="chatStore.loading"
+        @refresh="handleRefreshSessions"
       />
     </footer>
   </div>
@@ -259,14 +256,6 @@ onMounted(async () => {
   border: 1px solid var(--el-border-color, #e8e8e8);
   border-radius: 8px;
   overflow: hidden;
-}
-
-/* ---------- 顶部 ---------- */
-.chat-header {
-  flex-shrink: 0;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--el-border-color, #e8e8e8);
-  background: var(--el-bg-color, #ffffff);
 }
 
 /* ---------- 消息列表 ---------- */
@@ -386,5 +375,10 @@ onMounted(async () => {
 /* ---------- 底部 ---------- */
 .chat-footer {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--el-border-color, #e8e8e8);
+  padding: 8px 12px 6px;
+  gap: 6px;
 }
 </style>

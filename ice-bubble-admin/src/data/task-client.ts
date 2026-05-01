@@ -1,7 +1,8 @@
 /**
  * ice-bubble Admin - Task HTTP 客户端
  *
- * 通过 HTTP API 与 Task 模块（端口 13102）通信，支持静默降级
+ * @deprecated 此模块与 Task 服务（端口 13102）通信，仅用于创建/更新任务。
+ *            读取操作已统一走 Admin 本地 /api/tasks。后续考虑迁移写入逻辑到本地。
  *
  * @module data/task-client
  */

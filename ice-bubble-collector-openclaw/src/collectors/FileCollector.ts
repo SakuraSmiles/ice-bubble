@@ -271,6 +271,9 @@ export class FileCollector extends BaseCollector implements Collector {
     // 初始扫描所有文件
     await this.scanAllFiles();
 
+    // 同步 sessions.json 元数据到 sessions 表
+    await this.syncSessionMetadata();
+
     // 启动文件监听或定时扫描
     if (this.config.enableWatch) {
       await this.startWatcher();
@@ -625,6 +628,55 @@ export class FileCollector extends BaseCollector implements Collector {
       skipped: this.stats.skippedFiles,
       retried: this.stats.retriedEvents,
     });
+  }
+
+  /**
+   * 同步 sessions.json 元数据到 sessions 表
+   *
+   * 遍历所有 agents/*\/sessions/sessions.json，通过 UUID 桥接，
+   * 将 label/status/model/spawnedBy/spawnDepth 写入 sessions 表。
+   */
+  private async syncSessionMetadata(): Promise<void> {
+    const pattern = path.join(this.config.openclawDataDir, 'agents', '*', 'sessions', 'sessions.json');
+    const files = await findJsonlFiles(pattern);
+
+    let updated = 0;
+    for (const filePath of files) {
+      try {
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        const data = JSON.parse(content);
+
+        // 从路径提取 agentId: .../agents/{agentId}/sessions/sessions.json
+        const match = filePath.match(/agents\/([^/]+)\/sessions\/sessions\.json$/);
+        if (!match) continue;
+        const agentId = match[1];
+
+        for (const entry of Object.values(data) as Array<Record<string, unknown>>) {
+          const sessionId = entry.sessionId as string | undefined;
+          if (!sessionId) continue;
+
+          // 通过 UUID 构造 Collector 的 session_key
+          const sessionKey = `agent:${agentId}:local:default:direct:${sessionId}`;
+
+          const changes = await this.sqliteManager.updateSessionMetadata(sessionKey, {
+            label: (entry.label as string) || null,
+            status: (entry.status as string) || null,
+            model: (entry.model as string) || null,
+            modelProvider: (entry.modelProvider as string) || null,
+            spawnedBy: (entry.spawnedBy as string) || null,
+            spawnDepth: (entry.spawnDepth as number) ?? null,
+          });
+          if (changes > 0) updated++;
+        }
+      } catch (error) {
+        // sessions.json 可能不存在或解析失败，跳过
+        logger.debug(`sessions.json 读取失败，跳过: ${filePath}`, error as Error);
+      }
+    }
+
+    if (updated > 0) {
+      logger.info(`[FileCollector] sessions.json 元数据同步完成: ${updated} 条 session 已更新`);
+    }
   }
 
   // ==================== 辅助方法 ====================

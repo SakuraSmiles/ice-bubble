@@ -22,6 +22,12 @@ export function processSession(row: CollectorSession, sourceModule: string): Adm
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     source_created_at: row.created_at ?? null,
+    label: row.label ?? null,
+    session_status: row.status ?? null,
+    model: row.model ?? null,
+    model_provider: row.model_provider ?? null,
+    spawned_by: row.spawned_by ?? null,
+    spawn_depth: row.spawn_depth ?? null,
   };
 }
 
