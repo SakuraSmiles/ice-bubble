@@ -10,9 +10,7 @@ import { logger } from '../utils/index.js';
 import { CollectorClient, type CollectorMessage } from './collector-client.js';
 import { DataRepository } from '../storage/data-repository.js';
 import { processSession, processMessage } from './processor.js';
-import { TaskClient } from './task-client.js';
-import { SubagentEventParser } from './subagent-event-parser.js';
-import { TaskParser } from './task-parser.js';
+
 
 export interface DataSyncConfig {
     /** collector HTTP API 基础地址 */
@@ -23,10 +21,7 @@ export interface DataSyncConfig {
     pollInterval: number;
     /** 批量大小 */
     batchSize: number;
-    /** Task API 基础地址（用于 SubagentEventParser） */
-    taskApiBaseUrl?: string;
-    /** 是否启用 Subagent 事件解析 */
-    subagentParserEnabled?: boolean;
+
 }
 
 const DEFAULT_CONFIG: DataSyncConfig = {
@@ -34,8 +29,7 @@ const DEFAULT_CONFIG: DataSyncConfig = {
     moduleKey: 'unknown',
     pollInterval: 60000,
     batchSize: 500,
-    taskApiBaseUrl: undefined,
-    subagentParserEnabled: true,
+
 };
 
 export class DataSync {
@@ -44,27 +38,14 @@ export class DataSync {
     private repository: DataRepository;
     private timer: ReturnType<typeof setInterval> | null = null;
     private isRunning: boolean = false;
-    private eventParser: SubagentEventParser | null = null;
-    private taskParser: TaskParser | null = null;
+
 
     constructor(config: Partial<DataSyncConfig>, repository: DataRepository) {
         this.config = { ...DEFAULT_CONFIG, ...config };
         this.client = new CollectorClient({ baseUrl: this.config.collectorBaseUrl });
         this.repository = repository;
 
-        // 初始化 SubagentEventParser（如果配置了 Task API 地址）
-        if (this.config.taskApiBaseUrl && this.config.subagentParserEnabled) {
-            const taskClient = new TaskClient({ baseUrl: this.config.taskApiBaseUrl });
-            this.eventParser = new SubagentEventParser({ taskClient });
-            logger.info(`[DataSync] SubagentEventParser 已启用 (taskApi: ${this.config.taskApiBaseUrl})`);
-        }
 
-        // 初始化 TaskParser
-        try {
-            this.taskParser = new TaskParser(this.repository.getDb(), this.config.collectorBaseUrl);
-        } catch (err) {
-            logger.warn('[DataSync] Failed to initialize TaskParser', { error: String(err) });
-        }
     }
 
     // ========== 生命周期 ==========
@@ -118,13 +99,6 @@ export class DataSync {
                 this.syncMessages(this.config.moduleKey),
                 this.syncModelEvents(),
             ]);
-
-            // 消息同步完成后，刷新任务数据
-            if (this.taskParser) {
-                this.taskParser.refreshTasks().catch(err => {
-                    logger.warn('[DataSync] Task refresh failed', { error: String(err) });
-                });
-            }
 
             logger.info(`[DataSync] Sync completed in ${Date.now() - start}ms`);
         } catch (error) {
@@ -210,7 +184,6 @@ export class DataSync {
 
             // 全量聚合所有批次的活动计数
             const allActivityMap = new Map<string, number>();
-            // 收集原始消息用于 SubagentEventParser
             const allRawMessages: CollectorMessage[] = [];
             // 收集所有批次的 session keys（用于一次性查询 session-agent 映射）
             const allSessionKeys = new Set<string>();
@@ -226,7 +199,6 @@ export class DataSync {
 
                 this.repository.updateSyncProgress('admin_messages');
 
-                // 收集原始消息（用于后续 SubagentEventParser）
                 allRawMessages.push(...data.messages);
 
                 // 收集 session keys 供后续一次性查询
@@ -275,20 +247,7 @@ export class DataSync {
                 logger.info(`[DataSync] Incremental stats: ${sessionUpdated} sessions, ${agentUpdated} agents`);
             }
 
-            // Subagent 事件解析（fire-and-forget，不阻塞主流程）
-            if (this.eventParser && totalSynced > 0) {
-                const rawMessages = allRawMessages;
-                const parser = this.eventParser;
-                const modKey = sourceModule;
-                // fire-and-forget：异步执行，不影响主流程
-                parser.parseBatch(rawMessages, modKey).then(stats => {
-                    if (stats.created > 0 || stats.updated > 0) {
-                        logger.info(`[DataSync] Subagent 事件处理: created=${stats.created}, updated=${stats.updated}, errors=${stats.errors}`);
-                    }
-                }).catch(err => {
-                    logger.warn('[DataSync] SubagentEventParser 异常', { error: err instanceof Error ? err.message : String(err) });
-                });
-            }
+
         } catch (error) {
             logger.error('[DataSync] Failed to sync messages', { error });
         }

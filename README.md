@@ -30,7 +30,6 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 |------|------|------|------|
 | **VIEW LAYER** | **ice-bubble-desktop** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus + Express），面向最终用户 |
 | **BIZ LAYER** | **ice-bubble-admin** | `1.0.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
-| **TASK LAYER** | **ice-bubble-task** | `1.0.0` | 任务管理（任务调度、状态追踪、结果存储） |
 | **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.0.0` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 |
 
 > DATA LAYER 设计为可插拔：未来新增数据源（如 WorkBuddy）只需实现标准接口的 Collector 即可。
@@ -76,10 +75,6 @@ ice-bubble/
 │   ├── config/
 │   ├── src/
 │   └── docs/
-├── ice-bubble-task/                   ← TASK LAYER：任务管理
-│   ├── README.md
-│   ├── config/
-│   └── src/
 ├── ice-bubble-collector-openclaw/     ← DATA LAYER：OpenClaw 数据采集器
 │   ├── README.md
 │   ├── config/
@@ -99,7 +94,6 @@ ice-bubble/
 |------|------|------|
 | desktop 后端 | 14000 | Express API 代理 |
 | admin | 13000 | 业务 API |
-| task | 13102 | 任务管理 API |
 | collector | 13100 | 数据采集 API |
 
 ## 快速开始
@@ -109,7 +103,6 @@ ice-bubble/
 ```
 1. collector-openclaw  (13100)  — 数据源，最先启动
 2. admin              (13000)  — 依赖 collector，提供业务 API
-3. task               (13102)  — 独立运行，依赖 admin 提供 agent 信息
 4. desktop            (14000)  — 代理层，聚合 admin + task 数据
 ```
 
@@ -122,19 +115,15 @@ cd ice-bubble-collector-openclaw && npm run dev
 # 2. 业务管理层（另起终端）
 cd ice-bubble-admin && npm run dev
 
-# 3. 任务管理层（另起终端）
-cd ice-bubble-task && npm run dev
-
 # 4. 桌面端（另起终端）
 cd ice-bubble-desktop && npm run dev:all
 ```
 
-> Desktop 的 Express 代理会自动将 `/api/tasks/*` 转发至 task 服务（13102），
-> 其他 `/api/*` 转发至 admin 服务（13000）。
+> Desktop 的 Express 代理会自动将所有 `/api/*` 转发至对应后端服务。
 
 ### 认证配置
 
-所有 API 服务（admin / collector / task）支持可选的 Bearer Token 认证。
+所有 API 服务（admin / collector）支持可选的 Bearer Token 认证。
 
 **配置方式（环境变量优先）：**
 

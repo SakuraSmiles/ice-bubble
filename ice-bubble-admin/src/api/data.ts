@@ -15,12 +15,12 @@ import { logger } from '../utils/index.js';
 import { DataRepository } from '../storage/data-repository.js';
 import type { AgentOverviewService } from '../data/agent-overview.js';
 import { TaskEnhancementStatus, normalizeAgentStatus, type TaskEnhancement } from '../data/agent-overview.js';
-import { getTasks } from './tasks.js';
+
 import type { Database } from 'better-sqlite3';
 
 export interface DataRouterConfig {
   repository: DataRepository;
-  /** Admin 数据库实例（用于直接查询 admin_tasks 表） */
+  /** Admin 数据库实例 */
   db: Database;
   /** Agent 概览聚合服务（可选，不提供则 /agents/overview 返回 503） */
   agentOverviewService?: AgentOverviewService;
@@ -383,16 +383,12 @@ export function createDataRouter(config: DataRouterConfig): Router {
 // ============================================================================
 
 /**
- * 获取指定 agent 的待办任务数（从本地 admin_tasks 表查询）
+ * 获取指定 agent 的待办任务数
+ * admin_tasks 表已删除（v19），subagent 任务改用 /api/subagent-tasks 查询
+ * 此处保留接口兼容性，始终返回 0
  */
-function getAgentPendingCount(db: Database, agentId: string): number {
-  try {
-    const tasks = getTasks(db, { agent_id: agentId, status: 'pending', limit: 1, offset: 0 });
-    return tasks.length;
-  } catch (err: any) {
-    logger.error(`[DataAPI] getAgentPendingCount error:`, err);
-    return 0;
-  }
+function getAgentPendingCount(_db: Database, _agentId: string): number {
+  return 0;
 }
 
 /**

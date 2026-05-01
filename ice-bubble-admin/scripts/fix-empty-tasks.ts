@@ -128,7 +128,7 @@ sqlite3 /mnt/d/workspace/ice-bubble/data/admin.db "SELECT id, title, status FROM
     task: `你是ice-bubble项目的测试工程师。对Task模块迁移到Admin的改动进行全面回归验证。
 
 ## 背景
-我们废弃了独立的ice-bubble-task模块，将任务数据合并到Admin中。改动涉及：
+我们将任务数据合并到Admin中（原独立 task 模块已废弃）。改动涉及：
 - admin_tool_calls表增加tool_name/tool_input列
 - 新增admin_tasks表
 - 新增task-parser（从sessions_spawn推导任务）
@@ -353,7 +353,7 @@ admin_tasks表的title字段直接存的是tool_input.task的完整第一行，�
 ## 当前title的几种格式（示例）
 1. \`# dev: admin API 合并逻辑 — getMessages / getMessagesTimeline / saveMessages\`
 2. \`## 任务：实现 Agent 状态系统\`
-3. \`[PARENT] 创建 ice-bubble-task 模块\`
+3. \`[PARENT] 创建任务模块\`
 4. \`[TODO] Desktop Overview 接入 Task API\`
 5. \`请实现任务展示优化，按最新一次任务分组展示。\`
 6. \`你是ice-bubble-admin的后端开发工程师。执行历史数据回填任务。\\n\\n## 任务：...\`

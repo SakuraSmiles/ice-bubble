@@ -1,26 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
-import { ADMIN_API_BASE } from '../../config';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { api, SubagentTaskDTO } from '../../api/client';
 
 // =========== DTO 接口 ===========
 
-interface AdminTaskItem {
+interface DisplayTask {
   id: string;
   title: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'timeout';
+  status: 'in_progress' | 'done' | 'todo';
   agent_id: string;
-  child_session_key: string;
-  run_id: string;
-  mode: string;
-  task_description: string;
+  spawned_by: string | null;
   created_at: string;
-  started_at: string;
-  completed_at: string;
+  message_count: number;
 }
 
 // =========== 状态 ===========
 
-const tasks = ref<AdminTaskItem[]>([]);
+const tasks = ref<DisplayTask[]>([]);
 const total = ref(0);
 const loading = ref(false);
 const expandedTaskId = ref<string | null>(null);
@@ -33,6 +29,26 @@ let allLoaded = false;
 // 30 秒自动刷新
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+// =========== 字段映射 ===========
+
+const STATUS_MAP: Record<string, DisplayTask['status']> = {
+  active: 'in_progress',
+  completed: 'done',
+  ended: 'done',
+};
+
+function mapTask(raw: SubagentTaskDTO): DisplayTask {
+  return {
+    id: raw.session_key,
+    title: raw.label || raw.session_key,
+    status: STATUS_MAP[raw.session_status] || 'todo',
+    agent_id: raw.agent_id,
+    spawned_by: raw.spawned_by,
+    created_at: raw.created_at,
+    message_count: raw.message_count,
+  };
+}
+
 // =========== 数据获取 ===========
 
 async function fetchTasks(append = false): Promise<void> {
@@ -41,13 +57,15 @@ async function fetchTasks(append = false): Promise<void> {
 
   loading.value = true;
   try {
-    const res = await fetch(`${ADMIN_API_BASE}/api/tasks?limit=${PAGE_SIZE}&offset=${append ? currentOffset : 0}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await api.fetchSubagentTasks({
+      limit: PAGE_SIZE,
+      offset: append ? currentOffset : 0,
+    });
+    const mapped = data.tasks.map(mapTask);
     if (append) {
-      tasks.value = [...tasks.value, ...data.tasks];
+      tasks.value = [...tasks.value, ...mapped];
     } else {
-      tasks.value = data.tasks;
+      tasks.value = mapped;
       currentOffset = 0;
     }
     total.value = data.total;
@@ -77,53 +95,43 @@ function onScroll(): void {
 // =========== 统计 ===========
 
 const stats = computed(() => {
-  let completed = 0, running = 0, queued = 0, failed = 0, timeout = 0;
+  let completed = 0, running = 0, queued = 0;
   for (const t of tasks.value) {
     switch (t.status) {
-      case 'completed': completed++; break;
-      case 'running': running++; break;
-      case 'queued': queued++; break;
-      case 'failed': failed++; break;
-      case 'timeout': timeout++; break;
+      case 'done': completed++; break;
+      case 'in_progress': running++; break;
+      case 'todo': queued++; break;
     }
   }
-  return { completed, running, queued, failed, timeout, total: tasks.value.length };
+  return { completed, running, queued, total: tasks.value.length };
 });
-
-import { computed } from 'vue';
 
 // =========== 工具函数 ===========
 
 function statusIcon(status: string): string {
   switch (status) {
-    case 'completed': return '✓';
-    case 'running':   return '↻';
-    case 'queued':    return '◷';
-    case 'failed':    return '✗';
-    case 'timeout':   return '⏱';
-    default:          return '?';
+    case 'done': return '✓';
+    case 'in_progress': return '↻';
+    case 'todo': return '◷';
+    default: return '?';
   }
 }
 
 function statusTagType(status: string): '' | 'success' | 'primary' | 'info' | 'danger' | 'warning' {
   switch (status) {
-    case 'completed': return 'success';
-    case 'running':   return 'primary';
-    case 'queued':    return 'info';
-    case 'failed':    return 'danger';
-    case 'timeout':   return 'warning';
-    default:          return '';
+    case 'done': return 'success';
+    case 'in_progress': return 'primary';
+    case 'todo': return 'info';
+    default: return '';
   }
 }
 
 function statusLabel(status: string): string {
   switch (status) {
-    case 'completed': return '完成';
-    case 'running':   return '运行中';
-    case 'queued':    return '排队';
-    case 'failed':    return '失败';
-    case 'timeout':   return '超时';
-    default:          return status;
+    case 'done': return '完成';
+    case 'in_progress': return '进行中';
+    case 'todo': return '待处理';
+    default: return status;
   }
 }
 
@@ -206,12 +214,13 @@ onUnmounted(() => {
         </div>
 
         <div v-if="expandedTaskId === task.id" class="task-detail">
-          <div class="detail-label">描述</div>
-          <div class="detail-text">{{ task.task_description || '暂无描述' }}</div>
+          <div class="detail-label">详情</div>
+          <div class="detail-text">{{ task.title }}</div>
           <div class="detail-meta">
             <span>Agent: {{ task.agent_id }}</span>
+            <span v-if="task.spawned_by">派发: {{ task.spawned_by }}</span>
+            <span>消息数: {{ task.message_count }}</span>
             <span>创建: {{ formatTime(task.created_at) }}</span>
-            <span v-if="task.completed_at">完成: {{ formatTime(task.completed_at) }}</span>
           </div>
         </div>
       </template>

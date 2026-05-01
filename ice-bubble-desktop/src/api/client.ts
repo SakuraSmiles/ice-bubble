@@ -217,6 +217,28 @@ export interface ParentTaskDTO {
   agent_groups: AgentGroupDTO[];
 }
 
+// ============ Subagent Task DTO ============
+
+export interface SubagentTaskDTO {
+  session_key: string;
+  label: string | null;
+  agent_id: string;
+  session_status: string;
+  spawned_by: string | null;
+  spawn_depth: number | null;
+  created_at: string;
+  last_message_at: string | null;
+  message_count: number;
+}
+
+export interface SubagentTasksResponseDTO {
+  count: number;
+  total: number;
+  limit: number;
+  offset: number;
+  tasks: SubagentTaskDTO[];
+}
+
 // ============ 内部工具 ============
 
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
@@ -363,5 +385,12 @@ export const api = {
     return fetchJson<TokenSummaryResponseDTO>(`/agents/token-summary${query}`);
   },
 
+  // Subagent 任务
+  fetchSubagentTasks: (params?: { limit?: number; offset?: number }) => {
+    const query = params ? '?' + new URLSearchParams(
+      Object.entries(params).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {})
+    ).toString() : '';
+    return fetchJson<SubagentTasksResponseDTO>(`/subagent-tasks${query}`);
+  },
 
 };

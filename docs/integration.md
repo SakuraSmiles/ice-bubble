@@ -15,7 +15,6 @@ ice-bubble 采用模块化架构，新增模块只需实现标准接口即可接
 | moduleType | 说明 | 示例 |
 |------------|------|------|
 | `collector` | 数据采集模块 | ice-bubble-collector-openclaw |
-| `task` | 任务管理模块 | ice-bubble-task |
 | `admin` | 核心管理模块 | ice-bubble-admin（系统内置，不可删除） |
 | `custom` | 自定义模块 | 第三方扩展模块 |
 

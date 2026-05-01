@@ -16,7 +16,7 @@ import { DBManager } from './storage/db-manager.js';
 import { ModuleRepository } from './storage/module-repository.js';
 import { DataRepository } from './storage/data-repository.js';
 import { createResourcesRouter } from './api/resources.js';
-import { createTasksRouter } from './api/tasks.js';
+import { createSubagentTasksRouter } from './api/tasks.js';
 import { DataSync } from './data/data-sync.js';
 import { AgentOverviewService } from './data/agent-overview.js';
 import { CollectorClient } from './data/collector-client.js';
@@ -56,8 +56,6 @@ interface DataSyncConfig {
   moduleKey?: string;
   pollInterval?: number;
   batchSize?: number;
-  taskApiBaseUrl?: string;
-  subagentParserEnabled?: boolean;
 }
 
 interface GatewayConfig {
@@ -154,7 +152,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = process.env.ADMIN_DB_PATH || join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(18);  // 执行数据库迁移（v18: admin_sessions 新增 label/session_status/model 等字段）
+    await dbManager.migrate(19);  // 执行数据库迁移（v19: 删除 admin_tasks 表）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 
@@ -193,8 +191,6 @@ export async function startAdmin(): Promise<void> {
         moduleKey: dataSyncConfig.moduleKey || 'collector-openclaw',
         pollInterval: dataSyncConfig.pollInterval || 60000,
         batchSize: dataSyncConfig.batchSize || 500,
-        taskApiBaseUrl: dataSyncConfig.taskApiBaseUrl,
-        subagentParserEnabled: dataSyncConfig.subagentParserEnabled,
       },
       dataRepository
     );
@@ -218,7 +214,7 @@ export async function startAdmin(): Promise<void> {
     }));
     app.use('/api/modules', createModulesRouter(scheduler));
     app.use('/api/resources', createResourcesRouter(dataRepository));
-    app.use('/api/tasks', createTasksRouter({ db: dbManager.getConnection() }));
+    app.use('/api/subagent-tasks', createSubagentTasksRouter({ db: dbManager.getConnection() }));
 
     // ── Chat Gateway Integration (B7) ──
     const gwConfig = configData.gateway || {};

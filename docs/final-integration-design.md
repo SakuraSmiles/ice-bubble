@@ -60,8 +60,7 @@ Collector SQLite
 └──────────────────┬───────────────────────────────────┘
                    │
                    ▼
-         ice-bubble-task API (SQLite)
-         端口：13102
+         Admin Task API (内置于 Admin)
 ```
 
 ---
@@ -94,7 +93,6 @@ Collector SQLite
 ```json
 {
     "dataSync": {
-        "taskApiBaseUrl": "http://localhost:13102",
         "subagentParserEnabled": true
     }
 }
@@ -511,10 +509,9 @@ function idempotencyKey(messageId: number, eventType: string): string {
            │                          │
            ▼                          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 5: Task API (ice-bubble-task, port 13102)                  │
+│ Step 5: Admin Task API（内置）                                   │
 │   POST /api/tasks          → 创建任务                            │
 │   PATCH /api/tasks/:id/status → 更新状态                         │
-│   不可用时 → TaskClient 静默降级（60s 缓存）                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

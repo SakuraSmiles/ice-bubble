@@ -38,7 +38,7 @@ DataSync.syncMessages()     ← 现有逻辑，批量同步
            │ POST /api/tasks
            │ PATCH /api/tasks/:id/status
            ▼
-    ice-bubble-task  API (SQLite)
+    Admin Task API (内置于 Admin)
 ```
 
 ### 关键设计决策
@@ -379,7 +379,7 @@ import { TaskClient } from './task-client.js';
 // 在构造函数中初始化
 constructor(config: Partial<DataSyncConfig>, repository: DataRepository) {
     // ... 现有代码 ...
-    const taskApiBase = config.taskApiBaseUrl ?? 'http://localhost:13102';
+    // Task API 已内置于 Admin，无需外部连接
     this.taskClient = new TaskClient(taskApiBase);
     this.eventParser = new SubagentEventParser(this.taskClient);
 }
@@ -495,8 +495,8 @@ private async syncMessages(sourceModule: string): Promise<void> {
 // DataSyncConfig 增加字段
 export interface DataSyncConfig {
     // ... 现有字段 ...
-    /** Task API base URL（默认 http://localhost:13102）*/
-    taskApiBaseUrl?: string;
+    /** Task API 已内置于 Admin */
+    taskApiBaseUrl?: string; // deprecated: no longer needed
     /** 是否启用 subagent 事件解析（默认 true） */
     subagentParserEnabled?: boolean;
 }
@@ -510,7 +510,6 @@ export interface DataSyncConfig {
         "moduleKey": "collector-openclaw",
         "pollInterval": 60000,
         "batchSize": 500,
-        "taskApiBaseUrl": "http://localhost:13102",
         "subagentParserEnabled": true
     }
 }

@@ -1247,6 +1247,45 @@ export class DataRepository {
   }
 
   /**
+   * 获取子 agent 任务列表（spawn_depth > 0 的 session）
+   */
+  getSubagentTasks(params: {
+    limit?: number;
+    offset?: number;
+    agent_id?: string;
+    status?: string;
+  } = {}): { tasks: Array<Pick<AdminSession, 'session_key' | 'label' | 'agent_id' | 'session_status' | 'spawned_by' | 'spawn_depth' | 'created_at' | 'last_message_at' | 'first_message_at' | 'message_count'>>; total: number } {
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+
+    const conditions: string[] = ['spawn_depth IS NOT NULL AND spawn_depth > 0'];
+    const values: unknown[] = [];
+
+    if (params.agent_id) {
+      conditions.push('agent_id = ?');
+      values.push(params.agent_id);
+    }
+    if (params.status) {
+      conditions.push('session_status = ?');
+      values.push(params.status);
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+    const countRow = this.db.prepare(`SELECT COUNT(*) as total FROM admin_sessions ${whereClause}`).get(...values) as { total: number };
+
+    const rows = this.db.prepare(`
+      SELECT session_key, label, agent_id, session_status, spawned_by, spawn_depth,
+             created_at, last_message_at, first_message_at, message_count
+      FROM admin_sessions ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...values, limit, offset) as Array<Pick<AdminSession, 'session_key' | 'label' | 'agent_id' | 'session_status' | 'spawned_by' | 'spawn_depth' | 'created_at' | 'last_message_at' | 'first_message_at' | 'message_count'>>;
+
+    return { tasks: rows, total: countRow.total };
+  }
+
+  /**
    * 获取按 agent 分组的 sessions（用于 Desktop 下拉列表）
    * @param limitPerAgent 每个 agent 最多返回的 session 数量
    */

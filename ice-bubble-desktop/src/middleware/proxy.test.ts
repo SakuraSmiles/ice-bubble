@@ -59,8 +59,8 @@ function withSocketEvents(events: Array<{ type: 'data' | 'end' | 'error' | 'time
 function makeMockReq(overrides: Partial<Request> = {}): Partial<Request> {
   return {
     method: 'GET',
-    originalUrl: '/api/tasks/list',
-    url: '/api/tasks/list',
+    originalUrl: '/api/agents',
+    url: '/api/agents',
     headers: { host: 'localhost:14000' },
     body: undefined,
     ...overrides
@@ -107,7 +107,7 @@ describe('createProxyMiddleware - 模块未找到', () => {
 
 describe('createProxyMiddleware - 模块已禁用', () => {
   beforeEach(() => {
-    mockFindModuleByPath.mockReturnValue({ key: 'task', name: 'Task', url: 'http://localhost:14000', enabled: false });
+    mockFindModuleByPath.mockReturnValue({ key: 'desktop', name: 'Desktop', url: 'http://localhost:14000', enabled: false });
     mockSocketWrite.mockReset();
     mockSocketDestroy.mockReset();
     capturedSocket = null;
@@ -120,13 +120,13 @@ describe('createProxyMiddleware - 模块已禁用', () => {
     const res = makeMockRes();
     await middleware(req as Request, res as unknown as Response);
     expect(res._status).toBe(503);
-    expect(res._data).toEqual({ error: 'Module task is disabled' });
+    expect(res._data).toEqual({ error: 'Module desktop is disabled' });
   });
 });
 
 describe('createProxyMiddleware - 正常转发', () => {
   beforeEach(() => {
-    mockFindModuleByPath.mockReturnValue({ key: 'task', name: 'Task', url: 'http://localhost:14000', enabled: true });
+    mockFindModuleByPath.mockReturnValue({ key: 'desktop', name: 'Desktop', url: 'http://localhost:14000', enabled: true });
     mockSocketWrite.mockReset();
     mockSocketDestroy.mockReset();
     capturedSocket = null;
@@ -134,14 +134,14 @@ describe('createProxyMiddleware - 正常转发', () => {
   });
 
   it('请求正确转发并返回 JSON 响应', async () => {
-    const httpResp = buildHttpResponse(200, 'application/json', '{"tasks":[]}');
+    const httpResp = buildHttpResponse(200, 'application/json', '{"agents":[]}');
     withSocketEvents([
       { type: 'data', payload: httpResp, delay: 15 },
       { type: 'end', delay: 20 }
     ]);
 
     const middleware = createProxyMiddleware();
-    const req = makeMockReq({ originalUrl: '/api/tasks/list', url: '/api/tasks/list' });
+    const req = makeMockReq({ originalUrl: '/api/agents', url: '/api/agents' });
     const res = makeMockRes();
 
     const promise = middleware(req as Request, res as unknown as Response);
@@ -162,9 +162,9 @@ describe('createProxyMiddleware - 正常转发', () => {
     const middleware = createProxyMiddleware();
     const req = makeMockReq({
       method: 'POST',
-      originalUrl: '/api/tasks/create',
-      url: '/api/tasks/create',
-      body: { name: 'test' }
+      originalUrl: '/api/sessions',
+      url: '/api/sessions',
+      body: { agentId: 'test' }
     });
     const res = makeMockRes();
 
@@ -178,7 +178,7 @@ describe('createProxyMiddleware - 正常转发', () => {
 
 describe('createProxyMiddleware - 错误处理', () => {
   beforeEach(() => {
-    mockFindModuleByPath.mockReturnValue({ key: 'task', name: 'Task', url: 'http://localhost:14000', enabled: true });
+    mockFindModuleByPath.mockReturnValue({ key: 'desktop', name: 'Desktop', url: 'http://localhost:14000', enabled: true });
     mockSocketWrite.mockReset();
     mockSocketDestroy.mockReset();
     capturedSocket = null;
@@ -191,7 +191,7 @@ describe('createProxyMiddleware - 错误处理', () => {
     ]);
 
     const middleware = createProxyMiddleware();
-    const req = makeMockReq({ originalUrl: '/api/tasks/list', url: '/api/tasks/list' });
+    const req = makeMockReq({ originalUrl: '/api/agents', url: '/api/agents' });
     const res = makeMockRes();
 
     const promise = middleware(req as Request, res as unknown as Response);
@@ -199,7 +199,7 @@ describe('createProxyMiddleware - 错误处理', () => {
     await promise;
 
     expect(res._status).toBe(502);
-    expect(res._data).toEqual({ error: 'Failed to reach task' });
+    expect(res._data).toEqual({ error: 'Failed to reach desktop' });
   });
 
   it('Socket 超时时返回 502 并销毁 socket', async () => {
@@ -208,7 +208,7 @@ describe('createProxyMiddleware - 错误处理', () => {
     ]);
 
     const middleware = createProxyMiddleware();
-    const req = makeMockReq({ originalUrl: '/api/tasks/list', url: '/api/tasks/list' });
+    const req = makeMockReq({ originalUrl: '/api/agents', url: '/api/agents' });
     const res = makeMockRes();
 
     const promise = middleware(req as Request, res as unknown as Response);

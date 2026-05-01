@@ -586,7 +586,6 @@ describe('DataSync', () => {
       }));
 
       const sync = new DataSyncClass({
-        taskApiBaseUrl: 'http://localhost:13102',
         subagentParserEnabled: true,
       }, repository);
 
@@ -607,7 +606,6 @@ describe('DataSync', () => {
       }));
 
       const sync = new DataSyncClass({
-        taskApiBaseUrl: 'http://localhost:13102',
         subagentParserEnabled: false,
       }, repository);
 

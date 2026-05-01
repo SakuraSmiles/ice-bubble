@@ -948,6 +948,11 @@ export class DBManager {
           logger.info('Migration v18: added session metadata columns to admin_sessions');
         }
         break;
+      case 19:
+        // v19: 删除 admin_tasks 表（已用 subagent session 替代）
+        this.db.exec(`DROP TABLE IF EXISTS admin_tasks`);
+        logger.info('Migration v19: dropped admin_tasks table');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }
