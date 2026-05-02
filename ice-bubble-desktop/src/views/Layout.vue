@@ -1,24 +1,110 @@
 <script setup lang="ts">
-import { provide, ref } from 'vue';
+import { provide, ref, onMounted, onUnmounted } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
+import SubSessionList from './components/SubSessionList.vue';
+import { gatewayClient } from '@/services/gateway-client';
 
 const route = useRoute();
+
+// GatewayClient 连接状态
+const gatewayConnected = ref(false);
+const gatewayInitError = ref<string | null>(null);
 
 // 全局连接状态，供子视图使用
 const isAdminConnected = ref(true);
 provide('isAdminConnected', isAdminConnected);
+provide('gatewayConnected', gatewayConnected);
+
+// 初始化 GatewayClient
+onMounted(async () => {
+  try {
+    await gatewayClient.connect();
+    gatewayConnected.value = true;
+    gatewayInitError.value = null;
+  } catch (e) {
+    gatewayConnected.value = false;
+    gatewayInitError.value = e instanceof Error ? e.message : 'Gateway 连接失败';
+    console.warn('[Layout] Gateway 连接失败，降级到轮询模式:', e);
+  }
+
+  // 监听连接状态变化
+  gatewayClient.on('connect', () => {
+    gatewayConnected.value = true;
+    gatewayInitError.value = null;
+  });
+  gatewayClient.on('disconnect', () => {
+    gatewayConnected.value = false;
+  });
+});
+
+onUnmounted(() => {
+  gatewayClient.disconnect();
+});
 
 const menuItems = [
   { path: '/', label: '工作台' },
   { path: '/agents', label: '成员' },
-  { path: '/sessions', label: '会话' },
   { path: '/modules', label: '模块' },
 ];
+
+// ========== 侧栏拖拽调整宽度 ==========
+const SIDEBAR_MIN = 160;
+const SIDEBAR_MAX = 360;
+const STORAGE_KEY = 'ice-bubble-sidebar-width';
+
+const sidebarWidth = ref(loadWidth());
+
+function loadWidth(): number {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const w = parseInt(saved, 10);
+      if (w >= SIDEBAR_MIN && w <= SIDEBAR_MAX) return w;
+    }
+  } catch { /* ignore */ }
+  return 200;
+}
+
+function saveWidth(w: number) {
+  try { localStorage.setItem(STORAGE_KEY, String(w)); } catch { /* ignore */ }
+}
+
+let isResizing = false;
+
+function onResizeStart(e: MouseEvent) {
+  e.preventDefault();
+  isResizing = true;
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  document.addEventListener('mousemove', onResizeMove);
+  document.addEventListener('mouseup', onResizeEnd);
+}
+
+function onResizeMove(e: MouseEvent) {
+  if (!isResizing) return;
+  const newWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, e.clientX));
+  sidebarWidth.value = newWidth;
+}
+
+function onResizeEnd() {
+  if (!isResizing) return;
+  isResizing = false;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  document.removeEventListener('mousemove', onResizeMove);
+  document.removeEventListener('mouseup', onResizeEnd);
+  saveWidth(sidebarWidth.value);
+}
+
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onResizeMove);
+  document.removeEventListener('mouseup', onResizeEnd);
+});
 </script>
 
 <template>
   <div class="layout">
-    <aside class="sidebar">
+    <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
       <div class="sidebar-header">
         <div class="logo">IceBubble</div>
         <div class="subtitle">DESKTOP</div>
@@ -39,9 +125,6 @@ const menuItems = [
             <svg v-else-if="item.path === '/modules'" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <path d="M1 2.5A1.5 1.5 0 012.5 1h3A1.5 1.5 0 017 2.5v3A1.5 1.5 0 015.5 7h-3A1.5 1.5 0 011 5.5v-3zM2.5 2a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM0 13.5A1.5 1.5 0 011.5 12h3A1.5 1.5 0 016 13.5v1.5A1.5 1.5 0 014.5 16.5h-3A1.5 1.5 0 010 15v-1.5zm1.5-.5a.5.5 0 00-.5.5v1.5a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-1.5a.5.5 0 00-.5-.5h-3zm7.5 0a.5.5 0 00-.5.5v1.5a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-1.5a.5.5 0 00-.5-.5h-3z"/>
             </svg>
-            <svg v-else-if="item.path === '/sessions'" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M2.5 3.5a.5.5 0 01.5-.5H13a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0 4a.5.5 0 01.5-.5h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0 4a.5.5 0 01.5-.5h6a.5.5 0 010 1H3a.5.5 0 01-.5-.5z"/>
-            </svg>
             <svg v-else-if="item.path === '/agents'" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 3.5c.83 0 1.5-.67 1.5-1.5S3.83 8.5 3 8.5 1.5 9.17 1.5 10s.67 1.5 1.5 1.5zm5 0c.83 0 1.5-.67 1.5-1.5S8.83 8.5 8 8.5 6.5 9.17 6.5 10s.67 1.5 1.5 1.5zm-3 3a4 4 0 01-4 0c0-1.5.5-3 2-4.5V13h8v-1.5c1.5 1.5 2 3 2 4.5a4 4 0 01-4 0z"/>
             </svg>
@@ -49,7 +132,23 @@ const menuItems = [
           <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
       </nav>
+
+      <div class="sidebar-divider"></div>
+
+      <SubSessionList />
     </aside>
+
+    <!-- 拖拽调整手柄 -->
+    <div class="resize-handle" @mousedown="onResizeStart">
+      <svg width="3" height="40" viewBox="0 0 3 40" class="resize-grip">
+        <line x1="1.5" y1="2" x2="1.5" y2="5" />
+        <line x1="1.5" y1="9" x2="1.5" y2="12" />
+        <line x1="1.5" y1="16" x2="1.5" y2="19" />
+        <line x1="1.5" y1="23" x2="1.5" y2="26" />
+        <line x1="1.5" y1="30" x2="1.5" y2="33" />
+        <line x1="1.5" y1="37" x2="1.5" y2="38" />
+      </svg>
+    </div>
 
     <main class="main-content">
       <RouterView />
@@ -60,23 +159,28 @@ const menuItems = [
 <style scoped>
 .layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* ====== 侧栏 ====== */
 .sidebar {
-  width: 200px;
-  background: var(--color-bg);
-  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-canvas);
+  border-right: none;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  height: 100vh;
+  overflow: hidden;
+  box-shadow: 1px 0 0 var(--color-border-subtle);
 }
 
 .sidebar-header {
   padding: 10px 16px;
   text-align: center;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
 }
 
 .logo {
@@ -96,11 +200,18 @@ const menuItems = [
 }
 
 .sidebar-nav {
-  flex: 1;
+  flex: 0 0 auto;
   padding: 16px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--color-border-subtle);
+  margin: 0 12px;
+  flex-shrink: 0;
 }
 
 .nav-item {
@@ -152,48 +263,36 @@ const menuItems = [
   flex: 1;
 }
 
-.sidebar-footer {
-  padding: 12px 16px;
-  border-top: 1px solid var(--color-border);
-}
-
-.footer-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.version {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-}
-
-.settings-btn {
+/* ====== 拖拽手柄 ====== */
+.resize-handle {
+  width: 12px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-bg);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-.settings-btn:hover {
-  background: var(--color-bg-subtle);
-  color: var(--color-text);
-  border-color: var(--color-text-secondary);
+.resize-grip {
+  stroke: var(--color-border);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition: stroke 0.15s;
 }
 
+.resize-handle:hover .resize-grip,
+.resize-handle:active .resize-grip {
+  stroke: var(--color-accent-blue);
+}
+
+/* ====== 主内容区 ====== */
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-subtle);
+  background: var(--color-bg);
   overflow: hidden;
 }
 </style>

@@ -46,6 +46,8 @@ const {
   error,
   send: chatSend,
   abort: chatAbort,
+  connectSSE,
+  disconnectSSE,
   loadHistory,
 } = useChat(() => currentSessionKey.value)
 
@@ -65,8 +67,23 @@ const selectorSessions = computed<SelectorSessionItem[]>(() =>
     title: s.label,
     agentName: s.agentName ?? null,
     lastMessage: s.lastMessage ?? null,
+    sessionStatus: s.sessionStatus ?? null,
   })),
 )
+
+/** 当前选中 session 的状态 */
+const currentSessionStatus = computed(() => {
+  const s = chatStore.sessions.find((s) => s.sessionKey === currentSessionKey.value)
+  return s?.sessionStatus ?? null
+})
+
+/** 输入框是否可用：只有 running（进行中）的会话可以发消息 */
+const inputEnabled = computed(() => {
+  // 默认主会话总是可用
+  if (currentSessionKey.value === 'agent:main:main') return true
+  // 非主会话：只有 status 为 running 或未设置时可用（历史 session 可能没有 status 字段）
+  return currentSessionStatus.value !== 'done'
+})
 
 
 
@@ -112,9 +129,10 @@ const displayMessages = computed(() => {
 watch(currentSessionKey, async (newKey, oldKey) => {
   if (!newKey || newKey === oldKey) return
 
-  // 切换 session 时，useChat 内部会 disconnectSSE，
-  // 这里加载历史并重新连接。
+  // 切换 session 时断开旧 SSE，加载历史后重新连接
+  disconnectSSE()
   await loadHistory(newKey)
+  connectSSE()
 
   // 滚动到底部
   await nextTick()
@@ -172,6 +190,8 @@ onMounted(async () => {
   // 加载初始历史消息
   if (currentSessionKey.value) {
     await loadHistory(currentSessionKey.value)
+    // 建立 SSE 连接，实时接收新消息
+    connectSSE()
   }
 })
 </script>
@@ -228,11 +248,11 @@ onMounted(async () => {
     <!-- ========== 底部：消息输入 + Session 选择器 ========== -->
     <footer class="chat-footer">
       <MessageInput
-        :disabled="false"
+        :disabled="!inputEnabled"
         :loading="sending"
         :streaming="streaming"
         :target-session-key="currentSessionKey"
-        placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+        :placeholder="inputEnabled ? '输入消息，Enter 发送，Shift+Enter 换行' : '此会话已完成，不可发送消息'"
         @send="handleSend"
         @abort="handleAbort"
       />

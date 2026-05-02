@@ -18,6 +18,7 @@ export interface SessionItem {
   title?: string
   agentName?: string | null
   lastMessage?: string | null
+  sessionStatus?: string | null
 }
 
 // ============ Props / Emits ============

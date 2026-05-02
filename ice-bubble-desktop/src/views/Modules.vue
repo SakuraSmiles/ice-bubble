@@ -542,12 +542,11 @@ onUnmounted(() => {
 <style scoped>
 .modules-page {
   width: 100%;
-  max-width: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0 32px;
   box-sizing: border-box;
-  min-height: calc(100vh - 1px);
+  height: 100%;
+  overflow: hidden;
 }
 
 .header-actions {
@@ -593,7 +592,8 @@ onUnmounted(() => {
 
 .content-wrapper {
   flex: 1;
-  padding-bottom: 20px;
+  min-height: 0;
+  padding: 0 24px 8px;
 }
 
 .cards-grid {

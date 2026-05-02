@@ -511,6 +511,9 @@ export class SQLiteManager {
             guildId: row.guild_id as string | undefined,
             createdAt: new Date(row.created_at as string | number | Date),
             updatedAt: new Date(row.updated_at as string | number | Date),
+            // 聚合字段（从子查询获取）
+            message_count: (row.message_count as number) ?? 0,
+            last_message_at: row.last_message_at as string | null,
             // sessions.json 同步字段
             label: row.label as string | undefined,
             status: row.status as string | undefined,
@@ -1109,17 +1112,20 @@ export class SQLiteManager {
             const offset = params.offset ?? 0;
 
             let countSql = `SELECT COUNT(*) as count FROM sessions`;
-            let dataSql = `SELECT * FROM sessions`;
+            let dataSql = `SELECT s.*,
+                  (SELECT COUNT(*) FROM session_messages sm WHERE sm.session_key = s.session_key) as message_count,
+                  (SELECT MAX(sm.timestamp) FROM session_messages sm WHERE sm.session_key = s.session_key) as last_message_at
+                FROM sessions s`;
             const dataParams: unknown[] = [];
 
             if (params.since) {
-                const sinceClause = ` WHERE updated_at >= ?`;
+                const sinceClause = ` WHERE s.updated_at >= ?`;
                 countSql += sinceClause;
                 dataSql += sinceClause;
                 dataParams.push(params.since);
             }
 
-            dataSql += ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`;
+            dataSql += ` ORDER BY s.updated_at DESC LIMIT ? OFFSET ?`;
             dataParams.push(limit, offset);
 
             const countStmt = this.db.prepare(countSql);

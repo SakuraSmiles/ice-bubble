@@ -334,14 +334,14 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
     </PageHeader>
 
     <div v-loading="loading" class="content-wrapper">
-      <EmptyState v-if="agents.length === 0 && !loading" title="暂无成员" icon="👤" />
+        <EmptyState v-if="agents.length === 0 && !loading" title="暂无成员" icon="👤" />
 
-      <!-- 加载骨架屏：成员卡片骨架 -->
-      <div v-if="agents.length === 0 && loading" class="loading-skeleton-area">
-        <LoadingSkeleton type="card" :rows="1" height="140px" v-for="i in 4" :key="i" />
-      </div>
+        <!-- 加载骨架屏：成员卡片骨架 -->
+        <div v-if="agents.length === 0 && loading" class="loading-skeleton-area">
+          <LoadingSkeleton type="card" :rows="1" height="140px" v-for="i in 4" :key="i" />
+        </div>
 
-      <div v-if="agents.length > 0" class="cards-grid">
+        <div v-if="agents.length > 0" class="cards-grid">
         <el-card v-for="agent in agents" :key="agent.agent_id" class="agent-card">
           <div class="card-content">
           <!-- 左侧信息 -->
@@ -485,17 +485,34 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
 <style scoped>
 .agents-page {
   width: 100%;
-  max-width: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0 32px;
-  box-sizing: border-box;
-  min-height: calc(100vh - 1px);
+  height: 100%;
+  overflow: hidden;
 }
 
 .content-wrapper {
   flex: 1;
-  padding: 0 0 20px 0;
+  min-height: 0;
+  padding: 8px 24px 0;
+  overflow-y: auto;
+}
+
+.content-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.content-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.content-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(144, 147, 153, 0.3);
+  border-radius: 3px;
+}
+
+.content-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(144, 147, 153, 0.5);
 }
 
 .empty-msg {

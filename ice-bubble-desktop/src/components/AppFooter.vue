@@ -17,6 +17,7 @@ const version = pkg.version;
   color: var(--color-text-secondary);
   padding: 20px 0;
   margin-top: auto;
+  margin-bottom: 10px;
   font-family: var(--font-eurostile), var(--font-fallback);
 }
 

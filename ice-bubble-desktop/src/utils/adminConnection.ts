@@ -49,6 +49,7 @@ class AdminConnection {
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private subscribers: Set<StateChangeCallback> = new Set();
   private currentUrl: string = '';
+  private autoDetecting = false;
 
   constructor() {
     this.loadConfig();
@@ -64,12 +65,38 @@ class AdminConnection {
         this.currentUrl = this.config!.url;
         // 有配置则尝试检测连接
         this.detectConnection();
-      } else {
-        this.state = 'UNCONFIGURED';
+        return;
       }
     } catch {
       this.config = null;
-      this.state = 'UNCONFIGURED';
+    }
+
+    // 无配置：尝试默认地址自动检测（不保存到 localStorage，直到用户确认）
+    this.currentUrl = 'http://localhost:13000';
+    this.autoDetectDefault();
+  }
+
+  /** 无配置时自动检测默认地址，成功则静默连接 */
+  private async autoDetectDefault(): Promise<void> {
+    // 防止重复检测（destroy 后重新创建等场景）
+    if (this.autoDetecting) return;
+    this.autoDetecting = true;
+    this.setState('CONFIGURING');
+    try {
+      await fetchAdminApi<any>('/stats');
+      // 默认地址可连接，自动保存并上线
+      this.saveConfig(this.currentUrl);
+      this.setState('CONNECTED');
+      this.startHealthCheck();
+    } catch {
+      // 默认地址不可用，回退到未配置状态，等待用户手动输入
+      // 但保留空字符串，不要污染 currentUrl
+      if (this.state === 'CONFIGURING') {
+        this.currentUrl = '';
+        this.setState('UNCONFIGURED');
+      }
+    } finally {
+      this.autoDetecting = false;
     }
   }
 
@@ -227,6 +254,7 @@ class AdminConnection {
    * 销毁，清理定时器
    */
   destroy(): void {
+    this.autoDetecting = false;
     this.stopHealthCheck();
     this.subscribers.clear();
   }

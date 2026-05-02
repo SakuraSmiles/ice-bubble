@@ -277,6 +277,53 @@ export class DataRepository {
     return row ?? null;
   }
 
+  /**
+   * 解析 Gateway 格式的 session key，返回匹配的 SQLite session key
+   *
+   * Gateway key 格式: agent:{agentId}:{slug} (如 agent:dev:subagent:UUID, agent:main:main)
+   * SQLite key 格式: agent:{agentId}:{channel}:{workspace}:{chatType}:{UUID}
+   *
+   * 匹配策略:
+   * 1. 直接匹配
+   * 2. UUID 提取 + LIKE 模糊匹配
+   * 3. agent_id 提取 + 按 agent_id 查找最新 session（用于 agent:main:main 等非 UUID 格式）
+   *
+   * @param sessionKey - Gateway 格式的 session key
+   * @returns 匹配的 SQLite session key 数组（可能为空）
+   */
+  resolveSessionKey(sessionKey: string): string[] {
+    // 1. 先尝试直接匹配
+    const direct = this.db.prepare('SELECT session_key FROM admin_sessions WHERE session_key = ?').get(sessionKey);
+    if (direct) return [sessionKey];
+
+    // 解析 agentId: agent:{agentId}:{slug}
+    const parts = sessionKey.split(':');
+    const agentId = parts.length >= 2 ? parts[1] : '';
+
+    // 2. 提取 UUID 并模糊匹配
+    const uuidMatch = sessionKey.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+    if (uuidMatch) {
+      const uuid = uuidMatch[1];
+      const rows = this.db.prepare(
+        "SELECT session_key FROM admin_sessions WHERE session_key LIKE ? AND session_key NOT LIKE '%.trajectory'"
+      ).all(`%${uuid}%`) as { session_key: string }[];
+      if (rows.length > 0) return rows.map(r => r.session_key);
+    }
+
+    // 3. 非 UUID 格式（如 agent:main:main）: 按 agent_id 查找所有非 trajectory session
+    if (agentId) {
+      const rows = this.db.prepare(
+        `SELECT session_key FROM admin_sessions
+         WHERE agent_id = ? AND session_key NOT LIKE '%.trajectory'
+         ORDER BY last_message_at DESC NULLS LAST
+         LIMIT 50`
+      ).all(agentId) as { session_key: string }[];
+      if (rows.length > 0) return rows.map(r => r.session_key);
+    }
+
+    return [];
+  }
+
   // ========== Token Summary ==========
 
   /**
@@ -779,7 +826,24 @@ export class DataRepository {
       }
     }
 
+    // 预解析 session_key（Gateway 格式 → SQLite 格式），供 content 和 tool 查询共享
+    let resolvedSessionKeys: string[] | undefined;
     if (params.session_key) {
+      resolvedSessionKeys = this.resolveSessionKey(params.session_key);
+    }
+
+    if (params.session_key && resolvedSessionKeys) {
+      if (resolvedSessionKeys.length === 1) {
+        contentConditions.push('m.session_key = ?');
+        values.push(resolvedSessionKeys[0]);
+      } else {
+        const nonTrajectory = resolvedSessionKeys.filter(k => !k.endsWith('.trajectory'));
+        const keys = nonTrajectory.length > 0 ? nonTrajectory : resolvedSessionKeys;
+        contentConditions.push(`m.session_key IN (${keys.map(() => '?').join(', ')})`);
+        values.push(...keys);
+      }
+    } else if (params.session_key) {
+      // 未匹配到，用原始 key 尝试直接查询（返回空结果）
       contentConditions.push('m.session_key = ?');
       values.push(params.session_key);
     }
@@ -790,7 +854,7 @@ export class DataRepository {
     }
 
     if (params.since) {
-      contentConditions.push('m.timestamp > ?');
+      contentConditions.push('m.timestamp >= ?');
       values.push(params.since);
     }
 
@@ -818,12 +882,13 @@ export class DataRepository {
         m.content,
         m.timestamp,
         m.model,
-        s.agent_id,
-        a.agent_name,
-        a.avatar
+        COALESCE(s.agent_id, SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1, INSTR(SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1), ':') - 1)) as agent_id,
+        COALESCE(a.agent_name, a2.agent_name) as agent_name,
+        COALESCE(a.avatar, a2.avatar) as avatar
       FROM admin_messages m
       LEFT JOIN admin_sessions s ON m.session_key = s.session_key
       LEFT JOIN admin_agents a ON s.agent_id = a.agent_id
+      LEFT JOIN admin_agents a2 ON a2.agent_id = COALESCE(s.agent_id, SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1, INSTR(SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1), ':') - 1))
       ${contentWhereClause}
       ORDER BY m.timestamp DESC
       LIMIT ?
@@ -854,7 +919,17 @@ export class DataRepository {
     const toolConditions: string[] = [];
     const toolValues: unknown[] = [];
 
-    if (params.session_key) {
+    if (params.session_key && resolvedSessionKeys) {
+      if (resolvedSessionKeys.length === 1) {
+        toolConditions.push('t.session_key = ?');
+        toolValues.push(resolvedSessionKeys[0]);
+      } else {
+        const nonTrajectory = resolvedSessionKeys.filter(k => !k.endsWith('.trajectory'));
+        const keys = nonTrajectory.length > 0 ? nonTrajectory : resolvedSessionKeys;
+        toolConditions.push(`t.session_key IN (${keys.map(() => '?').join(', ')})`);
+        toolValues.push(...keys);
+      }
+    } else if (params.session_key) {
       toolConditions.push('t.session_key = ?');
       toolValues.push(params.session_key);
     }
@@ -905,12 +980,13 @@ export class DataRepository {
           t.content,
           t.created_at as timestamp,
           t.model,
-          s.agent_id,
-          a.agent_name,
-          a.avatar
+          COALESCE(s.agent_id, SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1, INSTR(SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1), ':') - 1)) as agent_id,
+          COALESCE(a.agent_name, a2.agent_name) as agent_name,
+          COALESCE(a.avatar, a2.avatar) as avatar
         FROM admin_tool_calls t
         LEFT JOIN admin_sessions s ON t.session_key = s.session_key
         LEFT JOIN admin_agents a ON s.agent_id = a.agent_id
+        LEFT JOIN admin_agents a2 ON a2.agent_id = COALESCE(s.agent_id, SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1, INSTR(SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1), ':') - 1))
         ${toolWhereClause}
         ORDER BY t.created_at DESC
       `;
@@ -1136,6 +1212,9 @@ export class DataRepository {
     }
 
     // 4. Upsert 每个配置的 agent
+    // 注意：avatar 由用户通过 PUT /api/agents/:id/avatar 手动设置，
+    // 同步时不应覆盖。ON CONFLICT UPDATE 时显式保留已有 avatar，
+    // INSERT 时 avatar 默认为 NULL（SQLite TEXT 列默认值）。
     const upsert = this.db.prepare(`
       INSERT INTO admin_agents (agent_id, agent_name, workspace, session_count, message_count, first_active_at, last_active_at, model, source, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -1148,7 +1227,8 @@ export class DataRepository {
         last_active_at = excluded.last_active_at,
         model = excluded.model,
         source = excluded.source,
-        updated_at = excluded.updated_at
+        updated_at = excluded.updated_at,
+        avatar = admin_agents.avatar
     `);
 
     try {
@@ -1215,6 +1295,51 @@ export class DataRepository {
       logger.warn('[DataRepository] Failed to load agent models from messages:', { error: String(error) });
     }
 
+    return map;
+  }
+
+  /**
+   * 获取所有 agent 的 name/avatar 映射
+   */
+  getAgentsMap(): Map<string, { agent_name: string | null; avatar: string | null }> {
+    const rows = this.db.prepare('SELECT agent_id, agent_name, avatar FROM admin_agents').all() as Array<{
+      agent_id: string;
+      agent_name: string | null;
+      avatar: string | null;
+    }>;
+    const map = new Map<string, { agent_name: string | null; avatar: string | null }>();
+    for (const row of rows) {
+      map.set(row.agent_id, { agent_name: row.agent_name, avatar: row.avatar });
+    }
+    return map;
+  }
+
+  /**
+   * 获取每个 agent 的最后一条消息和消息总数
+   */
+  getAgentLastMessageMap(): Map<string, { last_message: string | null; message_count: number }> {
+    const rows = this.db.prepare(`
+      SELECT
+        s.agent_id,
+        substr(m.content, 1, 80) as last_message,
+        s.message_count
+      FROM admin_sessions s
+      INNER JOIN admin_messages m ON m.session_key = s.session_key
+        AND m.timestamp = s.last_message_at
+      WHERE s.agent_id IS NOT NULL
+      GROUP BY s.agent_id
+    `).all() as Array<{
+      agent_id: string;
+      last_message: string | null;
+      message_count: number;
+    }>;
+    const map = new Map<string, { last_message: string | null; message_count: number }>();
+    for (const row of rows) {
+      map.set(row.agent_id, {
+        last_message: row.last_message,
+        message_count: row.message_count,
+      });
+    }
     return map;
   }
 
@@ -1399,11 +1524,13 @@ export class DataRepository {
   upsertAgentActivityBatch(records: { agentId: string; date: string; count: number }[]): void {
     if (records.length === 0) return;
 
+    // 使用增量更新：每次同步只处理新消息，所以用 message_count + excluded.message_count
+    // 避免同名日期在多次同步中互相覆盖
     const upsertStmt = this.db.prepare(`
       INSERT INTO agent_activity_daily (agent_id, date, message_count)
       VALUES (?, ?, ?)
       ON CONFLICT(agent_id, date) DO UPDATE SET
-        message_count = excluded.message_count
+        message_count = message_count + excluded.message_count
     `);
 
     const upsertMany = this.db.transaction((rows: typeof records) => {
@@ -1414,6 +1541,51 @@ export class DataRepository {
 
     upsertMany(records);
     logger.info(`[DataRepository] Upserted ${records.length} activity records`);
+  }
+
+  /**
+   * 从 admin_messages 全量重建 agent_activity_daily 表
+   * 先清空表，再从所有消息按 (agent_id, date) 重新聚合
+   * @returns 重建的记录数和错误信息
+   */
+  rebuildAgentActivity(): { count: number; error?: string } {
+    try {
+      const rebuildMany = this.db.transaction(() => {
+        // 清空现有数据
+        this.db.exec('DELETE FROM agent_activity_daily');
+
+        // 从 admin_messages 聚合，需要通过 session_key 关联 admin_sessions 获取 agent_id
+        const insertStmt = this.db.prepare(`
+          INSERT INTO agent_activity_daily (agent_id, date, message_count)
+          VALUES (?, ?, ?)
+        `);
+
+        const rows = this.db.prepare(`
+          SELECT
+            COALESCE(s.agent_id, 'unknown') as agent_id,
+            substr(m.timestamp, 1, 10) as date,
+            COUNT(*) as message_count
+          FROM admin_messages m
+          LEFT JOIN admin_sessions s ON m.session_key = s.session_key
+          GROUP BY agent_id, date
+          ORDER BY date ASC
+        `).all() as { agent_id: string; date: string; message_count: number }[];
+
+        let count = 0;
+        for (const row of rows) {
+          insertStmt.run(row.agent_id, row.date, row.message_count);
+          count++;
+        }
+        return count;
+      });
+
+      const count = rebuildMany();
+      logger.info(`[DataRepository] Rebuilt agent_activity_daily: ${count} records`);
+      return { count };
+    } catch (error: any) {
+      logger.error('[DataRepository] rebuildAgentActivity failed:', error);
+      return { count: 0, error: error.message };
+    }
   }
 
   /**

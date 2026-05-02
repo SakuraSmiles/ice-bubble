@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import MarkdownContent from '../../components/MarkdownContent.vue';
+import { gatewayClient } from '@/services/gateway-client';
+
+// =========== Props ===========
+const props = withDefaults(defineProps<{
+  sessionKey?: string;
+}>(), {
+  sessionKey: undefined,
+});
 
 // =========== 类型定义 ===========
 interface TimelineMessage {
@@ -60,8 +68,10 @@ function checkBottom() {
   atBottom.value = gap < 60;
 }
 
-/** 默认过滤参数：排除系统噪音和定时任务 */
-const DEFAULT_FILTERS = 'exclude_system_noise=true&exclude_cron=true';
+/** 默认过滤参数：排除系统噪音和定时任务（computed，确保 prop 变化后 filter 正确） */
+const filters = computed(() =>
+  `exclude_system_noise=true&exclude_cron=true${props.sessionKey ? `&session_key=${encodeURIComponent(props.sessionKey)}` : ''}`
+);
 
 /** 滚到底部 */
 function scrollToBottom(smooth = true) {
@@ -74,8 +84,12 @@ function scrollToBottom(smooth = true) {
 async function loadLatest() {
   loading.value = true;
   try {
-    const res = await fetch(`/api/messages/timeline?limit=${INITIAL_LIMIT}&${DEFAULT_FILTERS}`);
+    const url = `/api/messages/timeline?limit=${INITIAL_LIMIT}&${filters.value}`;
+    console.log('[ChatTimeline] loadLatest url:', url, 'sessionKey:', props.sessionKey);
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) throw new Error(`loadLatest HTTP ${res.status}`);
     const data: TimelineResponse = await res.json();
+    console.log('[ChatTimeline] loadLatest result:', data.messages?.length, 'has_more:', data.has_more);
     setMessages(data.messages);
     hasMore.value = data.has_more;
     // 如果初始加载后内容没撑满容器，继续加载更多直到撑满或耗尽
@@ -99,19 +113,20 @@ async function loadMore() {
 
   try {
     const oldest = messages.value[0].timestamp;
-    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${DEFAULT_FILTERS}`);
+    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${filters.value}`, { credentials: 'include' });
+    if (!res.ok) return;
     const data: TimelineResponse = await res.json();
-    if (data.messages.length > 0) {
-      const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
-      if (newMsgs.length > 0) {
-        messages.value = [...newMsgs, ...messages.value].sort(
-          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        );
-        newMsgs.forEach(m => knownIds.add(m.id));
-      }
-      hasMore.value = data.has_more;
-    } else {
+    if (!Array.isArray(data.messages) || data.messages.length === 0) {
       hasMore.value = false;
+      return;
+    }
+    const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
+    if (newMsgs.length > 0) {
+      messages.value = [...newMsgs, ...messages.value].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      newMsgs.forEach(m => knownIds.add(m.id));
+      hasMore.value = !!data.has_more;
     }
   } catch (e) {
     console.error('加载更多失败', e);
@@ -128,11 +143,18 @@ async function loadMore() {
   }
 }
 
-/** 轮询最新消息 */
+/** 轮询最新消息 — 使用 since 获取增量，避免活跃 session 消息被淹没 */
 async function pollLatest() {
-  const res = await fetch(`/api/messages/timeline?limit=20&${DEFAULT_FILTERS}`);
+  // 用已知最新消息的 timestamp 作为 since，只拉增量
+  const newestTs = messages.value.length > 0
+    ? messages.value[messages.value.length - 1].timestamp
+    : undefined;
+
+  const sinceParam = newestTs ? `&since=${encodeURIComponent(newestTs)}` : '';
+  const res = await fetch(`/api/messages/timeline?limit=50&${filters.value}${sinceParam}`, { credentials: 'include' });
+  if (!res.ok) return;
   const data: TimelineResponse = await res.json();
-  if (!data.messages || data.messages.length === 0) return;
+  if (!Array.isArray(data.messages) || data.messages.length === 0) return;
 
   // 过滤出真正的新消息，同时排除空内容用户消息
   const newMsgs = data.messages.filter(m => !knownIds.has(m.id) && !isEmptyUserMsg(m));
@@ -172,9 +194,10 @@ async function fillScrollable() {
     const oldest = messages.value[0]?.timestamp;
     if (!oldest) break;
 
-    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${DEFAULT_FILTERS}`);
+    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${filters.value}`, { credentials: 'include' });
+    if (!res.ok) break;
     const data: TimelineResponse = await res.json();
-    if (!data.messages || data.messages.length === 0) {
+    if (!Array.isArray(data.messages) || data.messages.length === 0) {
       hasMore.value = false;
       break;
     }
@@ -220,7 +243,105 @@ function onScroll() {
   checkBottom();
 }
 
+// =========== Gateway 实时事件 ===========
+let unsubSessionMsg: (() => void) | null = null;
+let unsubChat: (() => void) | null = null;
+
+/** 当收到 session.message 事件时，实时追加到时间线 */
+function subscribeGatewayEvents() {
+  // 监听会话消息（实时推送所有会话的新消息）
+  unsubSessionMsg = gatewayClient.on('session.message', (payload: unknown) => {
+    const data = payload as Record<string, unknown> | undefined;
+    if (!data) return;
+
+    // 如果有 sessionKey prop，只处理该会话的消息
+    const msgSessionKey = data.sessionKey as string | undefined;
+    if (props.sessionKey && msgSessionKey !== props.sessionKey) return;
+
+    // 将 push 过来的消息转为 TimelineMessage 格式并追加
+    const msg = payloadToMessage(data);
+    if (!msg || knownIds.has(msg.id)) return;
+
+    knownIds.add(msg.id);
+    messages.value = [...messages.value, msg].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    if (atBottom.value) {
+      nextTick(() => scrollToBottom(false));
+    } else {
+      newMsgCount.value++;
+    }
+  });
+
+  // 监听 chat 事件（Agent 回复增量）
+  unsubChat = gatewayClient.on('chat', (payload: unknown) => {
+    const data = payload as Record<string, unknown> | undefined;
+    if (!data) return;
+
+    const msgSessionKey = data.sessionKey as string | undefined;
+    if (props.sessionKey && msgSessionKey !== props.sessionKey) return;
+
+    const msg = payloadToMessage(data);
+    if (!msg || knownIds.has(msg.id)) return;
+
+    knownIds.add(msg.id);
+    messages.value = [...messages.value, msg].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    if (atBottom.value) {
+      nextTick(() => scrollToBottom(false));
+    } else {
+      newMsgCount.value++;
+    }
+  });
+}
+
+/** 将 Gateway 事件 payload 转为 TimelineMessage 格式 */
+function payloadToMessage(data: Record<string, unknown>): TimelineMessage | null {
+  const id = data.id as number | undefined;
+  const content = data.content as string | undefined;
+  const role = data.role as string | undefined;
+
+  // id 和 content 必须有其中一个
+  if (!id && !content) return null;
+
+  const msgType = role === 'user' ? 'user' : role === 'tool' ? 'tool' : 'agent';
+
+  return {
+    id: id ?? Date.now(),
+    session_key: (data.sessionKey as string) || '',
+    agent_id: (data.agentId as string) || (role === 'user' ? 'user' : 'assistant'),
+    agent_name: (data.agentName as string) || (role === 'user' ? 'You' : ''),
+    avatar: (data.avatar as string) ?? null,
+    message_type: msgType,
+    content: content ?? null,
+    clean_content: content ?? null,
+    content_summary: null,
+    is_cron: false,
+    is_system_noise: false,
+    source_channel: (data.sourceChannel as string) ?? null,
+    model: (data.model as string) ?? null,
+    timestamp: (data.timestamp as string) || new Date().toISOString(),
+  };
+}
+
+function unsubscribeGatewayEvents() {
+  if (unsubSessionMsg) { unsubSessionMsg(); unsubSessionMsg = null; }
+  if (unsubChat) { unsubChat(); unsubChat = null; }
+}
+
 // =========== 生命周期 ===========
+watch(() => props.sessionKey, (newKey) => {
+  // 当 sessionKey 变化时重新加载（:key 也触发重建，但 watch 提供双重保障）
+  if (newKey !== undefined) {
+    knownIds.clear();
+    messages.value = [];
+    loadLatest();
+  }
+});
+
 onMounted(async () => {
   await loadLatest();
   await nextTick();
@@ -229,15 +350,46 @@ onMounted(async () => {
   scrollToBottom(false);
   checkBottom();
 
-  // 每 5 秒轮询
-  pollTimer = setInterval(pollLatest, 5000);
+  // Gateway 实时事件（增量更新）
+  subscribeGatewayEvents();
+
+  // 保留轮询作为降级方案（Gateway 未连接时生效）
+  pollTimer = setInterval(() => {
+    if (!gatewayClient.isConnected) {
+      pollLatest();
+    }
+  }, 5000);
 });
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
+  unsubscribeGatewayEvents();
 });
 
-defineExpose({ getMessages: () => messages.value });
+defineExpose({
+  getMessages: () => messages.value,
+  addOptimisticMessage(content: string, role: string = 'user') {
+    const msg: TimelineMessage = {
+      id: Date.now(),
+      session_key: props.sessionKey || '',
+      agent_id: role === 'user' ? 'user' : 'assistant',
+      agent_name: role === 'user' ? 'You' : '',
+      avatar: null,
+      message_type: role === 'user' ? 'user' : 'agent',
+      content,
+      clean_content: content,
+      content_summary: null,
+      is_cron: false,
+      is_system_noise: false,
+      source_channel: role === 'user' ? 'desktop' : null,
+      model: null,
+      timestamp: new Date().toISOString(),
+    };
+    knownIds.add(msg.id);
+    messages.value = [...messages.value, msg];
+    nextTick(() => scrollToBottom(false));
+  },
+});
 
 // =========== 过滤系统上下文消息 ===========
 const visibleMessages = computed(() =>
@@ -327,6 +479,18 @@ const groupedMessages = computed(() => {
 });
 
 // =========== 工具函数 ===========
+/** 从工具消息内容中提取工具名称 */
+function extractToolName(content: string | null): string {
+  if (!content) return 'tool';
+  // 尝试匹配 "Tool: xxx" 或 JSON 格式中的 tool 字段
+  const match = content.match(/Tool:\s*(\S+)/) || content.match(/"tool"\s*:\s*"([^"]+)"/);
+  if (match) return match[1];
+  // 尝试在第一行找到工具名
+  const firstLine = content.split('\n')[0].trim();
+  if (firstLine.length < 60) return firstLine;
+  return 'tool';
+}
+
 function truncateToolContent(content: string | null, maxLen = 150): string {
   if (!content) return '';
   if (content.length <= maxLen) return content;
@@ -346,7 +510,10 @@ function formatTime(ts: string) {
 function toolSummary(grp: MsgGroup): string {
   const visible = grp.toolMsgs.length;
   const total = visible + grp.hiddenToolCount;
-  return `🛠 调用了 ${total} 次工具`;
+  const names = [...new Set(grp.toolMsgs.map(tm => extractToolName(tm.content)))];
+  const nameStr = names.length > 0 ? names.join(', ') : '';
+  const nameLabel = nameStr ? ` (${nameStr})` : '';
+  return `🛠 调用了 ${total} 次工具${nameLabel}`;
 }
 </script>
 
@@ -409,7 +576,8 @@ function toolSummary(grp: MsgGroup): string {
               <details v-if="grp.toolMsgs.length > 0" class="tool-details">
                 <summary>{{ toolSummary(grp) }}{{ grp.hiddenToolCount > 0 ? `，还有 ${grp.hiddenToolCount} 条` : '' }}</summary>
                 <div v-for="(tm, ti) in grp.toolMsgs" :key="ti" class="tool-item">
-                  <pre>{{ truncateToolContent(tm.content) }}</pre>
+                  <div class="tool-item-header">{{ extractToolName(tm.content) }}</div>
+                  <pre class="tool-item-body">{{ truncateToolContent(tm.content) }}</pre>
                 </div>
               </details>
             </div>
@@ -621,14 +789,29 @@ function toolSummary(grp: MsgGroup): string {
   color: #888;
   font-size: 11px;
 }
+.tool-details summary:hover {
+  color: #5a7fb5;
+}
 .tool-item {
-  margin-top: 4px;
+  margin-top: 6px;
   padding: 6px 8px;
   background: #f7f7f7;
   border-radius: 4px;
   font-size: 11px;
-  font-family: monospace;
+}
+.tool-item-header {
+  font-weight: 600;
+  color: #5a7fb5;
+  font-size: 11px;
+  margin-bottom: 4px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+.tool-item-body {
+  margin: 0;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
   white-space: pre-wrap;
   word-break: break-all;
+  color: #666;
 }
 </style>

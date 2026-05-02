@@ -29,10 +29,9 @@ export interface ChatMessage {
   /** 发送失败时可重试 */
   sendFailed?: boolean
   // 时间线扩展字段（可选）
-  agentName?: string
+  agentName?: string | null
   avatar?: string | null
   model?: string | null
-  sourceChannel?: string | null
   // 原始字段（供前端过滤）
   messageType?: string | null
   sourceChannel?: string | null
@@ -210,6 +209,8 @@ export function useChat(
         // 服务端确认，移除 local 标记
         userMsg.id = result.messageId ?? userMsg.id
         userMsg.isLocal = false
+        // 消息已发送，等待 agent 回复（SSE 会设置 streaming=false）
+        streaming.value = true
       }
     } catch (e: any) {
       userMsg.sendFailed = true
@@ -253,7 +254,7 @@ export function useChat(
         content: m.clean_content || m.content || '',
         timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
         isLocal: false,
-        agentName: m.agent_name || null,
+        agentName: m.agent_name || undefined,
         avatar: m.avatar || null,
         model: m.model || null,
         messageType: m.message_type,

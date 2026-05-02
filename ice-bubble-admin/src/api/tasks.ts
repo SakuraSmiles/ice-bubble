@@ -25,7 +25,10 @@ export function createSubagentTasksRouter(config: TasksRouterConfig): Router {
     const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
     const offset = parseInt(String(req.query.offset ?? '0'));
 
-    const conditions: string[] = ['spawn_depth IS NOT NULL AND spawn_depth > 0'];
+    const conditions: string[] = [
+      'message_count > 0',
+      "session_key NOT LIKE '%.trajectory'",
+    ];
     const values: unknown[] = [];
 
     if (agent_id) {
@@ -45,7 +48,7 @@ export function createSubagentTasksRouter(config: TasksRouterConfig): Router {
       SELECT session_key, label, agent_id, session_status, spawned_by, spawn_depth,
              created_at, last_message_at, first_message_at, message_count
       FROM admin_sessions ${whereClause}
-      ORDER BY created_at DESC
+      ORDER BY COALESCE(last_message_at, created_at) DESC
       LIMIT ? OFFSET ?
     `).all(...values, limit, offset);
 

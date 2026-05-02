@@ -4,12 +4,11 @@ import { apiMonitor, type MonitorStats } from '../utils/monitor';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
+import { gatewayClient } from '@/services/gateway-client';
 import type { ModuleDTO, TimelineResponseDTO, AgentDTO } from '../api/client';
 // 子组件
 import StatusDropdown from './components/StatusDropdown.vue';
 import RecentSessions from './components/RecentSessions.vue';
-import TaskList from './components/TaskList.vue';
-import ChatPanel from './components/ChatPanel.vue';
 
 
 // =========== 接口定义 ===========
@@ -243,8 +242,10 @@ async function fetchAll(isLoading: boolean = false) {
   if (isLoading) loading.value = false;
 }
 
-const rightActiveTab = ref('activity');
 const loading = ref(false);
+
+// =========== Gateway 事件取消订阅 ===========
+let unsubSessionMsg: (() => void) | null = null;
 
 onMounted(() => {
   refreshData();
@@ -252,11 +253,26 @@ onMounted(() => {
   fetchDataStatus();
   startPolling();
   document.addEventListener('visibilitychange', onVisibilityChange);
+
+  // Gateway 实时事件：新消息到达时让 ChatTimeline 组件通过内部监听更新
+  // ChatTimeline（via RecentSessions）内部已监听 session.message 事件
+  // 这里只监听 sessions.changed 来触发 agent overview 的增量刷新
+  gatewayClient.on('sessions.changed', () => {
+    // 会话列表变化时刷新 agent 概览（不阻塞）
+    fetchAgentOverview();
+  });
+
+  // 监听 session.message 触发 agent 状态刷新
+  unsubSessionMsg = gatewayClient.on('session.message', () => {
+    // 新消息到达，刷新 agent 概览以更新 latest_message
+    fetchAgentOverview();
+  });
 });
 
 onUnmounted(() => {
   stopPolling();
   document.removeEventListener('visibilitychange', onVisibilityChange);
+  if (unsubSessionMsg) { unsubSessionMsg(); unsubSessionMsg = null; }
   for (const s of Object.values(agentRuntimeStates.value)) {
     if (s.streamTimer) { clearTimeout(s.streamTimer); s.streamTimer = null; }
   }
@@ -275,30 +291,7 @@ onUnmounted(() => {
 
     <el-card class="content-area" shadow="never">
       <div class="main-layout">
-        <!-- 左侧面板 -->
-        <div class="left-panel">
-          <!-- 任务列表 -->
-          <TaskList />
-        </div>
-
-        <!-- 右侧：Tab 切换面板 -->
-        <div class="right-panel">
-          <el-tabs v-model="rightActiveTab" class="right-tabs">
-            <el-tab-pane label="消息动态" name="activity">
-              <div class="tab-content">
-                <RecentSessions :loading="loading" />
-              </div>
-            </el-tab-pane>
-            <el-tab-pane name="chat">
-              <template #label>
-                <span>💬 对话</span>
-              </template>
-              <div class="tab-content">
-                <ChatPanel />
-              </div>
-            </el-tab-pane>
-          </el-tabs>
-        </div>
+        <RecentSessions :loading="loading" />
       </div>
     </el-card>
 
@@ -309,11 +302,8 @@ onUnmounted(() => {
 <style scoped>
 .overview-page {
   width: 100%;
-  max-width: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0 32px;
-  box-sizing: border-box;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -324,6 +314,10 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background: var(--color-bg-canvas);
+  border-radius: var(--radius);
+  margin: 8px 24px;
+  overflow: hidden;
 }
 
 .content-area :deep(.el-card__body) {
@@ -337,21 +331,8 @@ onUnmounted(() => {
 
 /* 左右分栏布局 */
 .main-layout {
-  display: flex;
-  gap: 16px;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
-}
-
-/* 左侧面板 */
-.left-panel {
-  width: 24%;
-  min-width: 280px;
-  height: calc(100vh - 200px);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
   overflow: hidden;
 }
 
@@ -478,49 +459,6 @@ onUnmounted(() => {
 @keyframes border-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
-}
-
-/* 右侧：主内容区 */
-.right-panel {
-  min-width: 0;
-  flex: 1;
-  height: calc(100vh - 200px);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  overflow: hidden;
-}
-
-.right-tabs {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.right-tabs :deep(.el-tabs__header) {
-  flex-shrink: 0;
-  margin-bottom: 0;
-}
-
-.right-tabs :deep(.el-tabs__content) {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.right-tabs :deep(.el-tab-pane) {
-  height: 100%;
-}
-
-.tab-content {
-  height: 100%;
-  overflow: hidden;
-}
-
-.tab-content :deep(.chat-panel) {
-  min-height: 0;
 }
 
 .main-card {

@@ -4,6 +4,11 @@ import { SSEManager } from "./sse-manager.js";
 
 /**
  * Chat Controller — handles message sending, aborting, and SSE streaming.
+ *
+ * Uses `sessions.send` RPC to correctly target the specified session.
+ * For active sessions, the message is delivered and agent turn starts.
+ * For completed subagent sessions, the Gateway may create a new session;
+ * the new sessionKey is returned so the frontend can follow it.
  */
 export class ChatController {
   constructor(
@@ -29,8 +34,6 @@ export class ChatController {
       return;
     }
 
-    const idempotencyKey = crypto.randomUUID();
-
     if (!this.rpc.isConnected()) {
       res.status(503).json({
         success: false,
@@ -39,27 +42,60 @@ export class ChatController {
       return;
     }
 
-    // Fire-and-forget: send the RPC request but respond immediately.
-    // The Gateway's chat.send handler is async and waits for the agent turn,
-    // which can take much longer than a reasonable HTTP timeout.
-    // Message delivery is confirmed via SSE stream events (chat.delta/chat.final).
-    const rpcPromise = this.rpc.request("chat.send", {
-      sessionKey,
+    const idempotencyKey = crypto.randomUUID();
+
+    // Use sessions.send to target the exact session.
+    // sessions.send only accepts: key, message, idempotencyKey (no label).
+    const rpcPromise = this.rpc.request("sessions.send", {
+      key: sessionKey,
       message,
       idempotencyKey,
     });
 
-    // Log errors from the RPC for debugging, but don't block the HTTP response.
-    rpcPromise.catch((err) => {
-      // RPC errors are logged but don't affect the HTTP response.
-      // The SSE stream will surface agent errors to the frontend.
-      console.error(`[ChatController] chat.send RPC failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
+    // Wait for the RPC response with a generous timeout (agent turns can be long).
+    // The SSE stream handles streaming updates; this is for the initial acknowledgment.
+    const timeoutMs = 120_000; // 2 minutes
+    const timer = setTimeout(() => {
+      // Timed out but message may still be processing — tell client it was accepted
+    }, timeoutMs);
 
-    res.json({
-      success: true,
-      idempotencyKey,
-    });
+    try {
+      const result = await Promise.race([
+        rpcPromise,
+        new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), timeoutMs)
+        ),
+      ]);
+
+      clearTimeout(timer);
+
+      const payload = result as Record<string, unknown> | null;
+
+      // Gateway sessions.send may return a new session key if it created a continuation
+      const newSessionKey =
+        (payload?.sessionKey as string) ??
+        (payload?.canonicalKey as string) ??
+        null;
+
+      res.json({
+        success: true,
+        idempotencyKey,
+        ...(newSessionKey && newSessionKey !== sessionKey ? { newSessionKey } : {}),
+      });
+    } catch (err) {
+      clearTimeout(timer);
+
+      // RPC error or timeout — message may still be processing
+      // Tell client it was accepted so SSE can pick up updates
+      console.error(
+        `[ChatController] sessions.send RPC: ${err instanceof Error ? err.message : String(err)}`,
+      );
+
+      res.json({
+        success: true,
+        idempotencyKey,
+      });
+    }
   }
 
   /**

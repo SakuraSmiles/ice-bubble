@@ -62,7 +62,13 @@ const apiProxy = {
     // 调整代理超时设置
     timeout: 30000,
     proxyTimeout: 30000,
-  }
+  },
+  // WebSocket 代理：/ws 转发到 Admin 服务器的 WebSocket 端点
+  '/ws': {
+    target: 'ws://localhost:13000',
+    ws: true,
+    changeOrigin: true,
+  },
 };
 
 export default defineConfig({

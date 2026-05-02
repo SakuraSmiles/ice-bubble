@@ -19,8 +19,8 @@ const router = createRouter({
       children: [
         { path: '', component: () => import('./views/Overview.vue') },
         { path: 'modules', component: () => import('./views/Modules.vue') },
-        { path: 'sessions', component: () => import('./views/Sessions.vue') },
         { path: 'agents', component: () => import('./views/Agents.vue') },
+        { path: 'workspace/:key', component: () => import('./views/Workspace.vue') },
       ],
     },
   ],

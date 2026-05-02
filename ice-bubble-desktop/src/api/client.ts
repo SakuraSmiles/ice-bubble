@@ -32,7 +32,9 @@ export interface SessionDTO {
   last_message_at: string | null;
   last_message: string | null;
   created_at: string;
+  updated_at?: string;
   label?: string | null;
+ avatar?: string | null;
   session_status?: string | null;
   model?: string | null;
   model_provider?: string | null;
@@ -280,6 +282,19 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   // 统计
   getStats: (): Promise<StatsDTO> => fetchJson('/stats'),
+
+  // 统一会话（Gateway 实时 + Admin 补充）
+  getUnifiedSessions: (params?: { limit?: number; offset?: number; agentId?: string; status?: string }) => {
+    const qp = new URLSearchParams();
+    if (params) {
+      if (params.limit) qp.set('limit', String(params.limit));
+      if (params.offset) qp.set('offset', String(params.offset));
+      if (params.agentId) qp.set('agentId', params.agentId);
+      if (params.status) qp.set('status', params.status);
+    }
+    const query = qp.toString() ? `?${qp}` : '';
+    return fetchJson<{ sessions: SessionDTO[]; total: number }>(`/sessions/unified${query}`);
+  },
 
   // 会话
   getSessions: (params?: { limit?: number; offset?: number }) => {

@@ -26,6 +26,10 @@ import { GatewayRpc } from './server/gateway/rpc.js';
 import { SSEManager } from './server/chat/sse-manager.js';
 
 import { ChatController } from './server/chat/controller.js';
+import { GatewayProxy } from './gateway/index.js';
+import { GatewayWsServer } from './gateway/ws-server.js';
+import { createChatProxyRouter, createSessionProxyRouter } from './api/chat-proxy.js';
+import { createSessionsUnifiedRouter } from './api/sessions-unified.js';
 
 // 加载环境变量
 config();
@@ -177,7 +181,7 @@ export async function startAdmin(): Promise<void> {
     logger.info(`[Admin] 已配置 ${moduleConfigs.length} 个模块`);
 
     // 初始化数据仓库和同步调度器
-    const avatarsDir = join(__dirname, '..', '..', 'data', 'avatars');
+    const avatarsDir = process.env.ADMIN_AVATARS_DIR || join(__dirname, '..', '..', 'data', 'avatars');
     // 确保头像目录存在
     if (!existsSync(avatarsDir)) {
       mkdirSync(avatarsDir, { recursive: true });
@@ -203,7 +207,24 @@ export async function startAdmin(): Promise<void> {
     });
     logger.info('[Admin] 数据归档调度器已启动');
 
+    // ── GatewayProxy (初始化提前，供后续路由使用) ──
+    let gatewayProxy: GatewayProxy | null = null;
+    try {
+        gatewayProxy = new GatewayProxy();
+        await gatewayProxy.connect();
+        logger.info('[Admin] GatewayProxy connected');
+    } catch (err) {
+        logger.warn('[Admin] GatewayProxy connection failed (non-fatal)', {
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+
     // 注册 API 路由
+    // IMPORTANT: Unified sessions route must be BEFORE data router,
+    // because data router's /sessions/:key would match /sessions/unified
+    if (gatewayProxy) {
+        app.use('/api', createSessionsUnifiedRouter({ proxy: gatewayProxy, repository: dataRepository }));
+    }
     app.use('/api', createDataRouter({
       repository: dataRepository,
       db: dbManager.getConnection(),
@@ -211,6 +232,7 @@ export async function startAdmin(): Promise<void> {
         dataRepository,
         new CollectorClient({ baseUrl: dataSyncConfig.collectorBaseUrl || 'http://localhost:13100' })
       ),
+      gatewayProxy,
     }));
     app.use('/api/modules', createModulesRouter(scheduler));
     app.use('/api/resources', createResourcesRouter(dataRepository));
@@ -260,6 +282,13 @@ export async function startAdmin(): Promise<void> {
     app.post('/api/chat/abort', (req, res) => chatController.abort(req, res));
     app.get('/api/chat/stream', (req, res) => chatController.stream(req, res));
 
+    // HTTP proxy routes (via GatewayProxy)
+    if (gatewayProxy) {
+        app.use('/api/chat', createChatProxyRouter(gatewayProxy));
+        app.use('/api/gateway', createSessionProxyRouter(gatewayProxy));
+        logger.info('[Admin] GatewayProxy HTTP routes registered');
+    }
+
     // Connect to Gateway in background — failure should NOT crash the server
     gatewayConn.connect().catch((err) => {
         logger.warn('[Admin] Gateway connection failed (will auto-retry)', {
@@ -290,10 +319,23 @@ export async function startAdmin(): Promise<void> {
     await bootstrapModules(scheduler, repository, moduleConfigs);
 
     // 启动服务器
-    app.listen(PORT, HOST, () => {
+    const httpServer = app.listen(PORT, HOST, () => {
         logger.info(`[Admin] 服务启动成功: http://${HOST}:${PORT}`);
         logger.info(`[Admin] API: http://${HOST}:${PORT}/api/modules`);
     });
+
+    // 挂载 WebSocket 服务器到 /ws（通过 GatewayProxy）
+    if (gatewayProxy) {
+        try {
+            const wsServer = new GatewayWsServer(gatewayProxy);
+            wsServer.start(httpServer);
+            logger.info('[Admin] WebSocket server started on /ws');
+        } catch (err) {
+            logger.warn('[Admin] WebSocket server failed to start', {
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
 }
 
 startAdmin().catch((error) => {

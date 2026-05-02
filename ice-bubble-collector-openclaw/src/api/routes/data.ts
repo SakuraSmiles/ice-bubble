@@ -197,6 +197,8 @@ function sessionToJson(s: Session): Record<string, unknown> {
         guild_id: s.guildId ?? null,
         created_at: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
         updated_at: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : s.updatedAt,
+        message_count: s.message_count ?? 0,
+        last_message_at: s.last_message_at ?? null,
         // sessions.json 同步字段
         label: s.label ?? null,
         status: s.status ?? null,

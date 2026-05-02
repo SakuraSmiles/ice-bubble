@@ -78,10 +78,6 @@ function disableHotReload() {
 }
 function findModuleByPath(path) {
   const config = getConfig();
-  if (path.startsWith("/api/tasks") || /\/api\/agents\/[^/]+\/tasks/.test(path)) {
-    const adminModule = config.modules.find((m) => m.key === "admin");
-    return adminModule || null;
-  }
   if (path.startsWith("/api/")) {
     const adminModule = config.modules.find((m) => m.key === "admin");
     return adminModule || null;

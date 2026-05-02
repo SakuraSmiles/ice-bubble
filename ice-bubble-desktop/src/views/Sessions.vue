@@ -229,12 +229,11 @@ onUnmounted(() => {
 <style scoped>
 .sessions-page {
   width: 100%;
-  max-width: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0 32px;
   box-sizing: border-box;
-  min-height: calc(100vh - 1px);
+  height: 100%;
+  overflow: hidden;
 }
 
 .session-selector {
@@ -243,9 +242,13 @@ onUnmounted(() => {
 
 .content-area {
   flex: 1;
-  margin-bottom: 20px;
+  min-height: 0;
+  margin: 8px 24px;
   display: flex;
   flex-direction: column;
+  background: var(--color-bg-canvas);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
 .empty-state {

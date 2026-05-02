@@ -109,7 +109,8 @@
 /* CSS Variables - GitHub Style */
 :root {
   --color-primary: #24292e;
-  --color-border: #d1d5da;
+  --color-border: #d0d7de;
+  --color-border-subtle: #e1e4e8;
   --color-accent-blue: #0969da;
   --color-accent-blue-subtle: #ddf4ff;
   --color-accent-green: #1a7f37;
@@ -120,10 +121,13 @@
   --color-accent-yellow-subtle: #fff8c5;
   --color-accent-orange: #bc4c00;
   --color-accent-orange-subtle: #fff1e5;
-  --color-bg: #ffffff;
+  --color-bg: #f6f8fa;
+  --color-bg-inset: #ffffff;
   --color-bg-subtle: #f6f8fa;
-  --color-text: #24292e;
-  --color-text-secondary: #57606a;
+  --color-bg-canvas: #ffffff;
+  --color-text: #1f2328;
+  --color-text-secondary: #656d76;
+  --color-text-tertiary: #8c959f;
   --radius: 6px;
 }
 

@@ -26,9 +26,8 @@ defineProps<{
 
 <style scoped>
 .page-header {
-  display: flex;
-  flex-direction: column;
-  padding: 24px 0 0;
+  padding: 16px 24px 0;
+  flex-shrink: 0;
 }
 
 .header-top {

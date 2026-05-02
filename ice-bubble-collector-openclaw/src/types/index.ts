@@ -24,6 +24,9 @@ export interface Session {
     guildId?: string;
     createdAt: Date;
     updatedAt: Date;
+    // 聚合字段
+    message_count?: number;
+    last_message_at?: string | null;
     // sessions.json 同步字段
     label?: string;
     status?: string;
