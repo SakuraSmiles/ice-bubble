@@ -11,6 +11,17 @@ const props = withDefaults(defineProps<{
 });
 
 // =========== 类型定义 ===========
+interface ToolCallEntry {
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  phase: 'start' | 'end' | 'result' | 'partial' | 'error';
+  result?: string;
+  error?: string;
+  startedAt: number;
+  finishedAt?: number;
+}
+
 interface TimelineMessage {
   id: number;
   session_key: string;
@@ -27,6 +38,9 @@ interface TimelineMessage {
   source_channel: string | null;
   model: string | null;
   timestamp: string;
+  streamRunId?: string;
+  streamState?: 'thinking' | 'streaming' | 'complete' | 'error';
+  toolCalls?: ToolCallEntry[];
 }
 
 interface TimelineResponse {
@@ -58,6 +72,7 @@ const INITIAL_LIMIT = 100;
 let knownIds = new Set<number>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 const useGateway = ref(false);
+const showTypingIndicator = ref(false);
 
 // =========== 加载逻辑 ===========
 
@@ -292,6 +307,7 @@ function onScroll() {
 // =========== Gateway 实时事件 ===========
 let unsubSessionMsg: (() => void) | null = null;
 let unsubChat: (() => void) | null = null;
+let unsubAgent: (() => void) | null = null;
 
 /** 当收到 session.message 事件时，实时追加到时间线 */
 function subscribeGatewayEvents() {
@@ -327,71 +343,32 @@ function subscribeGatewayEvents() {
     if (!data) return;
     if (data.sessionKey !== props.sessionKey) return;
 
-    const msg = data.message as Record<string, unknown> | undefined;
-    if (!msg) return;
-
-    const role = msg.role as string | undefined;
-    if (role !== 'assistant') return;
-
-    const content = msg.content as Array<{ type: string; text?: string }> | string | undefined;
-    let text = '';
-    if (Array.isArray(content)) {
-      text = content.filter(c => c.type === 'text').map(c => c.text || '').join('');
-    } else if (typeof content === 'string') {
-      text = content;
-    }
-
-    if (!text) return;
-
+    const runId = data.runId as string | undefined;
     const state = data.state as string | undefined;
 
-    // 查找已有的流式消息（最后一个 assistant 消息）
-    const lastIdx = messages.value.length - 1;
-    if (state === 'delta' && lastIdx >= 0) {
-      const last = messages.value[lastIdx];
-      if (last.message_type === 'agent' && last.id < 0) {
-        // 追加到已有流式消息
-        messages.value[lastIdx] = {
-          ...last,
-          content: (last.content || '') + text,
-          clean_content: (last.clean_content || '') + text,
-        };
-        if (atBottom.value) nextTick(() => scrollToBottom(false));
-        return;
-      }
-      // 创建新的流式消息（临时负数 ID）
-      const sessionAgentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
-      const streamMsg: TimelineMessage = {
-        id: -Date.now(),
-        session_key: props.sessionKey || '',
-        agent_id: sessionAgentId || 'assistant',
-        agent_name: (data.agentName as string) || null,
-        avatar: null,
-        message_type: 'agent',
-        content: text,
-        clean_content: text,
-        content_summary: null,
-        is_cron: false,
-        is_system_noise: false,
-        source_channel: null,
-        model: (data.model as string) || null,
-        timestamp: new Date().toISOString(),
-      };
-      knownIds.add(streamMsg.id);
-      messages.value = [...messages.value, streamMsg];
-      if (atBottom.value) nextTick(() => scrollToBottom(false));
-    } else if (state === 'complete') {
-      // 流式结束：替换流式消息为最终版本
-      const finalId = (data.messageId ?? data.id ?? Date.now()) as number;
-      if (lastIdx >= 0 && messages.value[lastIdx].id < 0) {
-        messages.value[lastIdx] = {
-          ...messages.value[lastIdx],
-          id: finalId,
-          content: text,
-          clean_content: text,
-        };
-        knownIds.add(finalId);
-      }
+    switch (state) {
+      case 'delta': handleChatDelta(data, runId || ''); break;
+      case 'final': handleChatFinal(data, runId || ''); break;
+      case 'error': handleChatError(data, runId || ''); break;
+    }
+  });
+
+  // 3. agent — 工具调用 / 生命周期（Phase 2）
+  unsubAgent = gatewayClient.on('agent', (payload: unknown) => {
+    if (!useGateway.value) return;
+    const data = payload as Record<string, unknown> | undefined;
+    if (!data) return;
+    if (data.sessionKey !== props.sessionKey) return;
+
+    const stream = data.stream as string | undefined;
+    const runId = data.runId as string | undefined;
+    const innerData = data.data as Record<string, unknown> | undefined;
+    const phase = innerData?.phase as string | undefined;
+
+    if (stream === 'tool') {
+      handleToolEvent(data, runId || '');
+    } else if (stream === 'lifecycle') {
+      handleLifecycleEvent(runId || '', phase);
     }
   });
 }
@@ -399,6 +376,235 @@ function subscribeGatewayEvents() {
 function unsubscribeGatewayEvents() {
   if (unsubSessionMsg) { unsubSessionMsg(); unsubSessionMsg = null; }
   if (unsubChat) { unsubChat(); unsubChat = null; }
+  if (unsubAgent) { unsubAgent(); unsubAgent = null; }
+  showTypingIndicator.value = false;
+}
+
+// =========== chat 事件处理 ===========
+
+/** Gateway content 始终是 [{type:"text", text:"..."}] 数组格式 */
+function extractText(msg: any): string {
+  if (Array.isArray(msg.content)) {
+    return msg.content
+      .filter((c: any) => c.type === 'text')
+      .map((c: any) => c.text || '')
+      .join('');
+  }
+  if (typeof msg.content === 'string') return msg.content;
+  return '';
+}
+
+/** 通过 streamRunId 查找流式消息索引 */
+function findStreamMsgIndex(runId: string): number {
+  return messages.value.findIndex(
+    m => m.streamRunId === runId && m.streamState !== 'complete' && m.streamState !== 'error'
+  );
+}
+
+/** 确保已有流式消息（工具调用在文本之前到达时创建空占位） */
+function ensureStreamMsg(runId: string) {
+  if (findStreamMsgIndex(runId) >= 0) return;
+
+  showTypingIndicator.value = false;
+  const sessionAgentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
+  messages.value = [...messages.value, {
+    id: -Date.now(),
+    session_key: props.sessionKey || '',
+    agent_id: sessionAgentId || 'assistant',
+    agent_name: null,
+    avatar: null,
+    message_type: 'agent',
+    content: '',
+    clean_content: '',
+    content_summary: null,
+    is_cron: false,
+    is_system_noise: false,
+    source_channel: null,
+    model: null,
+    timestamp: new Date().toISOString(),
+    streamRunId: runId,
+    streamState: 'thinking' as const,
+    toolCalls: [],
+  }];
+}
+
+/** 处理 delta：创建或更新流式气泡（累积文本，replace 语义） */
+function handleChatDelta(data: Record<string, unknown>, runId: string) {
+  const msg = data.message as Record<string, unknown> | undefined;
+  if (!msg) return;
+  const text = extractText(msg);
+  if (!text) return;
+
+  const idx = findStreamMsgIndex(runId);
+
+  if (idx >= 0) {
+    // 已有流式消息 → 替换内容（累积文本，非追加）
+    messages.value[idx] = {
+      ...messages.value[idx],
+      content: text,
+      clean_content: text,
+      streamState: 'streaming',
+    };
+  } else {
+    // 创建新的流式消息
+    showTypingIndicator.value = false;
+    const sessionAgentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
+    const streamMsg: TimelineMessage = {
+      id: -Date.now(),
+      session_key: props.sessionKey || '',
+      agent_id: sessionAgentId || 'assistant',
+      agent_name: (data.agentName as string) || null,
+      avatar: null,
+      message_type: 'agent',
+      content: text,
+      clean_content: text,
+      content_summary: null,
+      is_cron: false,
+      is_system_noise: false,
+      source_channel: null,
+      model: (data.model as string) || null,
+      timestamp: new Date().toISOString(),
+      streamRunId: runId,
+      streamState: 'streaming',
+      toolCalls: [],
+    };
+    messages.value = [...messages.value, streamMsg];
+    // 不 add 到 knownIds（负数 id 不应进入去重集合）
+  }
+
+  if (atBottom.value) nextTick(() => scrollToBottom(false));
+}
+
+/** 处理 final：完成流式气泡 */
+function handleChatFinal(data: Record<string, unknown>, runId: string) {
+  const msg = data.message as Record<string, unknown> | undefined;
+  const finalText = msg ? extractText(msg) : null;
+  const finalId = (data.messageId ?? data.id ?? Date.now()) as number;
+
+  const idx = findStreamMsgIndex(runId);
+
+  if (idx >= 0) {
+    messages.value[idx] = {
+      ...messages.value[idx],
+      id: finalId,
+      content: finalText || messages.value[idx].content || '',
+      clean_content: finalText || messages.value[idx].clean_content || '',
+      streamState: 'complete',
+      timestamp: new Date().toISOString(),
+    };
+    knownIds.add(finalId);
+  }
+
+  showTypingIndicator.value = false;
+  if (atBottom.value) nextTick(() => scrollToBottom(false));
+}
+
+/** 处理 error：显示错误 */
+function handleChatError(data: Record<string, unknown>, runId: string) {
+  const errorMsg = (data.errorMessage as string) || '回复出错';
+
+  const idx = findStreamMsgIndex(runId);
+
+  if (idx >= 0) {
+    messages.value[idx] = {
+      ...messages.value[idx],
+      content: `❌ **错误：** ${errorMsg}`,
+      clean_content: `错误：${errorMsg}`,
+      streamState: 'error',
+      streamRunId: undefined,
+    };
+  } else {
+    messages.value = [...messages.value, {
+      id: -Date.now(),
+      session_key: props.sessionKey || '',
+      agent_id: 'system',
+      agent_name: null,
+      avatar: null,
+      message_type: 'agent',
+      content: `❌ **错误：** ${errorMsg}`,
+      clean_content: `错误：${errorMsg}`,
+      content_summary: null,
+      is_cron: false,
+      is_system_noise: false,
+      source_channel: null,
+      model: null,
+      timestamp: new Date().toISOString(),
+    }];
+  }
+
+  showTypingIndicator.value = false;
+  if (atBottom.value) nextTick(() => scrollToBottom(false));
+}
+
+// =========== agent 事件处理 ===========
+
+/** 处理工具调用事件 */
+function handleToolEvent(data: Record<string, unknown>, runId: string) {
+  const inner = data.data as Record<string, unknown> | undefined;
+  if (!inner) return;
+  const phase = inner.phase as string;
+
+  const toolEntry: ToolCallEntry = {
+    toolCallId: (inner.toolCallId as string) || '',
+    toolName: (inner.toolName as string) || 'unknown',
+    args: (inner.args as Record<string, unknown>) || {},
+    phase: phase as ToolCallEntry['phase'],
+    result: inner.result as string | undefined,
+    error: inner.error as string | undefined,
+    startedAt: Date.now(),
+  };
+
+  if (phase === 'start') {
+    // 确保已有流式消息（可能在文本开始前就调用工具）
+    ensureStreamMsg(runId);
+
+    const idx = findStreamMsgIndex(runId);
+    if (idx >= 0 && messages.value[idx].toolCalls) {
+      messages.value[idx].toolCalls!.push(toolEntry);
+    }
+  } else if (phase === 'end' || phase === 'result') {
+    const idx = findStreamMsgIndex(runId);
+    if (idx >= 0 && messages.value[idx].toolCalls) {
+      const tcs = messages.value[idx].toolCalls!;
+      const lastTc = [...tcs].reverse().find(
+        tc => tc.toolCallId === toolEntry.toolCallId || tc.toolName === toolEntry.toolName
+      );
+      if (lastTc) {
+        lastTc.phase = phase === 'end' ? 'result' : phase;
+        lastTc.result = toolEntry.result || lastTc.result;
+        lastTc.error = toolEntry.error || lastTc.error;
+        lastTc.finishedAt = Date.now();
+      }
+    }
+  }
+}
+
+/** 处理生命周期事件 */
+function handleLifecycleEvent(_runId: string, phase?: string) {
+  switch (phase) {
+    case 'start':
+      showTypingIndicator.value = true;
+      break;
+    case 'end':
+    case 'error':
+      showTypingIndicator.value = false;
+      break;
+  }
+}
+
+// =========== 工具辅助函数 ===========
+
+function toolEmoji(toolName: string): string {
+  const map: Record<string, string> = {
+    read: '📖', write: '📝', exec: '⚡', web_search: '🔍',
+    web_fetch: '🌐', browser: '🖥️', canvas: '🎨', message: '💬',
+    edit: '✏️', process: '🔄', memory_get: '🧠', memory_search: '🔎',
+  };
+  return map[toolName] || '🔧';
+}
+
+function formatToolName(name: string): string {
+  return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function simpleHash(str: string): number {
@@ -761,7 +967,7 @@ function toolSummary(grp: MsgGroup): string {
         </div>
 
         <!-- Agent 消息 -->
-        <div v-else-if="grp.messages.length > 0" class="msg-row msg-row--agent" :data-msg-id="grp.messages[0]?.id">
+        <div v-else-if="grp.messages.length > 0" class="msg-row msg-row--agent" :class="{ 'msg-row--streaming': grp.messages[0]?.streamState === 'streaming' }" :data-msg-id="grp.messages[0]?.id">
           <!-- 头像列 -->
           <div class="agent-avatar-col">
             <img
@@ -779,11 +985,34 @@ function toolSummary(grp: MsgGroup): string {
               <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
             </div>
             <div class="bubble bubble--agent">
+              <!-- 工具调用实时展示 -->
+              <div
+                v-if="grp.messages[0]?.toolCalls?.length"
+                class="tool-calls-inline"
+              >
+                <div
+                  v-for="tc in grp.messages[0].toolCalls"
+                  :key="tc.toolCallId || tc.toolName"
+                  class="tool-badge"
+                  :class="`tool-badge--${tc.phase}`"
+                >
+                  <span class="tool-icon">{{ toolEmoji(tc.toolName) }}</span>
+                  <span class="tool-name">{{ formatToolName(tc.toolName) }}</span>
+                  <span v-if="tc.phase === 'start'" class="tool-status spinning">⏳</span>
+                  <span v-else-if="tc.phase === 'result'" class="tool-status">✅</span>
+                  <span v-else-if="tc.phase === 'error'" class="tool-status">❌</span>
+                </div>
+              </div>
+
               <div class="bubble-text" v-for="(m, mi) in grp.messages" :key="mi">
                 <MarkdownContent :content="m.content || ''" />
+                <span
+                  v-if="m.streamState === 'streaming'"
+                  class="streaming-cursor"
+                >▊</span>
               </div>
-              <!-- 工具消息折叠 -->
-              <details v-if="grp.toolMsgs.length > 0" class="tool-details">
+              <!-- 工具消息折叠（完成后折叠，流式时不显示） -->
+              <details v-if="grp.toolMsgs.length > 0 && grp.messages[0]?.streamState !== 'streaming' && grp.messages[0]?.streamState !== 'thinking'" class="tool-details">
                 <summary>{{ toolSummary(grp) }}{{ grp.hiddenToolCount > 0 ? `，还有 ${grp.hiddenToolCount} 条` : '' }}</summary>
                 <div v-for="(tm, ti) in grp.toolMsgs" :key="ti" class="tool-item">
                   <div class="tool-item-header">{{ extractToolName(tm.content) }}</div>
@@ -794,6 +1023,18 @@ function toolSummary(grp: MsgGroup): string {
           </div>
         </div>
       </template>
+
+      <!-- 打字指示器 -->
+      <div v-if="showTypingIndicator" class="typing-indicator">
+        <div class="agent-avatar-col">
+          <div class="avatar-placeholder">?</div>
+        </div>
+        <div class="typing-bubble">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -1023,5 +1264,79 @@ function toolSummary(grp: MsgGroup): string {
   white-space: pre-wrap;
   word-break: break-all;
   color: #666;
+}
+
+/* 流式光标闪烁 */
+.streaming-cursor {
+  display: inline-block;
+  animation: blink 1s step-end infinite;
+  color: var(--el-color-primary);
+  font-weight: bold;
+  margin-left: 1px;
+}
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* 打字指示器 */
+.typing-indicator {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 4px 0;
+  align-self: flex-start;
+}
+.typing-bubble {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  background: #f7f8fa;
+  border-radius: 14px 14px 14px 4px;
+}
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a0a4b0;
+  animation: dot-bounce 1.2s infinite ease-in-out both;
+}
+.typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.typing-dot:nth-child(2) { animation-delay: -0.16s; }
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* 工具调用 badge（实时展示） */
+.tool-calls-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-family: 'SF Mono', 'Consolas', monospace;
+  background: #f0f1f3;
+  color: #666;
+  transition: all 0.2s;
+}
+.tool-badge--result { background: #e8f5e9; color: #388e3c; }
+.tool-badge--error { background: #ffebee; color: #d32f2f; }
+.tool-badge--start { background: #fff3e0; color: #e65100; }
+.tool-icon { font-size: 12px; }
+.tool-name { font-size: 11px; }
+.tool-status.spinning {
+  animation: spin 1.5s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>
