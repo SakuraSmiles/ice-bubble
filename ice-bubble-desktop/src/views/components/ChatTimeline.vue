@@ -548,8 +548,8 @@ function handleToolEvent(data: Record<string, unknown>, runId: string) {
   const phase = inner.phase as string;
 
   const toolEntry: ToolCallEntry = {
-    toolCallId: (inner.toolCallId as string) || '',
-    toolName: (inner.toolName as string) || 'unknown',
+    toolCallId: (inner.toolCallId || inner.id || '') as string,
+    toolName: (inner.toolName || inner.name || 'unknown') as string,
     args: (inner.args as Record<string, unknown>) || {},
     phase: phase as ToolCallEntry['phase'],
     result: inner.result as string | undefined,
@@ -660,7 +660,7 @@ async function fetchAgentAvatar() {
     if (!res.ok) return;
     const data = await res.json() as any;
     const agents: any[] = data?.agents ?? [];
-    const match = agents.find((a: any) => a.id === agentId);
+    const match = agents.find((a: any) => (a.id || a.agent_id) === agentId);
     const avatar = match?.avatar ?? null;
     agentAvatar.value = avatar;
     // 回填已有 agent 消息
@@ -681,97 +681,110 @@ async function fetchAgentAvatar() {
  * 将 Gateway 消息列表映射为 TimelineMessage 列表
  * 含过滤：跳过系统上下文、空内容、NO_REPLY 等
  */
+function extractContentText(content: any): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.filter((c: any) => c.type === 'text').map((c: any) => c.text ?? '').join('');
+  return String(content ?? '');
+}
+
+function makeMsg(
+  type: 'user' | 'agent' | 'tool',
+  agentId: string, agentName: string | null, model: string | null,
+  content: string, timestamp: string,
+  rawId: any, avatar: string | null, runId?: string,
+): TimelineMessage {
+  const stableId = typeof rawId === 'number' ? rawId
+    : typeof rawId === 'string' ? simpleHash(rawId)
+    : simpleHash(`${type}:${timestamp}:${content.substring(0, 80)}`);
+  return {
+    id: stableId,
+    session_key: props.sessionKey || '',
+    agent_id: type === 'user' ? 'user' : agentId,
+    agent_name: type === 'user' ? 'You' : agentName,
+    avatar: avatar ?? agentAvatar.value ?? null,
+    message_type: type,
+    content: content || null,
+    clean_content: content || null,
+    content_summary: null,
+    is_cron: false,
+    is_system_noise: false,
+    is_system_context: 0,
+    source_channel: 'webchat',
+    model: model || null,
+    timestamp,
+    streamRunId: runId,
+  };
+}
+
 function gatewayMsgsToTimeline(rawMessages: any[]): TimelineMessage[] {
   const result: TimelineMessage[] = [];
   const sessionAgentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
 
   for (const m of rawMessages) {
     const role = m.role as string;
-
-    // 只保留 user / assistant / tool / toolResult
     if (role !== 'user' && role !== 'assistant' && role !== 'tool' && role !== 'toolResult') continue;
-    // 跳过 system 角色
-    if (role === 'system') continue;
 
-    // 提取文本内容
-    let text = '';
-    let thinking = '';
-    let toolCalls: any[] = [];
-    let toolResults: any[] = [];
+    const runId = m.runId as string | undefined;
+    const timestamp = m.timestamp
+      ? (typeof m.timestamp === 'number' ? new Date(m.timestamp).toISOString() : m.timestamp)
+      : new Date().toISOString();
 
-    if (typeof m.content === 'string') {
-      text = m.content;
-    } else if (Array.isArray(m.content)) {
+    // ── 用户消息 ──
+    if (role === 'user') {
+      let text = extractContentText(m.content);
+      if (!text.trim() || text.trim() === 'NO_REPLY') continue;
+      if (text.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
+      result.push(makeMsg('user', 'user', 'You', null, text, timestamp, m.id, null, runId));
+      continue;
+    }
+
+    // ── assistant 消息：拆分 text 和 toolCall ──
+    if (role === 'assistant') {
+      if (typeof m.content === 'string') {
+        if (!m.content.trim() || m.content.trim() === 'NO_REPLY') continue;
+        if (m.content.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
+        result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, m.content, timestamp, m.id, null, runId));
+        continue;
+      }
+      if (!Array.isArray(m.content)) continue;
+
+      // 拆分 content blocks
+      let textParts: string[] = [];
+      let toolCallBlocks: any[] = [];
       for (const block of m.content) {
         switch (block.type) {
-          case 'text':
-            text += (block.text ?? '');
-            break;
-          case 'thinking':
-            thinking += (block.thinking ?? block.text ?? '');
-            break;
+          case 'text': textParts.push(block.text ?? ''); break;
+          case 'thinking': break; // 暂不展示
           case 'toolCall':
           case 'tool_call':
-            toolCalls.push(block);
-            break;
-          case 'toolResult':
-          case 'tool_result':
-            toolResults.push(block);
+            toolCallBlocks.push(block);
             break;
         }
       }
-    } else {
-      text = String(m.content ?? '');
+
+      const combinedText = textParts.join('');
+      if (combinedText.trim() && !combinedText.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>') && combinedText.trim() !== 'NO_REPLY') {
+        result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, combinedText, timestamp, m.id, null, runId));
+      }
+
+      // 每个 toolCall block 生成一条 tool 消息
+      for (const tc of toolCallBlocks) {
+        const toolName = tc.toolName || tc.name || 'unknown';
+        const toolContent = `Tool: ${toolName}\nArgs: ${JSON.stringify(tc.arguments ?? tc.args ?? {}, null, 2)}`;
+        result.push(makeMsg('tool', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, toolContent, timestamp, m.id, null, runId));
+      }
+      continue;
     }
 
-    // 跳过空内容和噪音
-    if (role !== 'user' && !text.trim() && toolCalls.length === 0 && toolResults.length === 0 && !thinking) continue;
-    if (text.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
-    if (text.trim() === 'NO_REPLY') continue;
-
-    // 构建内容（优先 text，其次 tool calls/results 序列化）
-    let displayContent = text;
-    if (!displayContent && toolCalls.length > 0) {
-      displayContent = toolCalls.map(tc => `Tool: ${tc.toolName || tc.name}\nArgs: ${JSON.stringify(tc.arguments ?? tc.args, null, 2)}`).join('\n');
+    // ── toolResult 消息 ──
+    if (role === 'tool' || role === 'toolResult') {
+      let text = extractContentText(m.content);
+      if (!text.trim()) continue;
+      result.push(makeMsg('tool', sessionAgentId || 'assistant', null, null, text.substring(0, 500), timestamp, m.id, null, runId));
     }
-    if (!displayContent && toolResults.length > 0) {
-      displayContent = toolResults.map(tr => `Tool Result: ${JSON.stringify(tr.result ?? tr.content).substring(0, 200)}`).join('\n');
-    }
-    if (!displayContent && thinking) displayContent = thinking;
-
-    const msgType: TimelineMessage['message_type'] =
-      role === 'user' ? 'user' :
-      (role === 'tool' || role === 'toolResult') ? 'tool' : 'agent';
-
-    // Gateway 消息没有 id，用 timestamp+role+index 生成唯一 id
-    const stableId = typeof m.id === 'number' ? m.id
-      : typeof m.id === 'string' ? simpleHash(m.id)
-      : simpleHash(`${m.role}:${m.timestamp}:${text.substring(0, 80)}`);
-
-    result.push({
-      id: stableId,
-      session_key: props.sessionKey || '',
-      agent_id: msgType === 'user' ? 'user' : (m.agentName || sessionAgentId || 'assistant'),
-      agent_name: m.agentName || null,
-      avatar: null,
-      message_type: msgType,
-      content: displayContent || null,
-      clean_content: displayContent || null,
-      content_summary: null,
-      is_cron: false,
-      is_system_noise: false,
-      is_system_context: 0,
-      source_channel: 'webchat',
-      model: m.model || null,
-      timestamp: m.timestamp
-        ? (typeof m.timestamp === 'number' ? new Date(m.timestamp).toISOString() : m.timestamp)
-        : new Date().toISOString(),
-    });
   }
 
-  // 时间排序（正序：旧→新）
   result.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-
   return result;
 }
 
