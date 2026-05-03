@@ -10,6 +10,8 @@ export class SSEManager {
   private clients = new Map<string, Set<ServerResponse>>();
   /** Gateway subscription state: sessionKey → unsubscribe function */
   private gatewaySubs = new Map<string, () => void>();
+  /** Dedup cache: dedupKey → last broadcast timestamp */
+  private dedupCache = new Map<string, number>();
 
   constructor(private rpc: GatewayRpc) {}
 
@@ -82,6 +84,12 @@ export class SSEManager {
       "sessions.messages.subscribe",
       { key: sessionKey } as Record<string, unknown>,
       (result: unknown) => {
+        // Skip delta/partial events — only broadcast complete messages
+        const rawPayload = result as Record<string, unknown>;
+        if (rawPayload.state === 'delta' || rawPayload.state === 'streaming') {
+          return;
+        }
+
         // Gateway pushes session.message events with payload:
         // { sessionKey, message: { role, content, timestamp, ... }, messageId, messageSeq, ...sessionSnapshot }
         // Flatten to frontend-expected format before broadcasting via SSE.
@@ -104,6 +112,23 @@ export class SSEManager {
             : String(rawContent ?? ""));
         const messageId = String(payload.messageId ?? payload.messageSeq ?? Date.now());
         const timestamp = String(raw.timestamp ?? new Date().toISOString());
+
+        // Dedup: skip if same content was broadcast within 5s for this session
+        const dedupKey = `${sessionKey}:${role}:${content.substring(0, 80)}`;
+        const now = Date.now();
+        const lastSeen = this.dedupCache.get(dedupKey);
+        if (lastSeen && now - lastSeen < 5000) {
+          return;
+        }
+        this.dedupCache.set(dedupKey, now);
+
+        // Clean up entries older than 30s to prevent memory leak
+        if (this.dedupCache.size > 200) {
+          const cutoff = now - 30_000;
+          for (const [k, ts] of this.dedupCache) {
+            if (ts < cutoff) this.dedupCache.delete(k);
+          }
+        }
 
         this.broadcast(sessionKey, "message", {
           role,

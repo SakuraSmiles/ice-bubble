@@ -15,6 +15,7 @@ import {
   SSEStatusEvent,
 } from '@/api/chat'
 import { api } from '@/api/client'
+import { gatewayClient } from '@/services/gateway-client'
 
 // ============ 类型 ============
 
@@ -35,6 +36,8 @@ export interface ChatMessage {
   // 原始字段（供前端过滤）
   messageType?: string | null
   sourceChannel?: string | null
+  // 流式渲染标记
+  isStreaming?: boolean
 }
 
 interface UseChatOptions {
@@ -54,6 +57,8 @@ export interface UseChatReturn {
   disconnectSSE: () => void
   reconnect: () => void
   loadHistory: (sessionKey: string, limit?: number) => Promise<void>
+  connectGatewayStream: () => void
+  disconnectGatewayStream: () => void
 }
 
 // ============ 实现 ============
@@ -97,6 +102,9 @@ export function useChat(
   function onSSEMessage(data: SSEMessageEvent) {
     retryCount = 0
 
+    // Defense: skip if content looks like a delta prefix (shouldn't happen with SSE dedup, but just in case)
+    if (!data.content || data.content.length < 5) return
+
     // Gateway pushes ALL messages (user + assistant) for the session.
     // Skip user messages — they were already added via optimistic update in send().
     if (data.role === 'user') {
@@ -113,6 +121,20 @@ export function useChat(
 
     // Dedup: skip if a message with the same id already exists (e.g. history reload race)
     if (messages.value.some((m) => m.id === assistantMsg.id)) {
+      return
+    }
+
+    // Stronger dedup: check last 5 messages for same role + similar content within 3s
+    const recent = messages.value.slice(-5)
+    const newTs = assistantMsg.timestamp
+    if (
+      recent.some(
+        (m) =>
+          m.role === assistantMsg.role &&
+          m.content.substring(0, 100) === assistantMsg.content.substring(0, 100) &&
+          Math.abs(m.timestamp - newTs) < 3000,
+      )
+    ) {
       return
     }
 
@@ -244,7 +266,60 @@ export function useChat(
     loading.value = true
     error.value = null
     try {
-      // 使用 timeline API，自动继承噪音过滤（cron/Sender metadata/HEARTBEAT等）
+      // 优先使用 Gateway 的 chat.history（有完整数据）
+      // 使用 HTTP 代理获取 Gateway 历史消息（不依赖 WS 连接）
+      const requestLimit = Math.max(limit * 5, 500)
+      const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(sessionKeyValue)}&limit=${requestLimit}`
+      const historyRes = await fetch(historyUrl, { credentials: 'include' })
+      if (historyRes.ok) {
+        const result = (await historyRes.json()) as any
+        const msgs = result?.messages ?? result?.history ?? result ?? []
+        const arr = Array.isArray(msgs) ? msgs : []
+        // 过滤后只取最后 N 条（最新的消息）
+        const allFiltered: ChatMessage[] = arr
+          .filter((m: any) => {
+            const role = m.role as string
+            // 只保留 user 和 assistant 消息
+            if (role !== 'user' && role !== 'assistant') return false
+            return true
+          })
+          .map((m: any) => {
+            const content =
+              typeof m.content === 'string'
+                ? m.content
+                : Array.isArray(m.content)
+                  ? m.content
+                      .filter((c: any) => c.type === 'text')
+                      .map((c: any) => c.text ?? '')
+                      .join('')
+                  : String(m.content ?? '')
+            // 跳过空内容的 assistant 消息（可能是纯工具调用）
+            if (m.role !== 'user' && !content.trim()) return null
+            // 跳过 OpenClaw 内部上下文消息（系统注入的 metadata）
+            if (content.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) return null
+            // 跳过纯 NO_REPLY 消息
+            if (content.trim() === 'NO_REPLY') return null
+            return {
+              id: String(m.id ?? m.messageId ?? Date.now() + Math.random()),
+              role: m.role === 'assistant' ? 'assistant' : 'user',
+              content,
+              timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
+              isLocal: false,
+              agentName: m.agentName || undefined,
+              avatar: m.avatar || null,
+              model: m.model || null,
+            }
+          })
+          .filter((m): m is ChatMessage => m !== null)
+        // Gateway 返回时间正序（旧→新），取最后 limit 条
+        const historical = allFiltered.slice(-limit)
+        messages.value = historical
+        _hasMoreHistory = false
+        _oldestTimestamp = null
+        return
+      }
+
+      // 降级：使用 Admin timeline API（数据可能不全）
       const res = await api.getChatTimeline(sessionKeyValue, { limit })
       const msgs = res.messages ?? []
       // timeline按时间倒序返回，反转为正序
@@ -271,10 +346,82 @@ export function useChat(
     }
   }
 
+  // ============ Gateway WS 流式渲染 ============
+
+  let unsubChat: (() => void) | null = null
+
+  function connectGatewayStream() {
+    disconnectGatewayStream()
+
+    unsubChat = gatewayClient.on('chat', (payload: any) => {
+      if (!payload) return
+
+      // 只处理当前 session 的消息
+      const msgSessionKey = payload.sessionKey as string | undefined
+      if (msgSessionKey !== getSessionKey()) return
+
+      const state = payload.state as string | undefined
+      const message = payload.message as any
+
+      if (!message) return
+
+      const role = message.role as string | undefined
+      if (role !== 'assistant') return // 只流式显示 assistant 回复
+
+      // 提取文本内容
+      let text = ''
+      if (typeof message.content === 'string') {
+        text = message.content
+      } else if (Array.isArray(message.content)) {
+        text = message.content
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => c.text ?? '')
+          .join('')
+      }
+
+      if (!text) return
+
+      if (state === 'delta') {
+        // 流式更新：更新或创建最后一个 assistant 消息
+        streaming.value = true
+        const lastMsg = messages.value[messages.value.length - 1]
+        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+          lastMsg.content = text
+        } else {
+          messages.value.push({
+            id: `streaming_${Date.now()}`,
+            role: 'assistant',
+            content: text,
+            timestamp: Date.now(),
+            isLocal: false,
+            isStreaming: true,
+          })
+        }
+      } else {
+        // complete / done / 其他非 delta 状态：标记完成
+        streaming.value = false
+        const lastMsg = messages.value[messages.value.length - 1]
+        if (lastMsg && lastMsg.isStreaming) {
+          lastMsg.content = text
+          lastMsg.isStreaming = false
+          lastMsg.id = String(payload.messageId ?? payload.seq ?? lastMsg.id)
+        }
+      }
+    })
+  }
+
+  function disconnectGatewayStream() {
+    if (unsubChat) {
+      unsubChat()
+      unsubChat = null
+    }
+  }
+
   // ============ 清理 ============
 
   onUnmounted(() => {
     disconnectSSE()
+    disconnectGatewayStream()
   })
 
   return {
@@ -289,5 +436,7 @@ export function useChat(
     disconnectSSE,
     reconnect,
     loadHistory,
+    connectGatewayStream,
+    disconnectGatewayStream,
   }
 }

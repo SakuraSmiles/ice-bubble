@@ -77,9 +77,29 @@ export class GatewayClient {
    * 连接到 Admin 的 /ws WebSocket 代理端点
    * 返回的 Promise 在收到 connect.hello 响应后 resolve
    */
+  /**
+   * 等待 Gateway 连接就绪。如果已连接则立即 resolve，
+   * 如果正在连接则等待 connect 事件，否则返回 false。
+   */
+  async waitForConnect(timeoutMs = 5000): Promise<boolean> {
+    if (this._connected) return true
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), timeoutMs)
+      const unsub = this.on('connect', () => {
+        clearTimeout(timer)
+        unsub()
+        resolve(true)
+      })
+    })
+  }
+
   async connect(): Promise<void> {
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       return
+    }
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      // 已有连接正在进行，等待其完成
+      return this.waitForConnect()
     }
 
     this.intentionalClose = false

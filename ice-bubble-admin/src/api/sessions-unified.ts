@@ -47,7 +47,7 @@ export function createSessionsUnifiedRouter(config: SessionsUnifiedRouterConfig)
 
       // 2. Build agentId maps from Admin SQLite
       const agentsMap = repository.getAgentsMap();
-      const lastMsgMap = repository.getAgentLastMessageMap();
+      const lastMsgMap = repository.getSessionLastMessageMap();
 
       // 3. Merge & transform
       let sessions = gatewaySessions.map((gw) => {
@@ -57,7 +57,16 @@ export function createSessionsUnifiedRouter(config: SessionsUnifiedRouterConfig)
         const agentId = parts.length >= 2 ? parts[1] : '';
 
         const agentInfo = agentsMap.get(agentId);
-        const lastMsg = lastMsgMap.get(agentId);
+
+        // Resolve Gateway key to SQLite key(s) for message data lookup
+        let lastMsg: { last_message: string | null; message_count: number } | undefined;
+        const resolvedKeys = repository.resolveSessionKey(key);
+        for (const rk of resolvedKeys) {
+          if (lastMsgMap.has(rk) && !rk.includes('.trajectory') && !rk.includes('.checkpoint')) {
+            lastMsg = lastMsgMap.get(rk);
+            break;
+          }
+        }
 
         // Convert ms timestamps to ISO 8601
         const toISO = (v: unknown): string | null => {

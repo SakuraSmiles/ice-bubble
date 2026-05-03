@@ -196,6 +196,33 @@ export interface TokenSummaryResponseDTO {
   summary: TokenSummaryDTO[];
 }
 
+// ============ 会话分组 DTO ============
+
+export interface SessionGroupDTO {
+  id: number;
+  name: string;
+  icon?: string | null;
+  sort_order?: number;
+  created_at: string;
+  updated_at: string;
+  /** 分组内成员会话列表（GET 响应中包含） */
+  members?: SessionGroupMemberDTO[];
+}
+
+export interface SessionGroupMemberDTO {
+  id: number;
+  group_id: number;
+  session_key: string;
+  sort_order?: number;
+  added_at: string;
+  /** 关联的会话详情（GET 响应可能包含） */
+  session?: SessionDTO;
+}
+
+export interface SessionGroupsResponseDTO {
+  groups: SessionGroupDTO[];
+}
+
 // ============ 任务 DTO（由 AgentTaskTree / ParentTaskProgress 使用） ============
 
 export interface TaskItemDTO {
@@ -399,6 +426,45 @@ export const api = {
     const query = params.toString() ? `?${params.toString()}` : '';
     return fetchJson<TokenSummaryResponseDTO>(`/agents/token-summary${query}`);
   },
+
+  // 会话分组
+  getSessionGroups: () =>
+    fetchJson<SessionGroupsResponseDTO>('/session-groups'),
+
+  createGroup: (body: { name: string; icon?: string }) =>
+    fetchJson<SessionGroupDTO>('/session-groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  updateGroup: (id: number, body: { name?: string; icon?: string; sort_order?: number }) =>
+    fetchJson<SessionGroupDTO>(`/session-groups/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  deleteGroup: (id: number) =>
+    fetchJson<void>(`/session-groups/${id}`, { method: 'DELETE' }),
+
+  addGroupMember: (groupId: number, sessionKey: string) =>
+    fetchJson<SessionGroupMemberDTO>(`/session-groups/${groupId}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_key: sessionKey }),
+    }),
+
+  removeGroupMember: (groupId: number, sessionKey: string) =>
+    fetchJson<void>(`/session-groups/${groupId}/members/${encodeURIComponent(sessionKey)}`, { method: 'DELETE' }),
+
+  // 新建会话
+  createSession: (body: { agentId: string; key?: string; label?: string }) =>
+    fetchJson<SessionDTO>('/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
 
   // Subagent 任务
   fetchSubagentTasks: (params?: { limit?: number; offset?: number }) => {

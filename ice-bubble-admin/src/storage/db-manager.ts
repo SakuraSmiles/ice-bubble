@@ -953,6 +953,28 @@ export class DBManager {
         this.db.exec(`DROP TABLE IF EXISTS admin_tasks`);
         logger.info('Migration v19: dropped admin_tasks table');
         break;
+      case 20:
+        // v20: 会话分组表
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS session_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            icon TEXT DEFAULT '📁',
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+          );
+          CREATE TABLE IF NOT EXISTS session_group_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL REFERENCES session_groups(id) ON DELETE CASCADE,
+            session_key TEXT NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(group_id, session_key)
+          );
+        `);
+        logger.info('Migration v20: created session_groups and session_group_members tables');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

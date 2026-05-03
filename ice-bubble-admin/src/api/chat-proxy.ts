@@ -11,34 +11,22 @@ import type { GatewayProxy } from "../gateway/gateway-proxy.js";
 export function createChatProxyRouter(proxy: GatewayProxy): Router {
   const router = Router();
 
-  // GET /history?sessionKey=xxx&limit=50
+  // GET /history?sessionKey=xxx&limit=50&before=ISO_timestamp
   router.get("/history", async (req, res) => {
     try {
       const sessionKey = req.query.sessionKey as string | undefined;
       const limit = parseInt(req.query.limit as string, 10) || 50;
+      const before = req.query.before as string | undefined;
 
       if (!sessionKey) {
         res.status(400).json({ error: "sessionKey is required" });
         return;
       }
 
-      const result = await proxy.request("chat.history", { sessionKey, limit });
-      res.json(result);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      res.status(502).json({ error: "Gateway request failed", detail: msg });
-    }
-  });
+      const params: Record<string, unknown> = { sessionKey, limit };
+      if (before) params.before = before;
 
-  // POST /send  body: { sessionKey, message, attachments? }
-  router.post("/send", async (req, res) => {
-    try {
-      const { sessionKey, message, attachments } = req.body;
-      if (!sessionKey || !message) {
-        res.status(400).json({ error: "sessionKey and message are required" });
-        return;
-      }
-      const result = await proxy.request("chat.send", { sessionKey, message, attachments });
+      const result = await proxy.request("chat.history", params);
       res.json(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

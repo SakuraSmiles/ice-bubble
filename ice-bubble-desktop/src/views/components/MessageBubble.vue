@@ -86,7 +86,7 @@ const agentInitial = computed(() => {
         <span v-if="message.isStreaming" class="streaming-dot">●</span>
       </div>
       <div class="bubble bubble--agent" :class="{ 'is-error': message.isError }">
-        <MarkdownContent :content="message.content" />
+        <MarkdownContent :content="message.content" /><span v-if="message.isStreaming" class="streaming-cursor">▍</span>
       </div>
       <button
         v-if="message.isError"
@@ -237,6 +237,13 @@ const agentInitial = computed(() => {
 .streaming-dot {
   color: var(--color-accent-blue);
   animation: blink 1s ease-in-out infinite;
+}
+
+.streaming-cursor {
+  display: inline-block;
+  animation: blink 1s step-end infinite;
+  color: var(--el-color-primary);
+  margin-left: 1px;
 }
 
 @keyframes blink {

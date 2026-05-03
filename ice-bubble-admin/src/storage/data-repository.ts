@@ -310,13 +310,14 @@ export class DataRepository {
       if (rows.length > 0) return rows.map(r => r.session_key);
     }
 
-    // 3. 非 UUID 格式（如 agent:main:main）: 按 agent_id 查找所有非 trajectory session
-    if (agentId) {
+    // 3. 非 UUID 格式（如 agent:main:main）: 按 agent_id 查找消息最多的那个 session
+    //    注意：subagent 会话不回退查找，因为 Collector 不存储 subagent 消息
+    if (agentId && !sessionKey.includes(':subagent:')) {
       const rows = this.db.prepare(
         `SELECT session_key FROM admin_sessions
-         WHERE agent_id = ? AND session_key NOT LIKE '%.trajectory'
-         ORDER BY last_message_at DESC NULLS LAST
-         LIMIT 50`
+         WHERE agent_id = ? AND session_key NOT LIKE '%.trajectory' AND session_key NOT LIKE '%.checkpoint'
+         ORDER BY message_count DESC NULLS LAST, last_message_at DESC NULLS LAST
+         LIMIT 1`
       ).all(agentId) as { session_key: string }[];
       if (rows.length > 0) return rows.map(r => r.session_key);
     }
@@ -1055,8 +1056,9 @@ export class DataRepository {
         }
       }
 
-      // Set 去重：同 message_type + 同 clean_content 的消息只保留首次出现
-      const dedupKey = row.message_type + '|' + (meta.clean_content || '');
+      // Set 去重：同 session + 同 message_type + 同时间戳 + 同内容(前200字符) 只保留首次出现
+      const contentHash = (row.content || '').substring(0, 200).replace(/\s+/g, ' ').trim();
+      const dedupKey = `${row.session_key}|${row.message_type}|${row.timestamp}|${contentHash}`;
       if (seenContent.has(dedupKey)) continue;
       seenContent.add(dedupKey);
 
@@ -1315,32 +1317,48 @@ export class DataRepository {
   }
 
   /**
-   * 获取每个 agent 的最后一条消息和消息总数
+   * 获取每个 session 的最后一条消息和消息总数
+   * 按 session_key 索引，确保不同会话各自独立统计
    */
-  getAgentLastMessageMap(): Map<string, { last_message: string | null; message_count: number }> {
+  getSessionLastMessageMap(): Map<string, { last_message: string | null; message_count: number }> {
     const rows = this.db.prepare(`
       SELECT
-        s.agent_id,
+        s.session_key,
         substr(m.content, 1, 80) as last_message,
         s.message_count
       FROM admin_sessions s
       INNER JOIN admin_messages m ON m.session_key = s.session_key
         AND m.timestamp = s.last_message_at
-      WHERE s.agent_id IS NOT NULL
-      GROUP BY s.agent_id
+      WHERE s.session_key IS NOT NULL
+      GROUP BY s.session_key
     `).all() as Array<{
-      agent_id: string;
+      session_key: string;
       last_message: string | null;
       message_count: number;
     }>;
     const map = new Map<string, { last_message: string | null; message_count: number }>();
     for (const row of rows) {
-      map.set(row.agent_id, {
+      map.set(row.session_key, {
         last_message: row.last_message,
         message_count: row.message_count,
       });
     }
     return map;
+  }
+
+  /** @deprecated Use getSessionLastMessageMap instead */
+  getAgentLastMessageMap(): Map<string, { last_message: string | null; message_count: number }> {
+    const map = this.getSessionLastMessageMap();
+    // 兼容旧接口：返回按 agent_id 索引的 map（取该 agent 最后一个 session）
+    const result = new Map<string, { last_message: string | null; message_count: number }>();
+    for (const [sessionKey, data] of map) {
+      const parts = sessionKey.split(':');
+      const agentId = parts.length >= 2 ? parts[1] : '';
+      if (agentId && !result.has(agentId)) {
+        result.set(agentId, data);
+      }
+    }
+    return result;
   }
 
   /**
@@ -2130,5 +2148,19 @@ export class DataRepository {
 
     // 返回值仅用于兼容，实际清理由进程退出时自然结束
     return setTimeout(() => {}, 0);
+  }
+
+  deduplicateAdminMessages(): number {
+    const dedup = this.db.transaction(() => {
+      this.db.exec(`CREATE TEMP TABLE IF NOT EXISTS _dedup_keep AS
+        SELECT MIN(id) as keep_id FROM admin_messages
+        GROUP BY session_key, message_type, timestamp, substr(content, 1, 200)`);
+      const { total } = this.db.prepare('SELECT COUNT(*) as total FROM admin_messages').get() as { total: number };
+      const { keep } = this.db.prepare('SELECT COUNT(*) as keep FROM _dedup_keep').get() as { keep: number };
+      this.db.exec('DELETE FROM admin_messages WHERE id NOT IN (SELECT keep_id FROM _dedup_keep)');
+      this.db.exec('DROP TABLE IF EXISTS _dedup_keep');
+      return total - keep;
+    });
+    return dedup();
   }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick, onMounted, onUnmounted, inject } from 'vue';
+import { ref, watch, computed, nextTick, inject } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { gatewayClient } from '@/services/gateway-client';
 import ConnectionAlert from '../components/ConnectionAlert.vue';
@@ -25,49 +25,8 @@ const sending = ref(false);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const timelineRef = ref<InstanceType<typeof ChatTimeline> | null>(null);
 
-// =========== Gateway 事件取消订阅 ===========
-let unsubChat: (() => void) | null = null;
-
-// =========== Gateway 实时流 ===========
-function subscribeGateway() {
-  if (!sessionKey.value) return;
-  unsubscribeGateway();
-
-  // 监听 Agent 回复
-  unsubChat = gatewayClient.on('chat', (payload: unknown) => {
-    const data = payload as Record<string, unknown> | undefined;
-    if (!data) return;
-
-    // 只处理当前会话的消息
-    if (data.sessionKey !== sessionKey.value) return;
-
-    // Gateway chat 事件结构：{ runId, sessionKey, seq, state, message: { role, content } }
-    const msg = data.message as Record<string, unknown> | undefined;
-    if (!msg) return;
-
-    const role = msg.role as string | undefined;
-    const content = msg.content as Array<{ type: string; text?: string }> | string | undefined;
-
-    // 提取文本
-    let text = '';
-    if (Array.isArray(content)) {
-      text = content.filter(c => c.type === 'text').map(c => c.text || '').join('');
-    } else if (typeof content === 'string') {
-      text = content;
-    }
-
-    if (text && role) {
-      timelineRef.value?.addOptimisticMessage(text, role);
-    }
-  });
-}
-
-function unsubscribeGateway() {
-  if (unsubChat) {
-    unsubChat();
-    unsubChat = null;
-  }
-}
+// Chat 事件监听已移到 ChatTimeline 内部统一管理
+// Workspace.vue 只负责发送消息
 
 // =========== 会话信息 ===========
 async function loadSessionInfo() {
@@ -112,25 +71,16 @@ function statusType(s: string | null): string {
 
 const canSend = computed(() => {
   if (!sessionKey.value) return false;
-  // status 未设置时默认可用（历史 session 可能没有 status 字段）
-  if (!status.value) return true;
-  return status.value === 'running';
+  // running 和 done（空闲）都可以发消息，只有明确失败才禁用
+  if (!status.value || status.value === 'running' || status.value === 'done') return true;
+  return false;
 });
 
 watch(sessionKey, async (key) => {
   if (key) {
     await loadSessionInfo();
-    nextTick(() => subscribeGateway());
-  } else {
-    unsubscribeGateway();
   }
 }, { immediate: true });
-
-onMounted(() => {
-  subscribeGateway();
-});
-
-onUnmounted(() => unsubscribeGateway());
 
 // =========== 发送消息 ===========
 async function sendMessage() {

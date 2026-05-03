@@ -220,6 +220,15 @@ export function createDataRouter(config: DataRouterConfig): Router {
     });
   });
 
+  router.post('/messages/deduplicate', (_req: Request, res: Response) => {
+    try {
+      const deleted = repository.deduplicateAdminMessages();
+      res.json({ deleted });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   /**
    * GET /api/agents
    *

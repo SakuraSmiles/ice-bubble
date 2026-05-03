@@ -49,6 +49,8 @@ const {
   connectSSE,
   disconnectSSE,
   loadHistory,
+  connectGatewayStream,
+  disconnectGatewayStream,
 } = useChat(() => currentSessionKey.value)
 
 // ============ Session 数据适配 ============
@@ -129,10 +131,12 @@ const displayMessages = computed(() => {
 watch(currentSessionKey, async (newKey, oldKey) => {
   if (!newKey || newKey === oldKey) return
 
-  // 切换 session 时断开旧 SSE，加载历史后重新连接
+  // 切换 session 时断开旧连接，加载历史后重新连接
   disconnectSSE()
+  disconnectGatewayStream()
   await loadHistory(newKey)
   connectSSE()
+  connectGatewayStream()
 
   // 滚动到底部
   await nextTick()
@@ -192,6 +196,7 @@ onMounted(async () => {
     await loadHistory(currentSessionKey.value)
     // 建立 SSE 连接，实时接收新消息
     connectSSE()
+    connectGatewayStream()
   }
 })
 </script>
