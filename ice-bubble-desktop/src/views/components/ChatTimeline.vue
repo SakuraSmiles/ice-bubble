@@ -105,7 +105,7 @@ async function loadLatest() {
     if (props.sessionKey) {
       // 使用 HTTP 代理获取 Gateway 历史消息（不依赖 WS 连接）
       console.log('[ChatTimeline] loadLatest via HTTP /api/chat/history, sessionKey:', props.sessionKey);
-      const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=500`;
+      const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=1000`;
       const historyRes = await fetch(historyUrl, { credentials: 'include' });
       if (historyRes.ok) {
         const result = await historyRes.json() as any;
@@ -155,21 +155,24 @@ async function loadMore() {
 
   try {
     if (useGateway.value) {
-      // Gateway 模式：通过 Gateway API 加载更早历史
+      // Gateway chat.history 不支持 before 分页，改为全量拉取 + 客户端过滤
       const oldest = messages.value[0].timestamp;
       const gwRes = await fetch(
-        `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey!)}&limit=50&before=${encodeURIComponent(oldest)}`,
+        `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey!)}&limit=1000`,
         { credentials: 'include' }
       );
       if (!gwRes.ok) { hasMore.value = false; return; }
       const gwResult = await gwRes.json() as any;
       const rawMsgs = gwResult?.messages ?? gwResult?.history ?? gwResult ?? [];
       const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
-      const olderMsgs = gatewayMsgsToTimeline(arr);
+      const allMsgs = gatewayMsgsToTimeline(arr);
+      // 只保留比当前最早消息更早的
+      const olderMsgs = allMsgs.filter(m => new Date(m.timestamp).getTime() < new Date(oldest).getTime());
       if (olderMsgs.length === 0) { hasMore.value = false; return; }
       messages.value = [...olderMsgs, ...messages.value];
       olderMsgs.forEach(m => knownIds.add(m.id));
-      hasMore.value = olderMsgs.length >= 50;
+      // 如果拉取全量后更早的消息不满 50 条，可能已到底
+      hasMore.value = olderMsgs.length >= 20;
     } else {
       // Admin 降级模式：原有逻辑
       const oldest = messages.value[0].timestamp;
@@ -493,6 +496,7 @@ function handleChatFinal(data: Record<string, unknown>, runId: string) {
       content: finalText || messages.value[idx].content || '',
       clean_content: finalText || messages.value[idx].clean_content || '',
       streamState: 'complete',
+      avatar: messages.value[idx].avatar || agentAvatar.value,
       timestamp: new Date().toISOString(),
     };
     knownIds.add(finalId);
