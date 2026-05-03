@@ -73,6 +73,7 @@ let knownIds = new Set<number>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 const useGateway = ref(false);
 const showTypingIndicator = ref(false);
+const agentAvatar = ref<string | null>(null);
 
 // =========== 加载逻辑 ===========
 
@@ -117,6 +118,8 @@ async function loadLatest() {
         setMessages(latest);
         useGateway.value = true;
         hasMore.value = allMsgs.length > INITIAL_LIMIT;
+        // Gateway 不返回 avatar，从 Admin API 补充
+        await fetchAgentAvatar();
         return; // Gateway 模式不需要 fillScrollable
       }
     }
@@ -412,7 +415,7 @@ function ensureStreamMsg(runId: string) {
     session_key: props.sessionKey || '',
     agent_id: sessionAgentId || 'assistant',
     agent_name: null,
-    avatar: null,
+    avatar: agentAvatar.value,
     message_type: 'agent',
     content: '',
     clean_content: '',
@@ -454,7 +457,7 @@ function handleChatDelta(data: Record<string, unknown>, runId: string) {
       session_key: props.sessionKey || '',
       agent_id: sessionAgentId || 'assistant',
       agent_name: (data.agentName as string) || null,
-      avatar: null,
+      avatar: agentAvatar.value,
       message_type: 'agent',
       content: text,
       clean_content: text,
@@ -648,6 +651,31 @@ function payloadToMessage(data: Record<string, unknown>): TimelineMessage | null
 }
 
 
+/** 从 Admin API 获取当前 agent 的 avatar，并回填已有消息 */
+async function fetchAgentAvatar() {
+  try {
+    const agentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
+    if (!agentId) return;
+    const res = await fetch('/api/agents', { credentials: 'include' });
+    if (!res.ok) return;
+    const data = await res.json() as any;
+    const agents: any[] = data?.agents ?? [];
+    const match = agents.find((a: any) => a.id === agentId);
+    const avatar = match?.avatar ?? null;
+    agentAvatar.value = avatar;
+    // 回填已有 agent 消息
+    if (avatar) {
+      messages.value = messages.value.map(m =>
+        m.message_type === 'agent' && !m.avatar
+          ? { ...m, avatar }
+          : m
+      );
+    }
+  } catch (e) {
+    console.warn('[ChatTimeline] fetchAgentAvatar failed', e);
+  }
+}
+
 // =========== Gateway 消息映射 ===========
 /**
  * 将 Gateway 消息列表映射为 TimelineMessage 列表
@@ -752,6 +780,7 @@ watch(() => props.sessionKey, (newKey) => {
   // 当 sessionKey 变化时重新加载（:key 也触发重建，但 watch 提供双重保障）
   if (newKey !== undefined) {
     useGateway.value = false;
+    agentAvatar.value = null;
     knownIds.clear();
     messages.value = [];
     loadLatest();
