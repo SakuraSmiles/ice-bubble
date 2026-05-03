@@ -70,8 +70,6 @@ const PAGE_SIZE = 50;
 /** 初始加载量（更大，减少首次撑不满概率） */
 const INITIAL_LIMIT = 100;
 let knownIds = new Set<number>();
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-const useGateway = ref(false);
 const showTypingIndicator = ref(false);
 const agentAvatar = ref<string | null>(null);
 
@@ -101,40 +99,33 @@ function scrollToBottom(smooth = true) {
 async function loadLatest() {
   loading.value = true;
   try {
-    // 当有 sessionKey 时，优先使用 Gateway chat.history（数据完整）
     if (props.sessionKey) {
-      // 使用 HTTP 代理获取 Gateway 历史消息（不依赖 WS 连接）
-      console.log('[ChatTimeline] loadLatest via HTTP /api/chat/history, sessionKey:', props.sessionKey);
+      // Gateway 优先（数据完整）
       const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=1000`;
+      console.log('[ChatTimeline] loadLatest via Gateway, sessionKey:', props.sessionKey);
       const historyRes = await fetch(historyUrl, { credentials: 'include' });
       if (historyRes.ok) {
         const result = await historyRes.json() as any;
         const rawMsgs = result?.messages ?? result?.history ?? result ?? [];
         const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
-
         const allMsgs = gatewayMsgsToTimeline(arr);
         const latest = allMsgs.slice(-INITIAL_LIMIT);
         console.log('[ChatTimeline] Gateway result:', allMsgs.length, 'displayed:', latest.length);
         setMessages(latest);
-        useGateway.value = true;
         hasMore.value = allMsgs.length > INITIAL_LIMIT;
-        // Gateway 不返回 avatar，从 Admin API 补充
         await fetchAgentAvatar();
-        return; // Gateway 模式不需要 fillScrollable
+        return;
       }
     }
 
-    // 降级：使用 Admin timeline API
-    useGateway.value = false;
+    // Admin 降级（Gateway 不可用或无 sessionKey）
     const url = `/api/messages/timeline?limit=${INITIAL_LIMIT}&${filters.value}`;
-    console.log('[ChatTimeline] loadLatest url:', url, 'sessionKey:', props.sessionKey);
+    console.log('[ChatTimeline] loadLatest via Admin, url:', url);
     const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) throw new Error(`loadLatest HTTP ${res.status}`);
     const data: TimelineResponse = await res.json();
-    console.log('[ChatTimeline] loadLatest result:', data.messages?.length, 'has_more:', data.has_more);
     setMessages(data.messages);
     hasMore.value = data.has_more;
-    // 如果初始加载后内容没撑满容器，继续加载更多直到撑满或耗尽
     await fillScrollable();
   } catch (e) {
     console.error('加载聊天记录失败', e);
@@ -143,22 +134,20 @@ async function loadLatest() {
   }
 }
 
-/** 加载更多历史 —— 追加到列表前面，然后恢复滚动位置 */
+/** 加载更多历史 —— Gateway 全量拉取 + 客户端过滤更早消息 */
 async function loadMore() {
   if (loadingMore.value || !hasMore.value || messages.value.length === 0) return;
   loadingMore.value = true;
-
-  // 记录加载前的滚动高度和第一条消息 id
   const el = containerRef.value;
   const prevScrollTop = el?.scrollTop ?? 0;
   const prevScrollHeight = el?.scrollHeight ?? 0;
 
   try {
-    if (useGateway.value) {
-      // Gateway chat.history 不支持 before 分页，改为全量拉取 + 客户端过滤
+    if (props.sessionKey) {
+      // Gateway 不支持 before 分页，全量拉取 + 客户端过滤更早消息
       const oldest = messages.value[0].timestamp;
       const gwRes = await fetch(
-        `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey!)}&limit=1000`,
+        `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=1000`,
         { credentials: 'include' }
       );
       if (!gwRes.ok) { hasMore.value = false; return; }
@@ -166,76 +155,33 @@ async function loadMore() {
       const rawMsgs = gwResult?.messages ?? gwResult?.history ?? gwResult ?? [];
       const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
       const allMsgs = gatewayMsgsToTimeline(arr);
-      // 只保留比当前最早消息更早的
-      const olderMsgs = allMsgs.filter(m => new Date(m.timestamp).getTime() < new Date(oldest).getTime());
+      const olderMsgs = allMsgs.filter(m => new Date(m.timestamp).getTime() < new Date(oldest).getTime() - 1000);
       if (olderMsgs.length === 0) { hasMore.value = false; return; }
       messages.value = [...olderMsgs, ...messages.value];
       olderMsgs.forEach(m => knownIds.add(m.id));
-      // 如果拉取全量后更早的消息不满 50 条，可能已到底
       hasMore.value = olderMsgs.length >= 20;
     } else {
-      // Admin 降级模式：原有逻辑
+      // Admin 降级
       const oldest = messages.value[0].timestamp;
       const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${filters.value}`, { credentials: 'include' });
       if (!res.ok) return;
       const data: TimelineResponse = await res.json();
-      if (!Array.isArray(data.messages) || data.messages.length === 0) {
-        hasMore.value = false;
-        return;
-      }
+      if (!Array.isArray(data.messages) || data.messages.length === 0) { hasMore.value = false; return; }
       const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
-      if (newMsgs.length > 0) {
-        messages.value = [...newMsgs, ...messages.value].sort(
-          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        );
-        newMsgs.forEach(m => knownIds.add(m.id));
-        hasMore.value = !!data.has_more;
-      }
+      if (newMsgs.length === 0) { hasMore.value = false; return; }
+      newMsgs.forEach(m => knownIds.add(m.id));
+      messages.value = [...newMsgs, ...messages.value];
+      hasMore.value = data.has_more;
     }
   } catch (e) {
     console.error('加载更多失败', e);
   } finally {
     loadingMore.value = false;
-  }
-
-  // 恢复滚动位置：新内容加到顶部后，把滚动条往上推 delta 高度
-  // 这样用户看到的内容保持不变（浏览器默认 scrollTop 不变）
-  await nextTick();
-  if (el) {
-    const delta = el.scrollHeight - prevScrollHeight;
-    el.scrollTop = prevScrollTop + delta;
-  }
-}
-
-/** 轮询最新消息 — 使用 since 获取增量，避免活跃 session 消息被淹没 */
-async function pollLatest() {
-  if (useGateway.value) return; // Gateway 模式不需要 Admin 轮询
-  // 用已知最新消息的 timestamp 作为 since，只拉增量
-  const newestTs = messages.value.length > 0
-    ? messages.value[messages.value.length - 1].timestamp
-    : undefined;
-
-  const sinceParam = newestTs ? `&since=${encodeURIComponent(newestTs)}` : '';
-  const res = await fetch(`/api/messages/timeline?limit=50&${filters.value}${sinceParam}`, { credentials: 'include' });
-  if (!res.ok) return;
-  const data: TimelineResponse = await res.json();
-  if (!Array.isArray(data.messages) || data.messages.length === 0) return;
-
-  // 过滤出真正的新消息，同时排除空内容用户消息
-  const newMsgs = data.messages.filter(m => !knownIds.has(m.id) && !isEmptyUserMsg(m));
-  if (newMsgs.length === 0) return;
-
-  // 加到列表末尾，按时间排序
-  newMsgs.forEach(m => knownIds.add(m.id));
-  messages.value = [...messages.value, ...newMsgs].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
-
-  if (atBottom.value) {
     await nextTick();
-    scrollToBottom(false);
-  } else {
-    newMsgCount.value += newMsgs.length;
+    if (el) {
+      const delta = el.scrollHeight - prevScrollHeight;
+      el.scrollTop = prevScrollTop + delta;
+    }
   }
 }
 
@@ -249,8 +195,6 @@ function goToBottom() {
  * 如果内容未撑满容器，最多加载 2 批历史直到撑满或耗尽
  */
 async function fillScrollable() {
-  // Gateway 模式不需要用 Admin timeline 补充
-  if (useGateway.value) return;
   const el = containerRef.value;
   if (!el) return;
 
@@ -281,6 +225,116 @@ async function fillScrollable() {
     await nextTick();
     batches++;
   }
+}
+
+/** 从 Gateway 历史消息的 content 提取纯文本 */
+function extractContentText(content: any): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.filter((c: any) => c.type === 'text').map((c: any) => c.text ?? '').join('');
+  return String(content ?? '');
+}
+
+/** 生成 TimelineMessage 对象 */
+function makeMsg(
+  type: 'user' | 'agent' | 'tool',
+  agentId: string, agentName: string | null, model: string | null,
+  content: string, timestamp: string,
+  rawId: any, avatar: string | null, runId?: string,
+): TimelineMessage {
+  const stableId = typeof rawId === 'number' ? rawId
+    : typeof rawId === 'string' ? simpleHash(rawId)
+    : simpleHash(`${type}:${timestamp}:${content.substring(0, 80)}`);
+  return {
+    id: stableId,
+    session_key: props.sessionKey || '',
+    agent_id: type === 'user' ? 'user' : agentId,
+    agent_name: type === 'user' ? 'You' : agentName,
+    avatar: avatar ?? agentAvatar.value ?? null,
+    message_type: type,
+    content: content || null,
+    clean_content: content || null,
+    content_summary: null,
+    is_cron: false,
+    is_system_noise: false,
+    is_system_context: 0,
+    source_channel: 'webchat',
+    model: model || null,
+    timestamp,
+    streamRunId: runId,
+  };
+}
+
+/** 将 Gateway 历史消息数组转为 TimelineMessage 数组 */
+function gatewayMsgsToTimeline(rawMessages: any[]): TimelineMessage[] {
+  const result: TimelineMessage[] = [];
+  const sessionAgentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
+
+  for (const m of rawMessages) {
+    const role = m.role as string;
+    if (role !== 'user' && role !== 'assistant' && role !== 'tool' && role !== 'toolResult') continue;
+
+    const runId = m.runId as string | undefined;
+    const timestamp = m.timestamp
+      ? (typeof m.timestamp === 'number' ? new Date(m.timestamp).toISOString() : m.timestamp)
+      : new Date().toISOString();
+
+    // ── 用户消息 ──
+    if (role === 'user') {
+      let text = extractContentText(m.content);
+      if (!text.trim() || text.trim() === 'NO_REPLY') continue;
+      if (text.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
+      result.push(makeMsg('user', 'user', 'You', null, text, timestamp, m.id, null, runId));
+      continue;
+    }
+
+    // ── assistant 消息：拆分 text 和 toolCall ──
+    if (role === 'assistant') {
+      if (typeof m.content === 'string') {
+        if (!m.content.trim() || m.content.trim() === 'NO_REPLY') continue;
+        if (m.content.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
+        result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, m.content, timestamp, m.id, null, runId));
+        continue;
+      }
+      if (!Array.isArray(m.content)) continue;
+
+      // 拆分 content blocks
+      let textParts: string[] = [];
+      let toolCallBlocks: any[] = [];
+      for (const block of m.content) {
+        switch (block.type) {
+          case 'text': textParts.push(block.text ?? ''); break;
+          case 'thinking': break;
+          case 'toolCall':
+          case 'tool_call':
+            toolCallBlocks.push(block);
+            break;
+        }
+      }
+
+      const combinedText = textParts.join('');
+      if (combinedText.trim() && !combinedText.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>') && combinedText.trim() !== 'NO_REPLY') {
+        result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, combinedText, timestamp, m.id, null, runId));
+      }
+
+      // 每个 toolCall block 生成一条 tool 消息
+      for (const tc of toolCallBlocks) {
+        const toolName = tc.toolName || tc.name || 'unknown';
+        const toolContent = `Tool: ${toolName}\nArgs: ${JSON.stringify(tc.arguments ?? tc.args ?? {}, null, 2)}`;
+        result.push(makeMsg('tool', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, toolContent, timestamp, m.id, null, runId));
+      }
+      continue;
+    }
+
+    // ── toolResult 消息 ──
+    if (role === 'tool' || role === 'toolResult') {
+      let text = extractContentText(m.content);
+      if (!text.trim()) continue;
+      result.push(makeMsg('tool', sessionAgentId || 'assistant', null, null, text.substring(0, 500), timestamp, m.id, null, runId));
+    }
+  }
+
+  result.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  return result;
 }
 
 /** 空内容过滤：排除内容为空的用户消息（如 HEARTBEAT_OK, NO_REPLY 等系统注入） */
@@ -342,9 +396,8 @@ function subscribeGatewayEvents() {
     }
   });
 
-  // 2. chat — 流式 agent 回复（仅 Gateway 模式）
+  // 2. chat — 流式 agent 回复
   unsubChat = gatewayClient.on('chat', (payload: unknown) => {
-    if (!useGateway.value) return;
     const data = payload as Record<string, unknown> | undefined;
     if (!data) return;
     if (data.sessionKey !== props.sessionKey) return;
@@ -359,9 +412,8 @@ function subscribeGatewayEvents() {
     }
   });
 
-  // 3. agent — 工具调用 / 生命周期（Phase 2）
+  // 3. agent — 工具调用 / 生命周期
   unsubAgent = gatewayClient.on('agent', (payload: unknown) => {
-    if (!useGateway.value) return;
     const data = payload as Record<string, unknown> | undefined;
     if (!data) return;
     if (data.sessionKey !== props.sessionKey) return;
@@ -680,123 +732,10 @@ async function fetchAgentAvatar() {
   }
 }
 
-// =========== Gateway 消息映射 ===========
-/**
- * 将 Gateway 消息列表映射为 TimelineMessage 列表
- * 含过滤：跳过系统上下文、空内容、NO_REPLY 等
- */
-function extractContentText(content: any): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.filter((c: any) => c.type === 'text').map((c: any) => c.text ?? '').join('');
-  return String(content ?? '');
-}
-
-function makeMsg(
-  type: 'user' | 'agent' | 'tool',
-  agentId: string, agentName: string | null, model: string | null,
-  content: string, timestamp: string,
-  rawId: any, avatar: string | null, runId?: string,
-): TimelineMessage {
-  const stableId = typeof rawId === 'number' ? rawId
-    : typeof rawId === 'string' ? simpleHash(rawId)
-    : simpleHash(`${type}:${timestamp}:${content.substring(0, 80)}`);
-  return {
-    id: stableId,
-    session_key: props.sessionKey || '',
-    agent_id: type === 'user' ? 'user' : agentId,
-    agent_name: type === 'user' ? 'You' : agentName,
-    avatar: avatar ?? agentAvatar.value ?? null,
-    message_type: type,
-    content: content || null,
-    clean_content: content || null,
-    content_summary: null,
-    is_cron: false,
-    is_system_noise: false,
-    is_system_context: 0,
-    source_channel: 'webchat',
-    model: model || null,
-    timestamp,
-    streamRunId: runId,
-  };
-}
-
-function gatewayMsgsToTimeline(rawMessages: any[]): TimelineMessage[] {
-  const result: TimelineMessage[] = [];
-  const sessionAgentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
-
-  for (const m of rawMessages) {
-    const role = m.role as string;
-    if (role !== 'user' && role !== 'assistant' && role !== 'tool' && role !== 'toolResult') continue;
-
-    const runId = m.runId as string | undefined;
-    const timestamp = m.timestamp
-      ? (typeof m.timestamp === 'number' ? new Date(m.timestamp).toISOString() : m.timestamp)
-      : new Date().toISOString();
-
-    // ── 用户消息 ──
-    if (role === 'user') {
-      let text = extractContentText(m.content);
-      if (!text.trim() || text.trim() === 'NO_REPLY') continue;
-      if (text.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
-      result.push(makeMsg('user', 'user', 'You', null, text, timestamp, m.id, null, runId));
-      continue;
-    }
-
-    // ── assistant 消息：拆分 text 和 toolCall ──
-    if (role === 'assistant') {
-      if (typeof m.content === 'string') {
-        if (!m.content.trim() || m.content.trim() === 'NO_REPLY') continue;
-        if (m.content.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
-        result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, m.content, timestamp, m.id, null, runId));
-        continue;
-      }
-      if (!Array.isArray(m.content)) continue;
-
-      // 拆分 content blocks
-      let textParts: string[] = [];
-      let toolCallBlocks: any[] = [];
-      for (const block of m.content) {
-        switch (block.type) {
-          case 'text': textParts.push(block.text ?? ''); break;
-          case 'thinking': break; // 暂不展示
-          case 'toolCall':
-          case 'tool_call':
-            toolCallBlocks.push(block);
-            break;
-        }
-      }
-
-      const combinedText = textParts.join('');
-      if (combinedText.trim() && !combinedText.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>') && combinedText.trim() !== 'NO_REPLY') {
-        result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, combinedText, timestamp, m.id, null, runId));
-      }
-
-      // 每个 toolCall block 生成一条 tool 消息
-      for (const tc of toolCallBlocks) {
-        const toolName = tc.toolName || tc.name || 'unknown';
-        const toolContent = `Tool: ${toolName}\nArgs: ${JSON.stringify(tc.arguments ?? tc.args ?? {}, null, 2)}`;
-        result.push(makeMsg('tool', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, toolContent, timestamp, m.id, null, runId));
-      }
-      continue;
-    }
-
-    // ── toolResult 消息 ──
-    if (role === 'tool' || role === 'toolResult') {
-      let text = extractContentText(m.content);
-      if (!text.trim()) continue;
-      result.push(makeMsg('tool', sessionAgentId || 'assistant', null, null, text.substring(0, 500), timestamp, m.id, null, runId));
-    }
-  }
-
-  result.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  return result;
-}
-
 // =========== 生命周期 ===========
 watch(() => props.sessionKey, (newKey) => {
   // 当 sessionKey 变化时重新加载（:key 也触发重建，但 watch 提供双重保障）
   if (newKey !== undefined) {
-    useGateway.value = false;
     agentAvatar.value = null;
     knownIds.clear();
     messages.value = [];
@@ -807,24 +746,14 @@ watch(() => props.sessionKey, (newKey) => {
 onMounted(async () => {
   await loadLatest();
   await nextTick();
-  // 如果初始加载后内容没撑满容器，继续加载更多直到撑满或耗尽（仅 Admin 模式）
-  await fillScrollable();
   scrollToBottom(false);
   checkBottom();
 
   // Gateway 实时事件（增量更新）
   subscribeGatewayEvents();
-
-  // 保留轮询作为降级方案（仅 Admin 模式生效）
-  pollTimer = setInterval(() => {
-    if (!useGateway.value) {
-      pollLatest();
-    }
-  }, 5000);
 });
 
 onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer);
   unsubscribeGatewayEvents();
 });
 
