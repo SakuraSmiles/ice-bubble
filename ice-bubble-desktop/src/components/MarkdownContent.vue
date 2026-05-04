@@ -94,7 +94,7 @@ onUnmounted(() => {
 
 .markdown-content :deep(h1) { font-size: 1.6em; }
 .markdown-content :deep(h2) { font-size: 1.35em; }
-.markdown-content :deep(h3) { font-size: 1.15em; }
+.markdown-content :deep(h3) { font-size: 1.15em; margin-top: 0.8em; }
 
 /* ========== 段落 ========== */
 .markdown-content :deep(p) {
@@ -106,7 +106,7 @@ onUnmounted(() => {
   position: relative;
   background: #282c34;
   border: 1px solid #30363d;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 16px;
   overflow-x: auto;
   margin: 0.75em 0;
@@ -194,12 +194,12 @@ onUnmounted(() => {
 /* ========== 列表 ========== */
 .markdown-content :deep(ul),
 .markdown-content :deep(ol) {
-  margin: 0.5em 0;
-  padding-left: 2em;
+  margin: 0.4em 0;
+  padding-left: 1.8em;
 }
 
 .markdown-content :deep(li) {
-  margin: 0.25em 0;
+  margin: 0.15em 0;
 }
 
 /* ========== 链接 — 唯一蓝色 ========== */

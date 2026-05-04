@@ -1384,6 +1384,36 @@ export class DataRepository {
     return map;
   }
 
+  /**
+   * 获取每个 session 的第一条用户消息内容
+   * 按 session_key 索引
+   */
+  getSessionFirstMessageMap(): Map<string, { first_message: string | null }> {
+    const rows = this.db.prepare(`
+      SELECT
+        s.session_key,
+        (
+          SELECT substr(fm.content, 1, 120)
+          FROM admin_messages fm
+          WHERE fm.session_key = s.session_key
+            AND fm.message_type = 'user'
+          ORDER BY fm.timestamp ASC
+          LIMIT 1
+        ) as first_message
+      FROM admin_sessions s
+      WHERE s.session_key IS NOT NULL
+      GROUP BY s.session_key
+    `).all() as Array<{
+      session_key: string;
+      first_message: string | null;
+    }>;
+    const map = new Map<string, { first_message: string | null }>();
+    for (const row of rows) {
+      map.set(row.session_key, { first_message: row.first_message });
+    }
+    return map;
+  }
+
   /** @deprecated Use getSessionLastMessageMap instead */
   getAgentLastMessageMap(): Map<string, { last_message: string | null; message_count: number }> {
     const map = this.getSessionLastMessageMap();

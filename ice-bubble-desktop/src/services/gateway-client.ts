@@ -99,7 +99,8 @@ export class GatewayClient {
     }
     if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
       // 已有连接正在进行，等待其完成
-      return this.waitForConnect()
+      await this.waitForConnect()
+      return
     }
 
     this.intentionalClose = false

@@ -3,22 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useNow } from '@/composables/useNow';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { api } from '../api/client.ts';
-
-export interface Session {
-  session_key: string;
-  agent_id: string;
-  channel: string;
-  message_count: number;
-  first_message_at: string | null;
-  last_message_at: string | null;
-  created_at: string;
-}
-
-interface GroupedSessions {
-  agent_id: string;
-  sessions: Session[];
-}
+import { api, type SessionDTO } from '../api/client.ts';
 
 const props = defineProps<{
   selectedSession: string | null;
@@ -26,54 +11,30 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'select', session: Session): void;
+  (e: 'select', session: SessionDTO): void;
   (e: 'refresh'): void;
 }>();
 
-const sessions = ref<Session[]>([]);
+const sessions = ref<SessionDTO[]>([]);
 const loading = ref(false);
 const error = ref('');
 
-const groupedSessions = computed<GroupedSessions[]>(() => {
-  let filtered = props.filterAgent && props.filterAgent !== 'all'
+const filteredSessions = computed(() => {
+  let list = props.filterAgent && props.filterAgent !== 'all'
     ? sessions.value.filter(s => s.agent_id === props.filterAgent)
     : sessions.value;
 
-  const map = new Map<string, Session[]>();
-  for (const s of filtered) {
-    const list = map.get(s.agent_id) || [];
-    list.push(s);
-    map.set(s.agent_id, list);
-  }
-
-  // Sort groups by most recent session activity
-  const groups: GroupedSessions[] = [];
-  map.forEach((sessions, agent_id) => {
-    // Sort sessions within group by last_message_at desc
-    sessions.sort((a, b) => {
-      const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-      const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-      return tb - ta;
-    });
-    groups.push({ agent_id, sessions });
-  });
-
-  // Sort groups by most recent message
-  groups.sort((a, b) => {
-    const ta = a.sessions[0]?.last_message_at
-      ? new Date(a.sessions[0].last_message_at).getTime() : 0;
-    const tb = b.sessions[0]?.last_message_at
-      ? new Date(b.sessions[0].last_message_at).getTime() : 0;
+  return list.sort((a, b) => {
+    const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+    const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
     return tb - ta;
   });
-
-  return groups;
 });
 
 const nowRef = useNow();
 
 function formatRelativeTime(dateString: string | null): string {
-  if (!dateString) return '-';
+  if (!dateString) return '';
   const now = nowRef.value;
   const date = new Date(dateString).getTime();
   const diff = now - date;
@@ -86,25 +47,47 @@ function formatRelativeTime(dateString: string | null): string {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}天前`;
   const d = new Date(dateString);
-  return `${d.getMonth() + 1}-${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  return `${d.getMonth() + 1}-${d.getDate()}`;
 }
 
 function formatTime(dateString: string | null): string {
-  if (!dateString) return '-';
+  if (!dateString) return '';
   const d = new Date(dateString);
   return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
 
-function simplifySessionKey(key: string): string {
-  // 不截断，完整展示，缩略交给组件 CSS 处理
-  return key;
+function getDisplayTitle(s: SessionDTO): string {
+  if (s.label) return s.label;
+  if (s.last_message) return s.last_message.slice(0, 40) + (s.last_message.length > 40 ? '...' : '');
+  // Simplify session_key: take last 2 segments
+  const parts = s.session_key.split(':');
+  return parts.slice(-2).join(':');
+}
+
+function getPreview(s: SessionDTO): string {
+  if (s.last_message) return s.last_message.slice(0, 50) + (s.last_message.length > 50 ? '...' : '');
+  return '';
+}
+
+function agentDotColor(agentId: string): string {
+  let hash = 0;
+  for (let i = 0; i < agentId.length; i++) {
+    hash = agentId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 65%, 55%)`;
+}
+
+function agentTooltip(s: SessionDTO): string {
+  const name = s.agent_name || s.agent_id;
+  return `${name} (${s.agent_id})`;
 }
 
 async function fetchSessions() {
   loading.value = true;
   error.value = '';
   try {
-    const data = await api.getSessions();
+    const data = await api.getUnifiedSessions();
     sessions.value = data.sessions || [];
   } catch (e: any) {
     error.value = e.message || '获取会话列表失败';
@@ -114,7 +97,7 @@ async function fetchSessions() {
   }
 }
 
-function selectSession(session: Session) {
+function selectSession(session: SessionDTO) {
   emit('select', session);
 }
 
@@ -134,39 +117,39 @@ onMounted(() => {
       </el-button>
     </div>
 
-    <div class="session-groups" v-loading="loading">
+    <div class="session-scroll" v-loading="loading">
       <div v-if="error" class="error-msg">{{ error }}</div>
 
-      <div v-else-if="groupedSessions.length === 0 && !loading" class="empty-msg">
+      <div v-else-if="filteredSessions.length === 0 && !loading" class="empty-msg">
         暂无会话
       </div>
 
       <div
-        v-for="group in groupedSessions"
-        :key="group.agent_id"
-        class="session-group"
+        v-for="session in filteredSessions"
+        :key="session.session_key"
+        class="session-item"
+        :class="{ selected: selectedSession === session.session_key }"
+        :title="agentTooltip(session)"
+        @click="selectSession(session)"
       >
-        <div class="group-header">
-          <el-tag size="small" type="info">{{ group.agent_id }}</el-tag>
-          <span class="group-count">{{ group.sessions.length }} 个会话</span>
-        </div>
-
-        <div
-          v-for="session in group.sessions"
-          :key="session.session_key"
-          class="session-item"
-          :class="{ selected: selectedSession === session.session_key }"
-          @click="selectSession(session)"
-        >
-          <div class="session-top">
-            <el-tag size="small" type="info" class="agent-tag">{{ session.agent_id }}</el-tag>
-            <span class="session-key">{{ simplifySessionKey(session.session_key) }}</span>
+        <span
+          class="agent-dot"
+          :style="{ backgroundColor: agentDotColor(session.agent_id) }"
+        ></span>
+        <div class="session-content">
+          <div class="session-row-1">
+            <span class="session-title">{{ getDisplayTitle(session) }}</span>
+            <span
+              v-if="session.last_message_at"
+              class="session-time"
+              :title="formatTime(session.last_message_at)"
+            >{{ formatRelativeTime(session.last_message_at) }}</span>
           </div>
-          <div class="session-meta">
-            <span class="message-count">{{ session.message_count }} 条消息</span>
-            <span class="last-time" :title="formatTime(session.last_message_at)">
-              {{ formatRelativeTime(session.last_message_at) }}
-            </span>
+          <div v-if="getPreview(session) && session.label" class="session-row-2">
+            {{ getPreview(session) }}
+          </div>
+          <div class="session-row-3">
+            <span class="msg-count">{{ session.message_count }} 条消息</span>
           </div>
         </div>
       </div>
@@ -198,34 +181,16 @@ onMounted(() => {
   color: var(--color-text);
 }
 
-.session-groups {
+.session-scroll {
   flex: 1;
   overflow-y: auto;
 }
 
-.session-group {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--color-border-light, #eee);
-}
-
-.session-group:last-child {
-  border-bottom: none;
-}
-
-.group-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 16px 8px;
-}
-
-.group-count {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
 .session-item {
-  padding: 10px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 16px 10px 14px;
   cursor: pointer;
   transition: background 0.15s;
   border-left: 3px solid transparent;
@@ -236,46 +201,69 @@ onMounted(() => {
 }
 
 .session-item.selected {
-  background: var(--color-bg-subtle);
+  background: rgba(64, 158, 255, 0.06);
   border-left-color: var(--color-accent-blue);
 }
 
-.session-top {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.agent-tag {
+.agent-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   flex-shrink: 0;
+  margin-top: 5px;
 }
 
-.session-key {
-  font-size: 12px;
-  font-family: var(--font-exo2);
-  color: var(--color-text-secondary);
+.session-content {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.session-meta {
+.session-row-1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.message-count {
-  font-size: 11px;
-  color: var(--color-text-secondary);
+.session-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
-.last-time {
+.session-time {
   font-size: 11px;
   color: var(--color-text-secondary);
   opacity: 0.7;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.session-row-2 {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  opacity: 0.65;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-row-3 {
+  margin-top: 2px;
+}
+
+.msg-count {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
 }
 
 .error-msg {

@@ -49,10 +49,14 @@ const sidebarSessions = computed(() => {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
-  const pinned = all.filter(s => prefsStore.isPinned(s.session_key));
+  const autoPinned: SessionDTO[] = [];
+  const autoPinnedKeys = new Set<string>();
+
+  const pinned = all.filter(s => prefsStore.isPinned(s.session_key) && !autoPinnedKeys.has(s.session_key));
   const pinnedKeys = new Set(pinned.map(s => s.session_key));
+  const excludedKeys = new Set([...autoPinnedKeys, ...pinnedKeys]);
   const groupedKeys = groupStore.groupedKeys;
-  const ungrouped = all.filter(s => !pinnedKeys.has(s.session_key) && !groupedKeys.has(s.session_key));
+  const ungrouped = all.filter(s => !excludedKeys.has(s.session_key) && !groupedKeys.has(s.session_key));
 
   const agentMap = new Map<string, SessionDTO[]>();
   for (const s of ungrouped) {
@@ -77,20 +81,72 @@ const sidebarSessions = computed(() => {
     recent.push(...source.slice(0, 3));
   }
 
-  return { pinned, recent };
+  return { autoPinned, pinned, recent };
 });
 
 // ====== 辅助函数 ======
-function formatTitle(s: SessionDTO): string {
+function stripMarkdown(text: string): string {
+  let s = text;
+  // 图片语法 ![alt](url) → 删除整段
+  s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, '');
+  // 链接 [text](url) → text
+  s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  // 标题 # ## ### → 去掉
+  s = s.replace(/^#{1,6}\s+/gm, '');
+  // 引用 > → 去掉
+  s = s.replace(/^>\s?/gm, '');
+  // 无序列表标记 - * + (仅行首)
+  s = s.replace(/^[\-\*+]\s+/gm, '');
+  // 加粗 **text** / __text__
+  s = s.replace(/\*\*(.+?)\*\*/g, '$1');
+  s = s.replace(/__(.+?)__/g, '$1');
+  // 斜体 *text* (单星号，不匹配已处理的加粗)
+  s = s.replace(/(?<!\*)\*(?!=\*)(.+?)(?<!\*)\*(?!=\*)/g, '$1');
+  // 代码反引号
+  s = s.replace(/`(.+?)`/g, '$1');
+  // 系统消息视为空
+  if (['NO_REPLY', 'HEARTBEAT_OK'].includes(s.trim())) return '';
+  // 压缩空白
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+function generateTitle(s: SessionDTO): string {
   if (s.label) return s.label;
-  if (s.agent_name) return s.agent_name;
-  const key = s.session_key;
-  const parts = key.split(':');
-  const last = parts[parts.length - 1];
-  if (/^[0-9a-f]{8}-/i.test(last)) {
-    return parts.slice(1, parts.length - 1).join(':') || '未知';
+  // 优先用 first_message，其次 last_message
+  let raw = (s.first_message || '').trim();
+  if (!raw || ['NO_REPLY', 'HEARTBEAT_OK'].includes(raw)) {
+    raw = (s.last_message || '').trim();
   }
-  return parts.slice(1).join(':') || key;
+  let msg = stripMarkdown(raw);
+  if (!msg) return '新对话';
+  // 去掉以 [ 开头的标签前缀
+  if (msg.startsWith('[')) {
+    const closeIdx = msg.indexOf(']');
+    if (closeIdx > 0 && closeIdx < msg.length - 1) {
+      msg = msg.slice(closeIdx + 1).trim();
+    }
+  }
+  if (!msg) return '新对话';
+  return msg.length > 35 ? msg.slice(0, 35) + '…' : msg;
+}
+
+function formatTitle(s: SessionDTO, pinned?: boolean): string {
+  const title = generateTitle(s);
+  return pinned ? '📌 ' + title : title;
+}
+
+function generatePreview(s: SessionDTO): string {
+  if (s.last_message) {
+    let msg = stripMarkdown(s.last_message);
+    if (!msg) return '';
+    // 如果消息就是标题，不重复显示
+    if (s.label && msg === s.label) return '';
+    const title = generateTitle(s);
+    if (msg === title) return '';
+    return msg.length > 30 ? msg.slice(0, 30) + '…' : msg;
+  }
+  return '';
 }
 
 function formatTime(ts: string | null | undefined): string {
@@ -113,28 +169,8 @@ function isActive(key: string): boolean {
   return route.path === `/workspace/${encodeURIComponent(key)}`;
 }
 
-function agentColor(agentId: string): string {
-  // 根据 agent id 生成稳定颜色
-  const colors = [
-    '#4CAF50', '#2196F3', '#FF9800', '#9C27B0',
-    '#F44336', '#00BCD4', '#795548', '#607D8B',
-    '#E91E63', '#3F51B5', '#009688', '#FF5722',
-  ];
-  let hash = 0;
-  for (let i = 0; i < agentId.length; i++) {
-    hash = agentId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-}
 
-function agentInitial(agentId: string): string {
-  return agentId.charAt(0).toUpperCase();
-}
 
-function truncate(text: string | null | undefined, max: number): string {
-  if (!text) return '';
-  return text.length > max ? text.slice(0, max) + '…' : text;
-}
 
 function toggleGroup(groupId: number) {
   if (collapsedGroups.value.has(groupId)) {
@@ -279,17 +315,6 @@ onUnmounted(() => {
 
 <template>
   <div class="session-list">
-    <!-- 顶部：新建对话按钮 -->
-    <div class="session-list-header">
-      <el-button
-        class="new-chat-btn"
-        @click="showNewChat = true"
-      >
-        <el-icon><Plus /></el-icon>
-        <span>新建对话</span>
-      </el-button>
-    </div>
-
     <!-- 会话列表（精简模式） -->
     <div class="session-list-body">
       <div v-if="sessions.length === 0 && !prefsStore.loaded" class="session-empty">
@@ -297,6 +322,19 @@ onUnmounted(() => {
       </div>
       <div v-else-if="sidebarSessions.pinned.length === 0 && sidebarSessions.recent.length === 0 && groupedSessions.grouped.length === 0" class="session-empty">
         暂无会话
+      </div>
+
+
+
+      <!-- 新建对话按钮（主会话下方） -->
+      <div class="session-list-header">
+        <el-button
+          class="new-chat-btn"
+          @click="showNewChat = true"
+        >
+          <el-icon><Plus /></el-icon>
+          <span>新建对话</span>
+        </el-button>
       </div>
 
       <!-- 分组区 -->
@@ -320,19 +358,20 @@ onUnmounted(() => {
                 @click="handleClick(s)"
                 @contextmenu="onContextMenu($event, s)"
               >
-                <div class="session-avatar" :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }">
-                  <img v-if="s.avatar" :src="`/api/resources/avatars/${s.avatar}`" class="avatar-img" />
-                  <template v-else>{{ agentInitial(s.agent_id) }}</template>
-                </div>
                 <div class="session-item-main">
-                  <div class="session-item-title">{{ formatTitle(s) }}</div>
+                  <div class="session-item-row">
+                    <span class="session-item-title">{{ formatTitle(s, prefsStore.isPinned(s.session_key)) }}</span>
+                    <span class="session-time">{{ formatTime(s.last_message_at || s.updated_at) }}</span>
+                  </div>
                   <div class="session-item-sub">
-                    <template v-if="s.last_message">{{ truncate(s.last_message, 30) }}</template>
-                    <template v-else-if="s.agent_name">暂无消息 · {{ s.agent_name }}</template>
-                    <template v-else>暂无消息</template>
+                    <span v-if="s.agent_name" class="session-agent-name">{{ s.agent_name }}</span>
+                    <template v-if="generatePreview(s)">
+                      <span v-if="s.agent_name" class="session-sub-sep"> · </span>
+                      <span>{{ generatePreview(s) }}</span>
+                    </template>
+                    <template v-else-if="!s.agent_name">暂无消息</template>
                   </div>
                 </div>
-                <span class="session-time">{{ formatTime(s.last_message_at || s.updated_at) }}</span>
               </div>
               <div v-if="group.sessions.length === 0" class="group-empty">空分组</div>
             </div>
@@ -340,7 +379,7 @@ onUnmounted(() => {
         </div>
       </template>
 
-      <!-- 置顶会话 -->
+      <!-- 用户置顶会话 -->
       <template v-if="sidebarSessions.pinned.length > 0">
         <div v-if="groupedSessions.grouped.length > 0" class="section-divider"></div>
         <div class="section-label">📌 置顶</div>
@@ -352,45 +391,49 @@ onUnmounted(() => {
           @click="handleClick(s)"
           @contextmenu="onContextMenu($event, s)"
         >
-          <div class="session-avatar" :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }">
-            <img v-if="s.avatar" :src="`/api/resources/avatars/${s.avatar}`" class="avatar-img" />
-            <template v-else>{{ agentInitial(s.agent_id) }}</template>
-          </div>
           <div class="session-item-main">
-            <div class="session-item-title">{{ formatTitle(s) }}</div>
+            <div class="session-item-row">
+              <span class="session-item-title">{{ formatTitle(s, true) }}</span>
+              <span class="session-time">{{ formatTime(s.last_message_at || s.updated_at) }}</span>
+            </div>
             <div class="session-item-sub">
-              <template v-if="s.last_message">{{ truncate(s.last_message, 30) }}</template>
-              <template v-else>暂无消息</template>
+              <span v-if="s.agent_name" class="session-agent-name">{{ s.agent_name }}</span>
+              <template v-if="generatePreview(s)">
+                <span v-if="s.agent_name" class="session-sub-sep"> · </span>
+                <span>{{ generatePreview(s) }}</span>
+              </template>
+              <template v-else-if="!s.agent_name">暂无消息</template>
             </div>
           </div>
-          <span class="session-time">{{ formatTime(s.last_message_at || s.updated_at) }}</span>
         </div>
       </template>
 
-      <!-- 最近会话（精简） -->
+      <!-- 最近会话 -->
       <template v-if="sidebarSessions.recent.length > 0">
         <div v-if="groupedSessions.grouped.length > 0 || sidebarSessions.pinned.length > 0" class="section-divider"></div>
-        <div class="section-label">最近</div>
+        <div class="section-label">最近会话</div>
         <div
           v-for="s in sidebarSessions.recent"
           :key="s.session_key"
-          class="session-item"
+          class="session-item session-item-compact"
           :class="{ active: isActive(s.session_key) }"
           @click="handleClick(s)"
           @contextmenu="onContextMenu($event, s)"
         >
-          <div class="session-avatar" :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }">
-            <img v-if="s.avatar" :src="`/api/resources/avatars/${s.avatar}`" class="avatar-img" />
-            <template v-else>{{ agentInitial(s.agent_id) }}</template>
-          </div>
           <div class="session-item-main">
-            <div class="session-item-title">{{ formatTitle(s) }}</div>
+            <div class="session-item-row">
+              <span class="session-item-title">{{ formatTitle(s, prefsStore.isPinned(s.session_key)) }}</span>
+              <span class="session-time">{{ formatTime(s.last_message_at || s.updated_at) }}</span>
+            </div>
             <div class="session-item-sub">
-              <template v-if="s.last_message">{{ truncate(s.last_message, 30) }}</template>
-              <template v-else>暂无消息</template>
+              <span v-if="s.agent_name" class="session-agent-name">{{ s.agent_name }}</span>
+              <template v-if="generatePreview(s)">
+                <span v-if="s.agent_name" class="session-sub-sep"> · </span>
+                <span>{{ generatePreview(s) }}</span>
+              </template>
+              <template v-else-if="!s.agent_name">暂无消息</template>
             </div>
           </div>
-          <span class="session-time">{{ formatTime(s.last_message_at || s.updated_at) }}</span>
         </div>
       </template>
     </div>
@@ -558,7 +601,7 @@ onUnmounted(() => {
 /* 分组折叠动画 */
 .collapse-enter-active,
 .collapse-leave-active {
-  transition: all 0.2s ease;
+  transition: max-height 0.25s ease, opacity 0.2s ease;
   overflow: hidden;
 }
 
@@ -571,7 +614,7 @@ onUnmounted(() => {
 .collapse-enter-to,
 .collapse-leave-from {
   opacity: 1;
-  max-height: 2000px;
+  max-height: 500px;
 }
 
 /* 分割线 */
@@ -598,28 +641,20 @@ onUnmounted(() => {
 }
 
 .session-item.active {
-  background: var(--color-accent-blue-subtle, rgba(64, 158, 255, 0.08));
+  background: var(--color-accent-blue-subtle, rgba(64, 158, 255, 0.10));
+  box-shadow: inset 3px 0 0 var(--color-accent-blue, #409eff);
 }
 
-.session-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
+.session-item.active .session-item-title {
+  color: var(--color-accent-blue, #409eff);
   font-weight: 600;
-  color: #fff;
-  flex-shrink: 0;
-  overflow: hidden;
 }
 
-.avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.session-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .session-item-main {
@@ -630,25 +665,51 @@ onUnmounted(() => {
   gap: 1px;
 }
 
+.session-item-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .session-item-title {
   font-size: 13px;
+  font-weight: 600;
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.4;
+  flex: 1;
+  min-width: 0;
 }
 
 .session-item-sub {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-tertiary, var(--color-text-secondary));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.session-time {
+.session-agent-name {
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
+.session-model-badge {
   font-size: 11px;
+  color: var(--color-accent-blue);
+  background: rgba(64, 158, 255, 0.08);
+  padding: 0 5px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.session-sub-sep {
+  color: var(--color-text-quaternary, var(--color-text-tertiary, var(--color-text-secondary)));
+}
+
+.session-time {
+  font-size: 12px;
   color: var(--color-text-tertiary, var(--color-text-secondary));
   white-space: nowrap;
   flex-shrink: 0;
@@ -745,6 +806,40 @@ onUnmounted(() => {
   color: var(--color-text-tertiary, var(--color-text-secondary));
  text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+/* 主会话特殊样式 */
+.main-session {
+  background: rgba(64, 158, 255, 0.04);
+  border-left: 3px solid var(--color-accent-blue, #409eff);
+}
+
+.main-session:hover {
+  background: rgba(64, 158, 255, 0.08);
+}
+
+.main-session.active {
+  background: rgba(64, 158, 255, 0.14);
+  box-shadow: inset 3px 0 0 var(--color-accent-blue, #409eff);
+}
+
+.main-session.active .session-item-title {
+  color: var(--color-accent-blue, #409eff);
+  font-weight: 600;
+}
+
+/* 紧凑会话项（最近会话） */
+.session-item-compact {
+  padding: 5px 10px;
+}
+
+.session-item-compact .session-item-title {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.session-item-compact .session-item-sub {
+  font-size: 11.5px;
 }
 
 /* 底部 */

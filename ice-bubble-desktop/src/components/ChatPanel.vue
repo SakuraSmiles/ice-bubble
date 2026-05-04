@@ -6,7 +6,7 @@ import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../api/client.ts';
 import type { MessageDTO } from '../api/client.ts';
-import type { Session } from './SessionList.vue';
+import type { SessionDTO } from '../api/client.ts';
 
 export interface ChatMessage {
   id: string;
@@ -17,7 +17,7 @@ export interface ChatMessage {
 }
 
 const props = defineProps<{
-  session: Session | null;
+  session: SessionDTO | null;
 }>();
 
 const messages = ref<ChatMessage[]>([]);

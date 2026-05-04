@@ -5,6 +5,10 @@ import { useNow } from '@/composables/useNow';
 interface SessionItem {
   session_key: string;
   agent_id: string;
+  agent_name: string | null;
+  label: string | null;
+  avatar: string | null;
+  last_message: string | null;
   message_count: number;
   last_message_at: string;
   created_at: string;
@@ -30,7 +34,8 @@ const sortedSessions = computed(() =>
 
 const nowRef = useNow();
 
-function relativeTime(dateStr: string): string {
+function relativeTime(dateStr: string | null): string {
+  if (!dateStr) return '';
   const now = nowRef.value;
   const diff = now - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -63,10 +68,30 @@ function statusType(s: string): string {
   }
 }
 
-function formatCount(n: number): string {
-  if (n >= 10000) return (n / 1000).toFixed(1) + 'k';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-  return String(n);
+function getDisplayTitle(s: SessionItem): string {
+  if (s.label) return s.label;
+  if (s.last_message) return s.last_message.slice(0, 40) + (s.last_message.length > 40 ? '...' : '');
+  const parts = s.session_key.split(':');
+  return parts.slice(-2).join(':');
+}
+
+function getPreview(s: SessionItem): string {
+  if (!s.last_message) return '';
+  return s.last_message.slice(0, 50) + (s.last_message.length > 50 ? '...' : '');
+}
+
+function agentDotColor(agentId: string): string {
+  let hash = 0;
+  for (let i = 0; i < agentId.length; i++) {
+    hash = agentId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 65%, 55%)`;
+}
+
+function agentTooltip(s: SessionItem): string {
+  const name = s.agent_name || s.agent_id;
+  return `${name} (${s.agent_id})`;
 }
 
 async function fetchSessions() {
@@ -79,6 +104,10 @@ async function fetchSessions() {
     sessions.value = (data.sessions || []).map((s: any) => ({
       session_key: s.session_key || s.key || '',
       agent_id: s.agent_id || props.agentId,
+      agent_name: s.agent_name || null,
+      label: s.label || null,
+      avatar: s.avatar || null,
+      last_message: s.last_message || null,
       message_count: s.message_count || 0,
       last_message_at: s.last_message_at || s.updated_at || s.created_at || '',
       created_at: s.created_at || '',
@@ -124,18 +153,30 @@ onMounted(fetchSessions);
         :key="session.session_key"
         class="session-card"
         :class="{ 'session-card--running': session.session_status === 'running' }"
+        :title="agentTooltip(session)"
         @click="emit('select', session.session_key)"
       >
-        <div class="session-card__top">
-          <el-tag :type="(statusType(session.session_status) as any)" size="small" effect="plain">
-            {{ statusLabel(session.session_status) }}
-          </el-tag>
-          <span v-if="session.model" class="session-card__model">{{ session.model }}</span>
-          <span class="session-card__time">{{ relativeTime(session.last_message_at) }}</span>
-        </div>
-        <div class="session-card__meta">
-          <span class="session-card__count">{{ formatCount(session.message_count) }} 条消息</span>
-          <span class="session-card__created">创建于 {{ new Date(session.created_at).toLocaleDateString('zh-CN') }}</span>
+        <div class="session-card__body">
+          <span
+            class="agent-dot"
+            :style="{ backgroundColor: agentDotColor(session.agent_id) }"
+          ></span>
+          <div class="session-card__content">
+            <div class="session-card__row1">
+              <span class="session-card__title">{{ getDisplayTitle(session) }}</span>
+              <span class="session-card__time">{{ relativeTime(session.last_message_at) }}</span>
+            </div>
+            <div v-if="getPreview(session) && session.label" class="session-card__row2">
+              {{ getPreview(session) }}
+            </div>
+            <div class="session-card__row3">
+              <span>{{ session.message_count }} 条消息</span>
+              <el-tag :type="(statusType(session.session_status) as any)" size="small" effect="plain">
+                {{ statusLabel(session.session_status) }}
+              </el-tag>
+              <span v-if="session.model" class="session-card__model">{{ session.model }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -156,9 +197,6 @@ onMounted(fetchSessions);
 }
 
 .session-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   padding: 12px 14px;
   background: var(--el-fill-color-light);
   border-radius: 8px;
@@ -180,33 +218,77 @@ onMounted(fetchSessions);
   border-left-color: var(--el-color-primary);
 }
 
-.session-card__top {
+.session-card__body {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
 }
 
-.session-card__model {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color);
-  padding: 2px 6px;
-  border-radius: 4px;
+.agent-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
+.session-card__content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.session-card__row1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .session-card__time {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--el-text-color-placeholder);
-  margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-.session-card__meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.session-card__row2 {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  opacity: 0.65;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-card__row3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
+
+.session-card__model {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 
 /* Loading skeleton */
@@ -273,6 +355,6 @@ onMounted(fetchSessions);
 @media (max-width: 640px) {
   .session-list { padding: 12px; }
   .session-card { padding: 10px 12px; }
-  .session-card__meta { flex-wrap: wrap; gap: 6px; }
+  .session-card__row3 { flex-wrap: wrap; gap: 6px; }
 }
 </style>

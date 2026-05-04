@@ -48,6 +48,7 @@ export function createSessionsUnifiedRouter(config: SessionsUnifiedRouterConfig)
       // 2. Build agentId maps from Admin SQLite
       const agentsMap = repository.getAgentsMap();
       const lastMsgMap = repository.getSessionLastMessageMap();
+      const firstMsgMap = repository.getSessionFirstMessageMap();
 
       // 3. Merge & transform
       let sessions = gatewaySessions.map((gw) => {
@@ -78,6 +79,15 @@ export function createSessionsUnifiedRouter(config: SessionsUnifiedRouterConfig)
           return new Date(n).toISOString();
         };
 
+        // Resolve first_message
+        let firstMsg: { first_message: string | null } | undefined;
+        for (const rk of resolvedKeys) {
+          if (firstMsgMap.has(rk) && !rk.endsWith('.trajectory') && !rk.endsWith('.checkpoint')) {
+            firstMsg = firstMsgMap.get(rk);
+            break;
+          }
+        }
+
         return {
           session_key: key,
           agent_id: agentId,
@@ -86,6 +96,7 @@ export function createSessionsUnifiedRouter(config: SessionsUnifiedRouterConfig)
           label: gw.label ?? null,
           channel: gw.channel ?? null,
           message_count: lastMsg?.message_count ?? gw.message_count ?? 0,
+          first_message: firstMsg?.first_message ?? null,
           last_message: lastMsg?.last_message ?? null,
           last_message_at: toISO(gw.last_message_at) ?? toISO(gw.updated_at),
           first_message_at: toISO(gw.first_message_at) ?? toISO(gw.created_at),
@@ -126,6 +137,7 @@ export function createSessionsUnifiedRouter(config: SessionsUnifiedRouterConfig)
           label: null,
           channel: null,
           message_count: lm?.message_count ?? 0,
+          first_message: firstMsgMap.get(ak)?.first_message ?? null,
           last_message: lm?.last_message ?? null,
           last_message_at: ts?.last_message_at ?? null,
           first_message_at: ts?.created_at ?? null,

@@ -359,9 +359,14 @@ function isEmptyUserMsg(m: TimelineMessage): boolean {
 function setMessages(msgs: TimelineMessage[]) {
   knownIds.clear();
   const seen = new Set<number>();
+  const seenContent = new Set<string>();
   const filtered = msgs.filter(m => {
     if (isEmptyUserMsg(m)) return false;
     if (seen.has(m.id)) return false;
+    // 二次去重：同一 content + 同一 timestamp 不会出现两次
+    const contentKey = `${m.timestamp}::${(m.content || '').substring(0, 200)}`;
+    if (seenContent.has(contentKey)) return false;
+    seenContent.add(contentKey);
     seen.add(m.id);
     return true;
   });
@@ -759,10 +764,10 @@ watch(() => props.sessionKey, (newKey) => {
 });
 
 onMounted(async () => {
-  // Gateway 实时事件（增量更新）
-  subscribeGatewayEvents();
-  // 加载最新消息
+  // 先加载最新消息，确保 knownIds 填充后再注册实时事件，避免竞态导致消息重复
   await loadLatest();
+  // Gateway 实时事件（增量更新）——在初始加载完成后注册
+  subscribeGatewayEvents();
   await nextTick();
   scrollToBottom(false);
   checkBottom();
@@ -913,13 +918,30 @@ function formatTime(ts: string) {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+function shouldShowTime(ts: string, groupIndex: number): boolean {
+  if (groupIndex <= 0) return true;
+  const prev = groupedMessages.value[groupIndex - 1];
+  if (!prev) return true;
+  const curDate = new Date(ts);
+  const prevDate = new Date(prev.timestamp);
+  // 同一分钟内不重复
+  if (curDate.getFullYear() === prevDate.getFullYear()
+    && curDate.getMonth() === prevDate.getMonth()
+    && curDate.getDate() === prevDate.getDate()
+    && curDate.getHours() === prevDate.getHours()
+    && curDate.getMinutes() === prevDate.getMinutes()) {
+    return false;
+  }
+  return true;
+}
+
 function toolSummary(grp: MsgGroup): string {
   const visible = grp.toolMsgs.length;
   const total = visible + grp.hiddenToolCount;
   const names = [...new Set(grp.toolMsgs.map(tm => extractToolName(tm.content)))];
   const nameStr = names.length > 0 ? names.join(', ') : '';
   const nameLabel = nameStr ? ` (${nameStr})` : '';
-  return `🛠 调用了 ${total} 次工具${nameLabel}`;
+  return `🔧 ${total} tools${nameLabel}`;
 }
 </script>
 
@@ -947,11 +969,8 @@ function toolSummary(grp: MsgGroup): string {
       <template v-for="(grp, gi) in groupedMessages" :key="gi">
         <!-- 用户消息 -->
         <div v-if="grp.type === 'user' && grp.messages.length > 0" class="msg-row msg-row--user" :data-msg-id="grp.messages[0]?.id">
-          <div class="msg-header msg-header--user">
-            <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
-            <span v-if="grp.messages[0]?.source_channel" class="channel-tag">{{ grp.messages[0].source_channel }}</span>
-          </div>
           <div class="bubble bubble--user">
+            <span v-if="shouldShowTime(grp.timestamp, gi)" class="bubble-time">{{ formatTime(grp.timestamp) }}</span>
             <MarkdownContent :content="grp.messages[0]?.clean_content || grp.messages[0]?.content || ''" />
           </div>
         </div>
@@ -972,7 +991,7 @@ function toolSummary(grp: MsgGroup): string {
             <div class="msg-header msg-header--agent">
               <span class="agent-label-name">{{ grp.agentName }}</span>
               <span v-if="grp.messages[0]?.model" class="model-tag">{{ grp.messages[0].model }}</span>
-              <span class="msg-time">{{ formatTime(grp.timestamp) }}</span>
+              <span v-if="shouldShowTime(grp.timestamp, gi)" class="msg-time">{{ formatTime(grp.timestamp) }}</span>
             </div>
             <div class="bubble bubble--agent">
               <!-- 工具调用实时展示 -->
@@ -1065,8 +1084,8 @@ function toolSummary(grp: MsgGroup): string {
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  background: #fff;
+  gap: 8px;
+  background: #f5f5f5;
 }
 
 /* 加载更多按钮 */
@@ -1118,7 +1137,7 @@ function toolSummary(grp: MsgGroup): string {
 
 /* Agent 头像列 */
 .agent-avatar-col {
-  width: 30px;
+  width: 36px;
   flex-shrink: 0;
   padding-top: 2px;
 }
@@ -1129,13 +1148,13 @@ function toolSummary(grp: MsgGroup): string {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .avatar, .avatar-placeholder {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   object-fit: cover;
   flex-shrink: 0;
 }
@@ -1145,7 +1164,7 @@ function toolSummary(grp: MsgGroup): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -1157,7 +1176,7 @@ function toolSummary(grp: MsgGroup): string {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #999;
+  color: #aaa;
   padding: 0 6px;
 }
 .msg-header--user {
@@ -1168,10 +1187,18 @@ function toolSummary(grp: MsgGroup): string {
   white-space: nowrap;
 }
 
+.bubble-time {
+  display: block;
+  text-align: right;
+  font-size: 10px;
+  color: #aaa;
+  margin-bottom: 4px;
+}
+
 .agent-label-name {
-  font-weight: 600;
-  color: #5a7fb5;
-  font-size: 12px;
+  font-weight: 400;
+  color: #666;
+  font-size: 13px;
 }
 
 /* 气泡 */
@@ -1180,18 +1207,19 @@ function toolSummary(grp: MsgGroup): string {
   font-size: 14px;
   line-height: 1.45;
   word-break: break-word;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .bubble--user {
-  background: #e8eaf6;
+  background: #e3eaf7;
   color: #333;
-  border-radius: 14px 14px 4px 14px;
+  border-radius: 18px 18px 4px 18px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 .bubble--agent {
-  background: #f7f8fa;
+  background: #fff;
   color: #222;
-  border-radius: 14px 14px 14px 4px;
+  border-radius: 18px 18px 18px 4px;
   max-width: 100%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .bubble-text {
@@ -1213,22 +1241,22 @@ function toolSummary(grp: MsgGroup): string {
 .model-tag {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   font-size: 9px;
-  color: #8ab4f8;
-  background: #e8f0fe;
-  padding: 1px 6px;
+  color: #999;
+  background: #f0f0f0;
+  padding: 1px 5px;
   border-radius: 3px;
 }
 
 /* 工具折叠 */
 .tool-details {
   margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #e8e8e8;
+  border-top: 1px solid #eee;
 }
 .tool-details summary {
   cursor: pointer;
   color: #888;
   font-size: 11px;
+  padding: 4px 0;
 }
 .tool-details summary:hover {
   color: #5a7fb5;
@@ -1236,8 +1264,8 @@ function toolSummary(grp: MsgGroup): string {
 .tool-item {
   margin-top: 6px;
   padding: 6px 8px;
-  background: #f7f7f7;
-  border-radius: 4px;
+  background: #f0f0f0;
+  border-radius: 6px;
   font-size: 11px;
 }
 .tool-item-header {
@@ -1281,8 +1309,9 @@ function toolSummary(grp: MsgGroup): string {
   align-items: center;
   gap: 4px;
   padding: 10px 16px;
-  background: #f7f8fa;
-  border-radius: 14px 14px 14px 4px;
+  background: #fff;
+  border-radius: 18px 18px 18px 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .typing-dot {
   width: 6px;
@@ -1315,11 +1344,12 @@ function toolSummary(grp: MsgGroup): string {
   font-family: 'SF Mono', 'Consolas', monospace;
   background: #f0f1f3;
   color: #666;
+  border-left: 3px solid #ccc;
   transition: all 0.2s;
 }
-.tool-badge--result { background: #e8f5e9; color: #388e3c; }
-.tool-badge--error { background: #ffebee; color: #d32f2f; }
-.tool-badge--start { background: #fff3e0; color: #e65100; }
+.tool-badge--result { background: #e8f5e9; color: #388e3c; border-left-color: #4caf50; }
+.tool-badge--error { background: #ffebee; color: #d32f2f; border-left-color: #f44336; }
+.tool-badge--start { background: #fff3e0; color: #e65100; border-left-color: #ff9800; }
 .tool-icon { font-size: 12px; }
 .tool-name { font-size: 11px; }
 .tool-status.spinning {

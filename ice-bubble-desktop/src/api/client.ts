@@ -31,6 +31,7 @@ export interface SessionDTO {
   first_message_at: string | null;
   last_message_at: string | null;
   last_message: string | null;
+  first_message?: string | null;
   created_at: string;
   updated_at?: string;
   label?: string | null;

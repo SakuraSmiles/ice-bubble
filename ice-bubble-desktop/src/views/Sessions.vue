@@ -7,21 +7,21 @@ import { formatRelativeTime } from '../utils/format';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import ChatPanel from '../components/ChatPanel.vue';
-import type { Session } from '../components/SessionList.vue';
+import type { SessionDTO } from '../api/client.ts';
 import LoadingSkeleton from './components/LoadingSkeleton.vue';
 import EmptyState from '../components/EmptyState.vue';
 
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
 
-const allSessions = ref<Session[]>([]);
+const allSessions = ref<SessionDTO[]>([]);
 const loading = ref(false);
 const refreshSpin = ref(false);
-const selectedSession = ref<Session | null>(null);
+const selectedSession = ref<SessionDTO | null>(null);
 const selectedSessionKey = ref<string | null>(null);
 const searchQuery = ref('');
 
 const totalSessions = computed(() => allSessions.value.length);
-const totalAgents = computed(() => new Set(allSessions.value.map(s => s.agent_id)).size);
+const totalAgents = computed(() => new Set(allSessions.value.map(s => (s as SessionDTO).agent_id)).size);
 
 const subtitle = computed(() =>
   `共 ${totalSessions.value} 个会话，分布在 ${totalAgents.value} 个 Agent`

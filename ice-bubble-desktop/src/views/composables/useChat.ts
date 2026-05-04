@@ -310,7 +310,7 @@ export function useChat(
               model: m.model || null,
             }
           })
-          .filter((m): m is ChatMessage => m !== null)
+          .filter((m): m is NonNullable<typeof m> => m !== null) as ChatMessage[]
         // Gateway 返回时间正序（旧→新），取最后 limit 条
         const historical = allFiltered.slice(-limit)
         messages.value = historical

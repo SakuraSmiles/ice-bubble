@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { provide, ref, onMounted, onUnmounted } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import SubSessionList from './components/SubSessionList.vue';
 import { gatewayClient } from '@/services/gateway-client';
 
 const route = useRoute();
@@ -43,68 +42,16 @@ onUnmounted(() => {
 
 const menuItems = [
   { path: '/', label: '工作台' },
+  { path: '/chat', label: '聊天' },
   { path: '/agents', label: '成员' },
+  { path: '/sessions', label: '会话' },
   { path: '/modules', label: '模块' },
 ];
-
-// ========== 侧栏拖拽调整宽度 ==========
-const SIDEBAR_MIN = 160;
-const SIDEBAR_MAX = 360;
-const STORAGE_KEY = 'ice-bubble-sidebar-width';
-
-const sidebarWidth = ref(loadWidth());
-
-function loadWidth(): number {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const w = parseInt(saved, 10);
-      if (w >= SIDEBAR_MIN && w <= SIDEBAR_MAX) return w;
-    }
-  } catch { /* ignore */ }
-  return 200;
-}
-
-function saveWidth(w: number) {
-  try { localStorage.setItem(STORAGE_KEY, String(w)); } catch { /* ignore */ }
-}
-
-let isResizing = false;
-
-function onResizeStart(e: MouseEvent) {
-  e.preventDefault();
-  isResizing = true;
-  document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
-  document.addEventListener('mousemove', onResizeMove);
-  document.addEventListener('mouseup', onResizeEnd);
-}
-
-function onResizeMove(e: MouseEvent) {
-  if (!isResizing) return;
-  const newWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, e.clientX));
-  sidebarWidth.value = newWidth;
-}
-
-function onResizeEnd() {
-  if (!isResizing) return;
-  isResizing = false;
-  document.body.style.cursor = '';
-  document.body.style.userSelect = '';
-  document.removeEventListener('mousemove', onResizeMove);
-  document.removeEventListener('mouseup', onResizeEnd);
-  saveWidth(sidebarWidth.value);
-}
-
-onUnmounted(() => {
-  document.removeEventListener('mousemove', onResizeMove);
-  document.removeEventListener('mouseup', onResizeEnd);
-});
 </script>
 
 <template>
   <div class="layout">
-    <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
+    <aside class="sidebar">
       <div class="sidebar-header">
         <div class="logo">IceBubble</div>
         <div class="subtitle">DESKTOP</div>
@@ -128,27 +75,19 @@ onUnmounted(() => {
             <svg v-else-if="item.path === '/agents'" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 3.5c.83 0 1.5-.67 1.5-1.5S3.83 8.5 3 8.5 1.5 9.17 1.5 10s.67 1.5 1.5 1.5zm5 0c.83 0 1.5-.67 1.5-1.5S8.83 8.5 8 8.5 6.5 9.17 6.5 10s.67 1.5 1.5 1.5zm-3 3a4 4 0 01-4 0c0-1.5.5-3 2-4.5V13h8v-1.5c1.5 1.5 2 3 2 4.5a4 4 0 01-4 0z"/>
             </svg>
+            <svg v-else-if="item.path === '/sessions'" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <!-- 列表图标 -->
+              <path fill-rule="evenodd" d="M2.5 3a.5.5 0 00-.5.5.5.5 0 00.5.5h11a.5.5 0 00.5-.5.5.5 0 00-.5-.5h-11zm0 4a.5.5 0 00-.5.5.5.5 0 00.5.5h11a.5.5 0 00.5-.5.5.5 0 00-.5-.5h-11zm0 4a.5.5 0 00-.5.5.5.5 0 00.5.5h11a.5.5 0 00.5-.5.5.5 0 00-.5-.5h-11z"/>
+            </svg>
+            <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <!-- 聊天气泡图标 -->
+              <path d="M2 2a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H7.414l-2.707 2.707A1 1 0 013 14V12H4a2 2 0 01-2-2V2zm2-1a1 1 0 00-1 1v8a1 1 0 001 1h.414A1 1 0 014.5 11.5V14l2.293-2.293A1 1 0 017.5 11.5H12a1 1 0 001-1V2a1 1 0 00-1-1H4z"/>
+            </svg>
           </span>
           <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
       </nav>
-
-      <div class="sidebar-divider"></div>
-
-      <SubSessionList />
     </aside>
-
-    <!-- 拖拽调整手柄 -->
-    <div class="resize-handle" @mousedown="onResizeStart">
-      <svg width="3" height="40" viewBox="0 0 3 40" class="resize-grip">
-        <line x1="1.5" y1="2" x2="1.5" y2="5" />
-        <line x1="1.5" y1="9" x2="1.5" y2="12" />
-        <line x1="1.5" y1="16" x2="1.5" y2="19" />
-        <line x1="1.5" y1="23" x2="1.5" y2="26" />
-        <line x1="1.5" y1="30" x2="1.5" y2="33" />
-        <line x1="1.5" y1="37" x2="1.5" y2="38" />
-      </svg>
-    </div>
 
     <main class="main-content">
       <RouterView />
@@ -166,6 +105,7 @@ onUnmounted(() => {
 
 /* ====== 侧栏 ====== */
 .sidebar {
+  width: 200px;
   background: var(--color-bg-canvas);
   border-right: none;
   display: flex;
@@ -201,17 +141,10 @@ onUnmounted(() => {
 
 .sidebar-nav {
   flex: 0 0 auto;
-  padding: 16px 8px;
+  padding: 8px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.sidebar-divider {
-  height: 1px;
-  background: var(--color-border-subtle);
-  margin: 0 12px;
-  flex-shrink: 0;
 }
 
 .nav-item {
@@ -261,30 +194,6 @@ onUnmounted(() => {
 
 .nav-label {
   flex: 1;
-}
-
-/* ====== 拖拽手柄 ====== */
-.resize-handle {
-  width: 12px;
-  cursor: col-resize;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.resize-grip {
-  stroke: var(--color-border);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  transition: stroke 0.15s;
-}
-
-.resize-handle:hover .resize-grip,
-.resize-handle:active .resize-grip {
-  stroke: var(--color-accent-blue);
 }
 
 /* ====== 主内容区 ====== */

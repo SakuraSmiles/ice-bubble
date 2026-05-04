@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useNow } from '@/composables/useNow';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
@@ -10,64 +10,126 @@ import { gatewayClient } from '@/services/gateway-client';
 const router = useRouter();
 const prefsStore = useSessionPreferencesStore();
 
-const allSessions = ref<SessionDTO[]>([]); // for filtering
+// ====== 数据加载 ======
+const allSessions = ref<SessionDTO[]>([]);
 const loading = ref(false);
-const collapsedAgents = ref<Set<string>>(new Set());
-const offset = ref(0);
-const total = ref(0);
-const PAGE_SIZE = 50;
 
 let unsubSessionsChanged: (() => void) | null = null;
 
-// ====== 按 agent 分组 ======
-const agentGroups = computed(() => {
-  const visible = allSessions.value.filter(s => !prefsStore.isHidden(s.session_key));
-  const map = new Map<string, SessionDTO[]>();
-  for (const s of visible) {
-    const agentId = s.agent_id || 'unknown';
-    const list = map.get(agentId) || [];
-    list.push(s);
-    map.set(agentId, list);
-  }
-  // Sort each group by time
-  for (const [, list] of map) {
-    list.sort((a, b) => {
-      const ta = a.updated_at || a.last_message_at || a.created_at;
-      const tb = b.updated_at || b.last_message_at || b.created_at;
-      return new Date(tb).getTime() - new Date(ta).getTime();
-    });
-  }
-  return map;
-});
-
-const agentIds = computed(() => {
-  // Sort agents: pinned sessions' agents first, then by latest message time
-  return Array.from(agentGroups.value.keys()).sort((a, b) => {
-    const aList = agentGroups.value.get(a) || [];
-    const bList = agentGroups.value.get(b) || [];
-    const aTime = aList[0]?.last_message_at || aList[0]?.updated_at || '';
-    const bTime = bList[0]?.last_message_at || bList[0]?.updated_at || '';
-    return new Date(bTime).getTime() - new Date(aTime).getTime();
-  });
-});
-
-// ====== 加载更多 ======
-async function loadMore() {
-  if (loading.value) return;
-  if (offset.value >= total.value && allSessions.value.length > 0) return;
+async function fetchAllSessions() {
   loading.value = true;
   try {
-    const data = await api.getUnifiedSessions({ limit: PAGE_SIZE, offset: offset.value });
-    const list = data.sessions || [];
-    allSessions.value = offset.value === 0 ? list : [...allSessions.value, ...list];
-    total.value = data.total || 0;
-    offset.value += list.length;
+    const data = await api.getUnifiedSessions({ limit: 10000, offset: 0 });
+    allSessions.value = data.sessions || [];
   } catch (e) {
     console.error('Failed to load sessions:', e);
   } finally {
     loading.value = false;
   }
 }
+
+// ====== 过滤条件 ======
+const filterAgent = ref('');
+const filterKeyword = ref('');
+const filterTimeRange = ref('all');
+const filterStatus = ref('');
+const filterMark = ref('all');
+
+// ====== 客户端过滤 ======
+const filteredSessions = computed(() => {
+  const now = Date.now();
+  return allSessions.value.filter(s => {
+    // Agent 过滤
+    if (filterAgent.value && s.agent_id !== filterAgent.value) return false;
+
+    // 关键词过滤
+    if (filterKeyword.value) {
+      const kw = filterKeyword.value.toLowerCase();
+      const title = s.label || s.agent_name || '';
+      const lastMsg = s.last_message || '';
+      if (!title.toLowerCase().includes(kw) && !lastMsg.toLowerCase().includes(kw)) return false;
+    }
+
+    // 时间范围过滤
+    if (filterTimeRange.value !== 'all') {
+      const ts = s.updated_at || s.last_message_at || s.created_at;
+      if (!ts) return false;
+      const sessionTime = new Date(ts).getTime();
+      let cutoff: number;
+      switch (filterTimeRange.value) {
+        case 'today':
+          cutoff = new Date().setHours(0, 0, 0, 0);
+          break;
+        case '7days':
+          cutoff = now - 7 * 24 * 60 * 60 * 1000;
+          break;
+        case '30days':
+          cutoff = now - 30 * 24 * 60 * 60 * 1000;
+          break;
+        default:
+          cutoff = 0;
+      }
+      if (sessionTime < cutoff) return false;
+    }
+
+    // 会话状态过滤
+    if (filterStatus.value) {
+      if (filterStatus.value === 'active') {
+        if (s.session_status === 'completed') return false;
+      } else if (filterStatus.value === 'completed') {
+        if (s.session_status !== 'completed') return false;
+      }
+    }
+
+    // 标记筛选
+    if (filterMark.value === 'pinned') {
+      if (!prefsStore.isPinned(s.session_key)) return false;
+    } else if (filterMark.value === 'hidden') {
+      if (!prefsStore.isHidden(s.session_key)) return false;
+    }
+
+    // 隐藏的会话只在"已隐藏"筛选时显示
+    if (filterMark.value !== 'hidden' && prefsStore.isHidden(s.session_key)) return false;
+
+    return true;
+  });
+});
+
+// ====== 分页 ======
+const currentPage = ref(1);
+const pageSize = ref(20);
+const pageSizes = [20, 50, 100] as const;
+void pageSizes; // used in template
+
+
+
+// 过滤条件变化时重置到第 1 页
+watch([filterAgent, filterKeyword, filterTimeRange, filterStatus, filterMark], () => {
+  currentPage.value = 1;
+});
+
+// ====== 排序（时间倒序）======
+const sortedSessions = computed(() => {
+  return [...filteredSessions.value].sort((a, b) => {
+    const ta = a.last_message_at || a.updated_at || a.created_at;
+    const tb = b.last_message_at || b.updated_at || b.created_at;
+    return new Date(tb).getTime() - new Date(ta).getTime();
+  });
+});
+
+// ====== 分页（基于排序后数据）======
+const pagedSessions = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return sortedSessions.value.slice(start, start + pageSize.value);
+});
+
+const filteredTotal = computed(() => sortedSessions.value.length);
+
+// Agent 下拉选项（从全量数据生成）
+const agentOptions = computed(() => {
+  const ids = new Set(allSessions.value.map(s => s.agent_id).filter(Boolean));
+  return Array.from(ids).sort();
+});
 
 // ====== 操作 ======
 function handlePin(key: string) {
@@ -133,32 +195,17 @@ function truncate(text: string | null | undefined, max: number): string {
   return text.length > max ? text.slice(0, max) + '…' : text;
 }
 
-function toggleAgent(agentId: string) {
-  if (collapsedAgents.value.has(agentId)) {
-    collapsedAgents.value.delete(agentId);
-  } else {
-    collapsedAgents.value.add(agentId);
-  }
-}
 
-// ====== 滚动加载 ======
-function onScroll(e: Event) {
-  const el = e.target as HTMLElement;
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
-    loadMore();
-  }
-}
 
 // ====== 生命周期 ======
 onMounted(async () => {
   if (!prefsStore.loaded) {
     await prefsStore.fetchPreferences();
   }
-  await loadMore();
+  await fetchAllSessions();
 
   unsubSessionsChanged = gatewayClient.on('sessions.changed', () => {
-    offset.value = 0;
-    loadMore();
+    fetchAllSessions();
   });
 });
 
@@ -176,82 +223,137 @@ onUnmounted(() => {
         <span>返回</span>
       </button>
       <h2 class="page-title">📋 全部会话</h2>
-      <span class="session-count">{{ allSessions.length }} / {{ total || allSessions.length }}</span>
+      <span class="session-count">{{ filteredTotal }} 条会话</span>
+    </div>
+
+    <!-- 过滤栏 -->
+    <div class="filter-bar">
+      <div class="filter-row">
+        <el-select
+          v-model="filterAgent"
+          placeholder="全部 Agent"
+          clearable
+          class="filter-item filter-agent"
+        >
+          <el-option
+            v-for="id in agentOptions"
+            :key="id"
+            :label="id"
+            :value="id"
+          />
+        </el-select>
+
+        <el-input
+          v-model="filterKeyword"
+          placeholder="搜索标题或消息内容…"
+          clearable
+          class="filter-item filter-keyword"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+
+        <el-select
+          v-model="filterTimeRange"
+          placeholder="时间范围"
+          class="filter-item filter-time"
+        >
+          <el-option label="全部" value="all" />
+          <el-option label="今天" value="today" />
+          <el-option label="最近7天" value="7days" />
+          <el-option label="最近30天" value="30days" />
+        </el-select>
+
+        <el-select
+          v-model="filterStatus"
+          placeholder="会话状态"
+          clearable
+          class="filter-item filter-status"
+        >
+          <el-option label="活跃" value="active" />
+          <el-option label="已完成" value="completed" />
+        </el-select>
+
+        <el-radio-group v-model="filterMark" class="filter-item filter-mark" size="small">
+          <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="pinned">已置顶</el-radio-button>
+          <el-radio-button value="hidden">已隐藏</el-radio-button>
+        </el-radio-group>
+      </div>
     </div>
 
     <!-- 会话列表 -->
-    <div class="all-sessions-body" @scroll="onScroll">
-      <template v-for="agentId in agentIds" :key="agentId">
-        <div class="agent-group">
-          <div class="agent-group-header" @click="toggleAgent(agentId)">
-            <el-icon class="agent-arrow" :class="{ collapsed: collapsedAgents.has(agentId) }">
-              <ArrowRight />
-            </el-icon>
-            <div
-              class="agent-group-avatar"
-              :style="{ background: agentColor(agentId) }"
-            >
-              {{ agentId.charAt(0).toUpperCase() }}
-            </div>
-            <span class="agent-group-name">{{ agentId }}</span>
-            <span class="agent-group-count">{{ (agentGroups.get(agentId) || []).length }}</span>
-          </div>
-
-          <div v-show="!collapsedAgents.has(agentId)" class="agent-group-sessions">
-            <div
-              v-for="s in agentGroups.get(agentId) || []"
-              :key="s.session_key"
-              class="session-card"
-              @click="handleClick(s)"
-            >
-              <div class="session-card-main">
-                <div class="session-card-header">
-                  <div
-                    class="session-card-avatar"
-                    :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }"
-                  >
-                    <img v-if="s.avatar" :src="`/api/resources/avatars/${s.avatar}`" class="avatar-img" />
-                    <template v-else>{{ (s.agent_id || '?').charAt(0).toUpperCase() }}</template>
-                  </div>
-                  <div class="session-card-info">
-                    <div class="session-card-title">{{ formatTitle(s) }}</div>
-                    <div class="session-card-time">
-                      {{ formatTime(s.last_message_at || s.updated_at) }}
-                      <span v-if="s.message_count" class="msg-count">· {{ s.message_count }} 条消息</span>
+    <div class="all-sessions-body">
+      <template v-if="pagedSessions.length > 0">
+              <div
+                v-for="s in pagedSessions"
+                :key="s.session_key"
+                class="session-card"
+                @click="handleClick(s)"
+              >
+                <div class="session-card-main">
+                  <div class="session-card-header">
+                    <div
+                      class="session-card-avatar"
+                      :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }"
+                    >
+                      <img v-if="s.avatar" :src="`/api/resources/avatars/${s.avatar}`" class="avatar-img" />
+                      <template v-else>{{ (s.agent_id || '?').charAt(0).toUpperCase() }}</template>
+                    </div>
+                    <div class="session-card-info">
+                      <div class="session-card-title">{{ formatTitle(s) }}</div>
+                      <div class="session-card-time">
+                        {{ formatTime(s.last_message_at || s.updated_at) }}
+                        <span v-if="s.message_count" class="msg-count">· {{ s.message_count }} 条消息</span>
+                      </div>
                     </div>
                   </div>
+                  <div class="session-card-preview">
+                    {{ truncate(s.last_message, 80) || '暂无消息' }}
+                  </div>
                 </div>
-                <div class="session-card-preview">
-                  {{ truncate(s.last_message, 80) || '暂无消息' }}
+                <div class="session-card-actions" @click.stop>
+                  <button
+                    class="action-btn"
+                    :class="{ active: prefsStore.isPinned(s.session_key) }"
+                    :title="prefsStore.isPinned(s.session_key) ? '取消置顶' : '置顶到侧栏'"
+                    @click="handlePin(s.session_key)"
+                  >
+                    📌
+                  </button>
+                  <button
+                    class="action-btn"
+                    :class="{ active: prefsStore.isHidden(s.session_key) }"
+                    :title="prefsStore.isHidden(s.session_key) ? '取消隐藏' : '隐藏会话'"
+                    @click="handleHide(s.session_key)"
+                  >
+                    🚫
+                  </button>
                 </div>
               </div>
-              <div class="session-card-actions" @click.stop>
-                <button
-                  class="action-btn"
-                  :class="{ active: prefsStore.isPinned(s.session_key) }"
-                  :title="prefsStore.isPinned(s.session_key) ? '取消置顶' : '置顶到侧栏'"
-                  @click="handlePin(s.session_key)"
-                >
-                  📌
-                </button>
-                <button
-                  class="action-btn"
-                  :class="{ active: prefsStore.isHidden(s.session_key) }"
-                  :title="prefsStore.isHidden(s.session_key) ? '取消隐藏' : '隐藏会话'"
-                  @click="handleHide(s.session_key)"
-                >
-                  🚫
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       </template>
 
-      <div v-if="loading" class="loading-indicator">加载中...</div>
-      <div v-else-if="offset >= total && allSessions.length > 0" class="loading-indicator end">
-        已加载全部 {{ total }} 条会话
+      <div v-else-if="!loading" class="empty-result">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-text">没有找到匹配的会话</div>
+        <div class="empty-hint">尝试调整过滤条件</div>
       </div>
+
+      <div v-if="loading" class="loading-indicator">加载中...</div>
+    </div>
+
+    <!-- 分页器 -->
+    <div v-if="filteredTotal > 0" class="pagination-wrapper">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="pageSizes"
+        :total="filteredTotal"
+        layout="total, sizes, prev, pager, next, jumper"
+        background
+        small
+      />
     </div>
   </div>
 </template>
@@ -305,10 +407,53 @@ onUnmounted(() => {
   margin-left: auto;
 }
 
+/* 过滤栏 */
+.filter-bar {
+  flex-shrink: 0;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-canvas);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.filter-item {
+  flex-shrink: 0;
+}
+
+.filter-agent {
+  width: 160px;
+}
+
+.filter-keyword {
+  width: 220px;
+}
+
+.filter-time {
+  width: 130px;
+}
+
+.filter-status {
+  width: 120px;
+}
+
+.filter-mark {
+  flex-shrink: 1;
+}
+
+/* 会话列表 */
 .all-sessions-body {
   flex: 1;
   overflow-y: auto;
   padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .all-sessions-body::-webkit-scrollbar {
@@ -320,67 +465,36 @@ onUnmounted(() => {
   border-radius: 3px;
 }
 
-/* Agent 分组 */
-.agent-group {
-  margin-bottom: 20px;
-}
-
-.agent-group-header {
+/* 空结果 */
+.empty-result {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: var(--radius, 6px);
-  cursor: pointer;
-  transition: background 0.15s;
-  user-select: none;
-}
-
-.agent-group-header:hover {
-  background: var(--el-fill-color-light);
-}
-
-.agent-arrow {
-  transition: transform 0.2s;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.agent-arrow.collapsed {
-  transform: rotate(-90deg);
-}
-
-.agent-group-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-  flex-shrink: 0;
-}
-
-.agent-group-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.agent-group-count {
-  font-size: 12px;
+  padding: 60px 20px;
   color: var(--color-text-tertiary, var(--color-text-secondary));
 }
 
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
+
+.empty-text {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.empty-hint {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
 /* 会话卡片 */
-.agent-group-sessions {
-  padding-left: 8px;
-  margin-top: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.all-sessions-body > .session-card + .session-card {
+  margin-top: 6px;
 }
 
 .session-card {
@@ -510,7 +624,21 @@ onUnmounted(() => {
   color: var(--color-text-tertiary, var(--color-text-secondary));
 }
 
-.loading-indicator.end {
-  color: var(--color-text-tertiary);
+/* 分页器 */
+.pagination-wrapper {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 12px 24px 16px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+@media (max-width: 768px) {
+  .filter-agent,
+  .filter-keyword,
+  .filter-time,
+  .filter-status {
+    width: 100%;
+  }
 }
 </style>

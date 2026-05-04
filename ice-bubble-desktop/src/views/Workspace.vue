@@ -21,11 +21,6 @@ const agentId = computed(() => {
   return m ? m[1] : '';
 });
 
-// 判断是否为有效的 session key（必须包含 UUID）
-const isFullSessionKey = computed(() => {
-  return /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawKey.value);
-});
-
 // 视图状态：list 或 chat（无 UUID 时强制显示 list）
 const view = ref<'list' | 'chat'>('list');
 const agentName = ref('');
