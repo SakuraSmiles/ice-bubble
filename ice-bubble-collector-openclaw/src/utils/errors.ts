@@ -338,7 +338,7 @@ export async function safeExecute<T>(
       throw finalError;
     }
     
-    return defaultValue;
+    return defaultValue as T | undefined;
   }
 }
 

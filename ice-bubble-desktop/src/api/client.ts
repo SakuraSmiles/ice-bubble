@@ -466,6 +466,17 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  // Session preferences
+  getSessionPreferences: (): Promise<{ pinned: string[]; hidden: string[]; updated_at?: string }> =>
+    fetchJson('/session-preferences'),
+
+  updateSessionPreferences: (data: { pinned: string[]; hidden: string[] }) =>
+    fetchJson('/session-preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
   // Subagent 任务
   fetchSubagentTasks: (params?: { limit?: number; offset?: number }) => {
     const query = params ? '?' + new URLSearchParams(

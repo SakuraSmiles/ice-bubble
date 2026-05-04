@@ -4,12 +4,14 @@ import { useRouter, useRoute } from 'vue-router';
 import { api } from '@/api/client';
 import type { SessionDTO } from '@/api/client';
 import { useSessionGroupStore } from '@/stores/sessionGroupStore';
+import { useSessionPreferencesStore } from '@/stores/sessionPreferencesStore';
 import { gatewayClient } from '@/services/gateway-client';
 import NewChatDialog from './NewChatDialog.vue';
 
 const router = useRouter();
 const route = useRoute();
 const groupStore = useSessionGroupStore();
+const prefsStore = useSessionPreferencesStore();
 
 // ====== 数据 ======
 const sessions = ref<SessionDTO[]>([]);
@@ -30,13 +32,53 @@ function shouldShow(s: SessionDTO): boolean {
   if (key.includes(':dashboard:')) return false;
   // 不展示 cron 定时任务会话
   if (key.includes(':cron:')) return false;
+  // 不展示没有 UUID 的短 key（如 agent:main:main），无法正确加载聊天
+  if (!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) return false;
   return true;
 }
 
 // ====== 分组计算 ======
-const groupedSessions = computed(() =>
-  groupStore.getGroupSessions(sessions.value.filter(shouldShow)),
-);
+const groupedSessions = computed(() => {
+  const filtered = sessions.value.filter(shouldShow).filter(s => !prefsStore.isHidden(s.session_key));
+  return groupStore.getGroupSessions(filtered);
+});
+
+// ====== 侧栏精简：置顶 + 每个 agent 当天/最近 3 个 ======
+const sidebarSessions = computed(() => {
+  const all = sessions.value.filter(shouldShow).filter(s => !prefsStore.isHidden(s.session_key));
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+  const pinned = all.filter(s => prefsStore.isPinned(s.session_key));
+  const pinnedKeys = new Set(pinned.map(s => s.session_key));
+  const groupedKeys = groupStore.groupedKeys;
+  const ungrouped = all.filter(s => !pinnedKeys.has(s.session_key) && !groupedKeys.has(s.session_key));
+
+  const agentMap = new Map<string, SessionDTO[]>();
+  for (const s of ungrouped) {
+    const agentId = s.agent_id || 'unknown';
+    const list = agentMap.get(agentId) || [];
+    list.push(s);
+    agentMap.set(agentId, list);
+  }
+
+  const recent: SessionDTO[] = [];
+  for (const [, list] of agentMap) {
+    list.sort((a, b) => {
+      const ta = new Date(a.updated_at || a.last_message_at || a.created_at).getTime();
+      const tb = new Date(b.updated_at || b.last_message_at || b.created_at).getTime();
+      return tb - ta;
+    });
+    const todaySessions = list.filter(s => {
+      const t = new Date(s.updated_at || s.last_message_at || s.created_at).getTime();
+      return t >= todayStart;
+    });
+    const source = todaySessions.length > 0 ? todaySessions : list;
+    recent.push(...source.slice(0, 3));
+  }
+
+  return { pinned, recent };
+});
 
 // ====== 辅助函数 ======
 function formatTitle(s: SessionDTO): string {
@@ -111,6 +153,10 @@ function handleChatCreated(sessionKey: string) {
   fetchAll();
   // 跳转到新对话
   router.push(`/workspace/${encodeURIComponent(sessionKey)}`);
+}
+
+function goToAllSessions() {
+  router.push('/sessions');
 }
 
 // ====== 右键菜单 ======
@@ -204,7 +250,10 @@ async function fetchSessions() {
 }
 
 // ====== 生命周期 ======
-onMounted(() => {
+onMounted(async () => {
+  if (!prefsStore.loaded) {
+    await prefsStore.fetchPreferences();
+  }
   fetchAll();
 
   unsubSessionsChanged = gatewayClient.on('sessions.changed', () => {
@@ -241,9 +290,12 @@ onUnmounted(() => {
       </el-button>
     </div>
 
-    <!-- 会话列表 -->
+    <!-- 会话列表（精简模式） -->
     <div class="session-list-body">
-      <div v-if="sessions.length === 0" class="session-empty">
+      <div v-if="sessions.length === 0 && !prefsStore.loaded" class="session-empty">
+        加载中...
+      </div>
+      <div v-else-if="sidebarSessions.pinned.length === 0 && sidebarSessions.recent.length === 0 && groupedSessions.grouped.length === 0" class="session-empty">
         暂无会话
       </div>
 
@@ -288,32 +340,66 @@ onUnmounted(() => {
         </div>
       </template>
 
-      <!-- 分组与未分组之间的分割线 -->
-      <div v-if="groupedSessions.grouped.length > 0 && groupedSessions.ungrouped.length > 0" class="section-divider"></div>
-
-      <!-- 未分组会话 -->
-      <div
-        v-for="s in groupedSessions.ungrouped"
-        :key="s.session_key"
-        class="session-item"
-        :class="{ active: isActive(s.session_key) }"
-        @click="handleClick(s)"
-        @contextmenu="onContextMenu($event, s)"
-      >
-        <div class="session-avatar" :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }">
-          <img v-if="s.avatar" :src="`/api/resources/avatars/${s.avatar}`" class="avatar-img" />
-          <template v-else>{{ agentInitial(s.agent_id) }}</template>
-        </div>
-        <div class="session-item-main">
-          <div class="session-item-title">{{ formatTitle(s) }}</div>
-          <div class="session-item-sub">
-            <template v-if="s.last_message">{{ truncate(s.last_message, 30) }}</template>
-            <template v-else-if="s.agent_name">暂无消息 · {{ s.agent_name }}</template>
-            <template v-else>暂无消息</template>
+      <!-- 置顶会话 -->
+      <template v-if="sidebarSessions.pinned.length > 0">
+        <div v-if="groupedSessions.grouped.length > 0" class="section-divider"></div>
+        <div class="section-label">📌 置顶</div>
+        <div
+          v-for="s in sidebarSessions.pinned"
+          :key="s.session_key"
+          class="session-item pinned"
+          :class="{ active: isActive(s.session_key) }"
+          @click="handleClick(s)"
+          @contextmenu="onContextMenu($event, s)"
+        >
+          <div class="session-avatar" :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }">
+            <img v-if="s.avatar" :src="`/api/resources/avatars/${s.avatar}`" class="avatar-img" />
+            <template v-else>{{ agentInitial(s.agent_id) }}</template>
           </div>
+          <div class="session-item-main">
+            <div class="session-item-title">{{ formatTitle(s) }}</div>
+            <div class="session-item-sub">
+              <template v-if="s.last_message">{{ truncate(s.last_message, 30) }}</template>
+              <template v-else>暂无消息</template>
+            </div>
+          </div>
+          <span class="session-time">{{ formatTime(s.last_message_at || s.updated_at) }}</span>
         </div>
-        <span class="session-time">{{ formatTime(s.last_message_at || s.updated_at) }}</span>
-      </div>
+      </template>
+
+      <!-- 最近会话（精简） -->
+      <template v-if="sidebarSessions.recent.length > 0">
+        <div v-if="groupedSessions.grouped.length > 0 || sidebarSessions.pinned.length > 0" class="section-divider"></div>
+        <div class="section-label">最近</div>
+        <div
+          v-for="s in sidebarSessions.recent"
+          :key="s.session_key"
+          class="session-item"
+          :class="{ active: isActive(s.session_key) }"
+          @click="handleClick(s)"
+          @contextmenu="onContextMenu($event, s)"
+        >
+          <div class="session-avatar" :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }">
+            <img v-if="s.avatar" :src="`/api/resources/avatars/${s.avatar}`" class="avatar-img" />
+            <template v-else>{{ agentInitial(s.agent_id) }}</template>
+          </div>
+          <div class="session-item-main">
+            <div class="session-item-title">{{ formatTitle(s) }}</div>
+            <div class="session-item-sub">
+              <template v-if="s.last_message">{{ truncate(s.last_message, 30) }}</template>
+              <template v-else>暂无消息</template>
+            </div>
+          </div>
+          <span class="session-time">{{ formatTime(s.last_message_at || s.updated_at) }}</span>
+        </div>
+      </template>
+    </div>
+
+    <!-- 底部：全部会话按钮 -->
+    <div class="session-list-footer">
+      <button class="all-sessions-btn" @click="goToAllSessions">
+        📋 全部会话
+      </button>
     </div>
 
     <!-- 右键菜单 -->
@@ -649,5 +735,40 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--color-text-tertiary, var(--color-text-secondary));
   text-align: center;
+}
+
+/* 分区标签 */
+.section-label {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+ text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* 底部 */
+.session-list-footer {
+ padding: 8px 10px;
+ flex-shrink: 0;
+}
+
+.all-sessions-btn {
+  width: 100%;
+ padding: 8px;
+ border-radius: var(--radius, 6px);
+ border: 1px solid var(--color-border-subtle);
+ background: var(--color-bg-canvas);
+ color: var(--color-text-secondary);
+ font-size: 13px;
+ cursor: pointer;
+ transition: all 0.15s;
+ text-align: center;
+}
+
+.all-sessions-btn:hover {
+ background: var(--el-fill-color-light);
+ color: var(--color-text);
+ border-color: var(--color-border);
 }
 </style>

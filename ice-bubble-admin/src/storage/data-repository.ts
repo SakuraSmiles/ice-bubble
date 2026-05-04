@@ -328,6 +328,44 @@ export class DataRepository {
   // ========== Token Summary ==========
 
   /**
+   * Get all Admin session_keys (excluding trajectory/checkpoint),
+   * ordered by last_message_at DESC.
+   */
+  getAllAdminSessions(): string[] {
+    return (this.db.prepare(
+      `SELECT session_key FROM admin_sessions
+       WHERE session_key NOT LIKE '%.trajectory' AND session_key NOT LIKE '%.checkpoint%'
+       ORDER BY last_message_at DESC NULLS LAST`
+    ).all() as { session_key: string }[]).map(r => r.session_key);
+  }
+
+  /**
+   * Get session timestamps (created_at, last_message_at) by session_key.
+   */
+  getSessionTimestamps(): Map<string, { created_at: string | null; last_message_at: string | null }> {
+    const rows = this.db.prepare(
+      `SELECT session_key, created_at, last_message_at FROM admin_sessions`
+    ).all() as { session_key: string; created_at: string | null; last_message_at: string | null }[];
+    const map = new Map<string, { created_at: string | null; last_message_at: string | null }>();
+    for (const r of rows) {
+      map.set(r.session_key, { created_at: r.created_at, last_message_at: r.last_message_at });
+    }
+    return map;
+  }
+
+  /**
+   * Get all Admin session_keys for a given agent_id (excluding trajectory/checkpoint),
+   * ordered by last_message_at DESC.
+   */
+  getAdminSessionsForAgent(agentId: string): string[] {
+    return (this.db.prepare(
+      `SELECT session_key FROM admin_sessions
+       WHERE agent_id = ? AND session_key NOT LIKE '%.trajectory' AND session_key NOT LIKE '%.checkpoint%'
+       ORDER BY last_message_at DESC NULLS LAST`
+    ).all(agentId) as { session_key: string }[]).map(r => r.session_key);
+  }
+
+  /**
    * Token 统计聚合接口（从每日数据聚合）
    * @param agentId 可选，按 agent_id 筛选
    * @param date 可选，按日期筛选（格式 'YYYY-MM-DD'），不传则返回所有日期的汇总

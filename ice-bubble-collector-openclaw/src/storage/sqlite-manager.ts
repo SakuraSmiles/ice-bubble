@@ -8,7 +8,7 @@ import Database from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import type { Session, SessionMessage, SessionEvent, SQLiteManagerConfig } from '../types';
 import { Logger } from '../utils/logger.js';
-import { SessionMessageMapper, SessionMapper, getDbColumns, getPlaceholders } from '../utils/type-mapper.js';
+import { SessionMessageMapper, SessionMapper, UnifiedMessageRow, getDbColumns, getPlaceholders } from '../utils/type-mapper.js';
 
 const sqliteLogger = new Logger('SQLiteManager');
 
@@ -877,7 +877,7 @@ export class SQLiteManager {
      * 数据库行转换为 SessionMessage 对象
      */
     private rowToMessage(row: SqlRow): SessionMessage {
-        return SessionMessageMapper.fromDb(row);
+        return SessionMessageMapper.fromDb(row as unknown as UnifiedMessageRow);
     }
 
     // ========== Event 操作 ==========
@@ -1112,16 +1112,17 @@ export class SQLiteManager {
             const offset = params.offset ?? 0;
 
             let countSql = `SELECT COUNT(*) as count FROM sessions`;
-            let dataSql = `SELECT s.*,
+            let dataSql = `SELECT s.session_key, s.agent_id, s.channel, s.account_id, s.peer_id, s.guild_id,
+                  s.created_at, s.updated_at,
+                  s.label, s.status, s.model, s.model_provider, s.spawned_by, s.spawn_depth,
                   (SELECT COUNT(*) FROM session_messages sm WHERE sm.session_key = s.session_key) as message_count,
                   (SELECT MAX(sm.timestamp) FROM session_messages sm WHERE sm.session_key = s.session_key) as last_message_at
                 FROM sessions s`;
             const dataParams: unknown[] = [];
 
             if (params.since) {
-                const sinceClause = ` WHERE s.updated_at >= ?`;
-                countSql += sinceClause;
-                dataSql += sinceClause;
+                countSql += ` WHERE updated_at >= ?`;
+                dataSql += ` WHERE s.updated_at >= ?`;
                 dataParams.push(params.since);
             }
 
@@ -1340,6 +1341,7 @@ export class SQLiteManager {
         if (!this.db || !this.isInitialized) {
             throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
         }
+        const db = this.db;
 
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
@@ -1347,9 +1349,9 @@ export class SQLiteManager {
 
         sqliteLogger.info(`[SQLiteManager] Archiving messages older than ${cutoffISO}`);
 
-        const archive = this.db.transaction(() => {
+        const archive = db.transaction(() => {
             // 1. 查找需要归档的消息（不在 archive 中）
-            const toArchive = this.db.prepare(`
+            const toArchive = db.prepare(`
                 SELECT * FROM session_messages
                 WHERE timestamp < ?
                   AND id NOT IN (SELECT source_id FROM session_messages_archive WHERE source_id IS NOT NULL)
@@ -1363,7 +1365,7 @@ export class SQLiteManager {
             sqliteLogger.info(`[SQLiteManager] Found ${toArchive.length} messages to archive`);
 
             // 2. 插入到 archive 表
-            const insertArchive = this.db.prepare(`
+            const insertArchive = db.prepare(`
                 INSERT OR IGNORE INTO session_messages_archive (
                   source_id, message_id, session_key, message_type, content,
                   model, tokens_input, tokens_output, cost_total, cost_input, cost_output,
@@ -1383,7 +1385,7 @@ export class SQLiteManager {
             const sourceIds = toArchive.map(m => m.id).filter(id => id !== undefined);
             if (sourceIds.length > 0) {
                 const placeholders = sourceIds.map(() => '?').join(',');
-                const deleted = this.db.prepare(
+                const deleted = db.prepare(
                     `DELETE FROM session_messages WHERE id IN (${placeholders})`
                 ).run(...sourceIds);
                 sqliteLogger.info(`[SQLiteManager] Deleted ${deleted.changes} messages from main table`);
@@ -1394,7 +1396,7 @@ export class SQLiteManager {
 
         const count = archive();
         if (count > 0) {
-            this.db.exec('VACUUM');
+            db.exec('VACUUM');
         }
         sqliteLogger.info(`[SQLiteManager] Archived ${count} messages`);
         return count;

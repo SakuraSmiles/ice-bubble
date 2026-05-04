@@ -31,6 +31,7 @@ import { GatewayWsServer } from './gateway/ws-server.js';
 import { createChatProxyRouter, createSessionProxyRouter } from './api/chat-proxy.js';
 import { createSessionsUnifiedRouter } from './api/sessions-unified.js';
 import { createSessionGroupsRouter } from './api/session-groups.js';
+import { createSessionPreferencesRouter } from './api/session-preferences.js';
 
 // 加载环境变量
 config();
@@ -157,7 +158,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = process.env.ADMIN_DB_PATH || join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(20);  // 执行数据库迁移（v20: 会话分组表）
+    await dbManager.migrate(21);  // 执行数据库迁移（v21: 会话偏好表）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 
@@ -240,6 +241,7 @@ export async function startAdmin(): Promise<void> {
     app.use('/api/subagent-tasks', createSubagentTasksRouter({ db: dbManager.getConnection() }));
     // Session groups + create session (must be BEFORE data router to avoid /sessions/:key conflict)
     app.use('/api', createSessionGroupsRouter({ db: dbManager.getConnection(), gatewayProxy }));
+    app.use('/api', createSessionPreferencesRouter({ db: dbManager.getConnection() }));
 
     // ── Chat Gateway Integration (B7) ──
     const gwConfig = configData.gateway || {};

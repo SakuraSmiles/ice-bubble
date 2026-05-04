@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useNow } from '@/composables/useNow';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../api/client.ts';
@@ -69,9 +70,11 @@ const groupedSessions = computed<GroupedSessions[]>(() => {
   return groups;
 });
 
+const nowRef = useNow();
+
 function formatRelativeTime(dateString: string | null): string {
   if (!dateString) return '-';
-  const now = Date.now();
+  const now = nowRef.value;
   const date = new Date(dateString).getTime();
   const diff = now - date;
   const seconds = Math.floor(diff / 1000);

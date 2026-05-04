@@ -670,7 +670,7 @@ export class FileCollector extends BaseCollector implements Collector {
         }
       } catch (error) {
         // sessions.json 可能不存在或解析失败，跳过
-        logger.debug(`sessions.json 读取失败，跳过: ${filePath}`, error as Error);
+        logger.debug(`sessions.json 读取失败，跳过: ${filePath}`, { error });
       }
     }
 

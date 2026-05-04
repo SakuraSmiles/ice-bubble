@@ -68,8 +68,13 @@ const containerRef = ref<HTMLElement | null>(null);
 
 const PAGE_SIZE = 50;
 /** 初始加载量（更大，减少首次撑不满概率） */
-const INITIAL_LIMIT = 100;
+const INITIAL_LIMIT = 50;
+/** Admin 消息 id 前缀，与 Gateway id 区分用于去重 */
+const ADMIN_ID_PREFIX = 1_000_000_000;
+/** 已知消息去重集合（Gateway 用原始 id，Admin 用原始 id + ADMIN_ID_PREFIX） */
 let knownIds = new Set<number>();
+/** 是否已通过 Gateway 加载过初始消息（控制 loadMore 走 Admin 分页） */
+let gatewayLoaded = false;
 const showTypingIndicator = ref(false);
 const agentAvatar = ref<string | null>(null);
 
@@ -98,9 +103,10 @@ function scrollToBottom(smooth = true) {
 /** 初始加载：最新 N 条 */
 async function loadLatest() {
   loading.value = true;
+  gatewayLoaded = false;
   try {
     if (props.sessionKey) {
-      // Gateway 优先（数据完整）
+      // Gateway 加载最新消息（确保实时性）
       const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=1000`;
       console.log('[ChatTimeline] loadLatest via Gateway, sessionKey:', props.sessionKey);
       const historyRes = await fetch(historyUrl, { credentials: 'include' });
@@ -109,12 +115,17 @@ async function loadLatest() {
         const rawMsgs = result?.messages ?? result?.history ?? result ?? [];
         const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
         const allMsgs = gatewayMsgsToTimeline(arr);
-        const latest = allMsgs.slice(-INITIAL_LIMIT);
-        console.log('[ChatTimeline] Gateway result:', allMsgs.length, 'displayed:', latest.length);
-        setMessages(latest);
-        hasMore.value = allMsgs.length > INITIAL_LIMIT;
-        await fetchAgentAvatar();
-        return;
+        if (allMsgs.length > 0) {
+          const latest = allMsgs.slice(-INITIAL_LIMIT);
+          console.log('[ChatTimeline] Gateway result:', allMsgs.length, 'displayed:', latest.length);
+          setMessages(latest);
+          hasMore.value = allMsgs.length > INITIAL_LIMIT;
+          gatewayLoaded = true;
+          await fetchAgentAvatar();
+          return;
+        }
+        // Gateway 返回空（session 已结束），降级到 Admin
+        console.log('[ChatTimeline] Gateway returned 0 messages, falling back to Admin');
       }
     }
 
@@ -134,7 +145,7 @@ async function loadLatest() {
   }
 }
 
-/** 加载更多历史 —— Gateway 全量拉取 + 客户端过滤更早消息 */
+/** 加载更多历史 —— 有 sessionKey 走 Admin 分页，无 sessionKey 走 Admin 分页 */
 async function loadMore() {
   if (loadingMore.value || !hasMore.value || messages.value.length === 0) return;
   loadingMore.value = true;
@@ -143,27 +154,29 @@ async function loadMore() {
   const prevScrollHeight = el?.scrollHeight ?? 0;
 
   try {
-    if (props.sessionKey) {
-      // Gateway 不支持 before 分页，全量拉取 + 客户端过滤更早消息
+    if (props.sessionKey && gatewayLoaded) {
+      // 有 sessionKey 且已通过 Gateway 加载：走 Admin 分页获取更早历史
       const oldest = messages.value[0].timestamp;
-      const gwRes = await fetch(
-        `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=1000`,
-        { credentials: 'include' }
-      );
-      if (!gwRes.ok) { hasMore.value = false; return; }
-      const gwResult = await gwRes.json() as any;
-      const rawMsgs = gwResult?.messages ?? gwResult?.history ?? gwResult ?? [];
-      const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
-      const allMsgs = gatewayMsgsToTimeline(arr);
-      const olderMsgs = allMsgs.filter(m => new Date(m.timestamp).getTime() < new Date(oldest).getTime() - 1000);
-      if (olderMsgs.length === 0) { hasMore.value = false; return; }
-      messages.value = [...olderMsgs, ...messages.value];
-      olderMsgs.forEach(m => knownIds.add(m.id));
-      hasMore.value = olderMsgs.length >= 20;
+      // 加 1ms 偏移避免同时间戳消息被 before < 严格比较遗漏
+      const beforeCursor = new Date(new Date(oldest).getTime() + 1).toISOString();
+      const url = `/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`;
+      console.log('[ChatTimeline] loadMore via Admin, url:', url);
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) { hasMore.value = false; return; }
+      const data: TimelineResponse = await res.json();
+      if (!Array.isArray(data.messages) || data.messages.length === 0) { hasMore.value = false; return; }
+      // Admin 消息 id 加前缀后去重（避免与 Gateway id 冲突）
+      const adminMsgs = data.messages.map(m => ({ ...m, id: m.id + ADMIN_ID_PREFIX }));
+      const newMsgs = adminMsgs.filter(m => !knownIds.has(m.id));
+      if (newMsgs.length === 0) { hasMore.value = data.has_more; return; }
+      newMsgs.forEach(m => knownIds.add(m.id));
+      messages.value = [...newMsgs, ...messages.value];
+      hasMore.value = data.has_more;
     } else {
-      // Admin 降级
+      // Admin 分页（Gateway 不可用或无 sessionKey）
       const oldest = messages.value[0].timestamp;
-      const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${filters.value}`, { credentials: 'include' });
+      const beforeCursor = new Date(new Date(oldest).getTime() + 1).toISOString();
+      const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`, { credentials: 'include' });
       if (!res.ok) return;
       const data: TimelineResponse = await res.json();
       if (!Array.isArray(data.messages) || data.messages.length === 0) { hasMore.value = false; return; }
@@ -205,7 +218,8 @@ async function fillScrollable() {
     const oldest = messages.value[0]?.timestamp;
     if (!oldest) break;
 
-    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}&${filters.value}`, { credentials: 'include' });
+    const beforeCursor = new Date(new Date(oldest).getTime() + 1).toISOString();
+    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`, { credentials: 'include' });
     if (!res.ok) break;
     const data: TimelineResponse = await res.json();
     if (!Array.isArray(data.messages) || data.messages.length === 0) {
@@ -738,19 +752,20 @@ watch(() => props.sessionKey, (newKey) => {
   if (newKey !== undefined) {
     agentAvatar.value = null;
     knownIds.clear();
+    gatewayLoaded = false;
     messages.value = [];
     loadLatest();
   }
 });
 
 onMounted(async () => {
+  // Gateway 实时事件（增量更新）
+  subscribeGatewayEvents();
+  // 加载最新消息
   await loadLatest();
   await nextTick();
   scrollToBottom(false);
   checkBottom();
-
-  // Gateway 实时事件（增量更新）
-  subscribeGatewayEvents();
 });
 
 onUnmounted(() => {

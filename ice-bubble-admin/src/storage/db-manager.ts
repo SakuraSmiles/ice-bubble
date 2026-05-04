@@ -975,6 +975,21 @@ export class DBManager {
         `);
         logger.info('Migration v20: created session_groups and session_group_members tables');
         break;
+      case 21:
+        // v21: 会话偏好表（侧栏显示配置）
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS session_preferences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_key TEXT NOT NULL DEFAULT 'default',
+            pinned TEXT NOT NULL DEFAULT '[]',
+            hidden TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_key)
+          );
+        `);
+        logger.info('Migration v21: created session_preferences table');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

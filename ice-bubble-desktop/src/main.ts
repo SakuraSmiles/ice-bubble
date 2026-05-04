@@ -21,6 +21,7 @@ const router = createRouter({
         { path: 'modules', component: () => import('./views/Modules.vue') },
         { path: 'agents', component: () => import('./views/Agents.vue') },
         { path: 'workspace/:key', component: () => import('./views/Workspace.vue') },
+        { path: 'sessions', component: () => import('./views/AllSessions.vue') },
       ],
     },
   ],

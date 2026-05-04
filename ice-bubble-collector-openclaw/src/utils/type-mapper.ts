@@ -95,21 +95,28 @@ export class SessionMessageMapper {
    * 数据库行 → TypeScript
    */
   static fromDb(row: UnifiedMessageRow): SessionMessage {
+    const r = row as unknown as {
+      id?: number; message_id: string | null; session_key: string; message_type: string;
+      content: string | null; model: string | null; tokens_input: number | null;
+      tokens_output: number | null; cost_total: number | null; cost_input: number | null;
+      cost_output: number | null; tools_json: string | null; timestamp: string;
+      created_at: string | null;
+    };
     return {
-      id: row.id,
-      messageId: row.message_id || undefined,
-      sessionKey: row.session_key,
-      messageType: row.message_type,
-      content: row.content || undefined,
-      model: row.model || undefined,
-      tokensInput: row.tokens_input || undefined,
-      tokensOutput: row.tokens_output || undefined,
-      costTotal: row.cost_total || undefined,
-      costInput: row.cost_input || undefined,
-      costOutput: row.cost_output || undefined,
-      toolsJson: row.tools_json || undefined,
-      timestamp: new Date(row.timestamp),
-      createdAt: row.created_at ? new Date(row.created_at) : undefined
+      id: r.id,
+      messageId: r.message_id || undefined,
+      sessionKey: r.session_key,
+      messageType: r.message_type as SessionMessage['messageType'],
+      content: r.content || undefined,
+      model: r.model || undefined,
+      tokensInput: r.tokens_input || undefined,
+      tokensOutput: r.tokens_output || undefined,
+      costTotal: r.cost_total || undefined,
+      costInput: r.cost_input || undefined,
+      costOutput: r.cost_output || undefined,
+      toolsJson: r.tools_json || undefined,
+      timestamp: new Date(r.timestamp),
+      createdAt: r.created_at ? new Date(r.created_at) : undefined
     };
   }
 
@@ -154,15 +161,20 @@ export class SessionMapper {
    * 数据库行 → TypeScript
    */
   static fromDb(row: UnifiedSessionRow): Session {
+    const r = row as unknown as {
+      session_key: string; agent_id: string; channel: string;
+      account_id: string | null; peer_id: string | null; guild_id: string | null;
+      created_at: string; updated_at: string;
+    };
     return {
-      sessionKey: row.session_key,
-      agentId: row.agent_id,
-      channel: row.channel,
-      accountId: row.account_id || undefined,
-      peerId: row.peer_id || undefined,
-      guildId: row.guild_id || undefined,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      sessionKey: r.session_key,
+      agentId: r.agent_id,
+      channel: r.channel,
+      accountId: r.account_id || undefined,
+      peerId: r.peer_id || undefined,
+      guildId: r.guild_id || undefined,
+      createdAt: new Date(r.created_at),
+      updatedAt: new Date(r.updated_at)
     };
   }
 }
@@ -192,12 +204,16 @@ export class AgentMapper {
    * 数据库行 → TypeScript
    */
   static fromDb(row: UnifiedAgentRow): Agent {
+    const r = row as unknown as {
+      agent_id: string; agent_name: string | null; config_json: string | null;
+      status: string; last_seen_at: string | null; created_at: string; updated_at: string;
+    };
     return {
-      agentId: row.agent_id,
-      agentName: row.agent_name || undefined,
-      configJson: row.config_json || undefined,
-      status: row.status,
-      lastSeenAt: row.last_seen_at ? new Date(row.last_seen_at) : undefined,
+      agentId: r.agent_id,
+      agentName: r.agent_name || undefined,
+      configJson: r.config_json || undefined,
+      status: r.status as Agent['status'],
+      lastSeenAt: r.last_seen_at ? new Date(r.last_seen_at) : undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };

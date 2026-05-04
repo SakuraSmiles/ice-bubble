@@ -62,7 +62,7 @@ export function createSessionsUnifiedRouter(config: SessionsUnifiedRouterConfig)
         let lastMsg: { last_message: string | null; message_count: number } | undefined;
         const resolvedKeys = repository.resolveSessionKey(key);
         for (const rk of resolvedKeys) {
-          if (lastMsgMap.has(rk) && !rk.includes('.trajectory') && !rk.includes('.checkpoint')) {
+          if (lastMsgMap.has(rk) && !rk.endsWith('.trajectory') && !rk.endsWith('.checkpoint')) {
             lastMsg = lastMsgMap.get(rk);
             break;
           }
@@ -103,6 +103,46 @@ export function createSessionsUnifiedRouter(config: SessionsUnifiedRouterConfig)
           created_at: toISO(gw.created_at),
         };
       });
+
+      // 3.5. Add Admin-only sessions (not in Gateway) for full coverage
+      const gwKeys = new Set(sessions.map(s => s.session_key));
+      const adminKeys = filterAgentId
+        ? repository.getAdminSessionsForAgent(filterAgentId)
+        : repository.getAllAdminSessions();
+      const agentsMap3 = repository.getAgentsMap();
+      const sessionTsMap = repository.getSessionTimestamps();
+      for (const ak of adminKeys) {
+        if (gwKeys.has(ak)) continue;
+        const lm = lastMsgMap.get(ak);
+        const ts = sessionTsMap.get(ak);
+        const parts = ak.split(':');
+        const agentId = parts.length >= 2 ? parts[1] : '';
+        const agentInfo = agentsMap3.get(agentId);
+        sessions.push({
+          session_key: ak,
+          agent_id: agentId,
+          agent_name: agentInfo?.agent_name ?? null,
+          avatar: agentInfo?.avatar ?? null,
+          label: null,
+          channel: null,
+          message_count: lm?.message_count ?? 0,
+          last_message: lm?.last_message ?? null,
+          last_message_at: ts?.last_message_at ?? null,
+          first_message_at: ts?.created_at ?? null,
+          session_status: null,
+          model: null,
+          model_provider: null,
+          spawned_by: null,
+          spawn_depth: null,
+          input_tokens: null,
+          output_tokens: null,
+          total_tokens: null,
+          runtime_ms: null,
+          child_sessions: null,
+          updated_at: ts?.last_message_at ?? ts?.created_at ?? null,
+          created_at: ts?.created_at ?? null,
+        });
+      }
 
       // 4. Apply filters
       if (filterAgentId) {
