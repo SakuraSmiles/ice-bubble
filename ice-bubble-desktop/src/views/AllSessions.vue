@@ -370,7 +370,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 24px;
+  padding: 14px 24px;
   border-bottom: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
 }
@@ -386,7 +386,7 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
   cursor: pointer;
   font-size: 13px;
-  transition: all 0.15s;
+  transition: all 0.2s ease;
 }
 
 .back-btn:hover {
@@ -399,6 +399,7 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--color-text);
   margin: 0;
+  margin-left: 4px;
 }
 
 .session-count {
@@ -410,9 +411,10 @@ onUnmounted(() => {
 /* 过滤栏 */
 .filter-bar {
   flex-shrink: 0;
-  padding: 12px 24px;
+  padding: 10px 24px;
   border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-canvas);
+  background: var(--color-bg-subtle);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .filter-row {
@@ -471,13 +473,13 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
+  padding: 80px 20px;
   color: var(--color-text-tertiary, var(--color-text-secondary));
 }
 
 .empty-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
+  font-size: 56px;
+  margin-bottom: 16px;
   opacity: 0.6;
 }
 
@@ -485,11 +487,13 @@ onUnmounted(() => {
   font-size: 16px;
   font-weight: 500;
   margin-bottom: 4px;
+  color: var(--color-text-secondary);
 }
 
 .empty-hint {
   font-size: 13px;
   opacity: 0.7;
+  margin-top: 8px;
 }
 
 /* 会话卡片 */
@@ -503,14 +507,17 @@ onUnmounted(() => {
   gap: 12px;
   padding: 12px 16px;
   border: 1px solid var(--color-border-subtle);
+  border-left: 3px solid transparent;
   border-radius: var(--radius, 8px);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s ease;
 }
 
 .session-card:hover {
   border-color: var(--color-border);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-left-color: transparent;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 .session-card-main {
@@ -563,7 +570,7 @@ onUnmounted(() => {
 .session-card-time {
   font-size: 12px;
   color: var(--color-text-tertiary, var(--color-text-secondary));
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .msg-count {
@@ -599,8 +606,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transition: all 0.15s;
+  opacity: 0.5;
+  transition: all 0.2s ease;
 }
 
 .session-card:hover .action-btn {
@@ -629,8 +636,9 @@ onUnmounted(() => {
   flex-shrink: 0;
   display: flex;
   justify-content: center;
-  padding: 12px 24px 16px;
+  padding: 10px 24px 14px;
   border-top: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-subtle);
 }
 
 @media (max-width: 768px) {

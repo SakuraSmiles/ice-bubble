@@ -219,6 +219,7 @@ function resetInputHeight() {
   display: flex;
   flex-direction: column;
   padding: 16px 24px 0;
+  padding-bottom: 12px;
   flex-shrink: 0;
 }
 
@@ -246,7 +247,7 @@ function resetInputHeight() {
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
@@ -263,12 +264,13 @@ function resetInputHeight() {
 }
 
 .page-title {
-  font-size: 1.5rem;
+  font-size: 20px;
   font-weight: 600;
   color: var(--color-text);
   margin: 0;
   line-height: 1.2;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.01em;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -276,7 +278,7 @@ function resetInputHeight() {
 
 .page-subtitle {
   font-size: 13px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
   font-weight: 400;
 }
 
@@ -292,14 +294,16 @@ function resetInputHeight() {
 .meta-time {
   font-size: 13px;
   color: var(--color-text-secondary);
+  border-left: 1px solid var(--color-border-subtle);
+  padding-left: 12px;
 }
 
 .workspace-body {
   flex: 1;
   min-height: 0;
-  margin: 8px 24px;
+  margin: 8px 20px;
   background: var(--color-bg-canvas);
-  border-radius: var(--radius);
+  border-radius: 0 0 8px 8px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -309,11 +313,11 @@ function resetInputHeight() {
 .chat-input-bar {
   display: flex;
   align-items: flex-end;
-  padding: 12px 16px;
+  padding: 10px 20px;
   border-top: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
-  background: var(--color-bg-canvas);
-  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--color-bg-subtle);
+  border-radius: 0 0 8px 8px;
 }
 
 .chat-input-wrapper {
@@ -322,8 +326,9 @@ function resetInputHeight() {
   display: flex;
   align-items: flex-end;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border-radius: 10px;
   background: var(--color-bg-inset);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   transition: border-color 0.15s;
 }
 
@@ -335,14 +340,14 @@ function resetInputHeight() {
   flex: 1;
   resize: none;
   border: none;
-  border-radius: var(--radius);
-  padding: 8px 44px 8px 12px;
+  border-radius: 10px;
+  padding: 10px 48px 10px 14px;
   font-size: 14px;
   font-family: inherit;
   color: var(--color-text);
   background: transparent;
   outline: none;
-  line-height: 1.5;
+  line-height: 1.6;
   max-height: 120px;
   overflow-y: auto;
 }
@@ -365,16 +370,18 @@ function resetInputHeight() {
   width: 30px;
   height: 30px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--color-accent-blue);
   color: #fff;
   cursor: pointer;
   flex-shrink: 0;
-  transition: opacity 0.15s;
+  transition: all 0.2s ease;
 }
 
 .send-btn:hover:not(:disabled) {
   opacity: 0.85;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(9,105,218,0.3);
 }
 
 .send-btn:disabled {

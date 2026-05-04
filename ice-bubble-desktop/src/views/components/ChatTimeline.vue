@@ -1085,7 +1085,7 @@ function toolSummary(grp: MsgGroup): string {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #f5f5f5;
+  background: #ffffff;
 }
 
 /* 加载更多按钮 */
@@ -1137,7 +1137,7 @@ function toolSummary(grp: MsgGroup): string {
 
 /* Agent 头像列 */
 .agent-avatar-col {
-  width: 36px;
+  width: 28px;
   flex-shrink: 0;
   padding-top: 2px;
 }
@@ -1152,19 +1152,19 @@ function toolSummary(grp: MsgGroup): string {
 }
 
 .avatar, .avatar-placeholder {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
 }
 .avatar-placeholder {
-  background: var(--el-color-primary-light-3);
+  background: var(--color-accent-blue);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -1176,7 +1176,7 @@ function toolSummary(grp: MsgGroup): string {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #aaa;
+  color: var(--color-text-tertiary);
   padding: 0 6px;
 }
 .msg-header--user {
@@ -1196,9 +1196,9 @@ function toolSummary(grp: MsgGroup): string {
 }
 
 .agent-label-name {
-  font-weight: 400;
-  color: #666;
-  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
 /* 气泡 */
@@ -1209,17 +1209,18 @@ function toolSummary(grp: MsgGroup): string {
   word-break: break-word;
 }
 .bubble--user {
-  background: #e3eaf7;
-  color: #333;
-  border-radius: 18px 18px 4px 18px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  background: var(--color-accent-blue);
+  color: #ffffff;
+  border-radius: 16px 16px 4px 16px;
+  box-shadow: 0 1px 2px rgba(9,105,218,0.2);
 }
 .bubble--agent {
   background: #fff;
   color: #222;
-  border-radius: 18px 18px 18px 4px;
+  border-radius: 16px 16px 16px 4px;
   max-width: 100%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 10px 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 
 .bubble-text {
@@ -1230,8 +1231,8 @@ function toolSummary(grp: MsgGroup): string {
 .channel-tag {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   font-size: 9px;
-  color: #9aa0a6;
-  background: #f0f1f3;
+  color: var(--color-text-tertiary);
+  background: var(--el-fill-color-light);
   padding: 1px 6px;
   border-radius: 3px;
   letter-spacing: 0.3px;
@@ -1240,9 +1241,9 @@ function toolSummary(grp: MsgGroup): string {
 /* 模型标签 */
 .model-tag {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 9px;
-  color: #999;
-  background: #f0f0f0;
+  font-size: 10px;
+  color: var(--color-accent-blue);
+  background: var(--color-accent-blue-subtle);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -1254,7 +1255,7 @@ function toolSummary(grp: MsgGroup): string {
 }
 .tool-details summary {
   cursor: pointer;
-  color: #888;
+  color: var(--color-text-secondary);
   font-size: 11px;
   padding: 4px 0;
 }
@@ -1264,13 +1265,13 @@ function toolSummary(grp: MsgGroup): string {
 .tool-item {
   margin-top: 6px;
   padding: 6px 8px;
-  background: #f0f0f0;
-  border-radius: 6px;
+  background: var(--color-bg-subtle);
+  border-radius: 8px;
   font-size: 11px;
 }
 .tool-item-header {
   font-weight: 600;
-  color: #5a7fb5;
+  color: var(--color-accent-blue);
   font-size: 11px;
   margin-bottom: 4px;
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
@@ -1288,7 +1289,7 @@ function toolSummary(grp: MsgGroup): string {
 .streaming-cursor {
   display: inline-block;
   animation: blink 1s step-end infinite;
-  color: var(--el-color-primary);
+  color: var(--color-accent-blue);
   font-weight: bold;
   margin-left: 1px;
 }
@@ -1310,14 +1311,14 @@ function toolSummary(grp: MsgGroup): string {
   gap: 4px;
   padding: 10px 16px;
   background: #fff;
-  border-radius: 18px 18px 18px 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-radius: 16px 16px 16px 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 .typing-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #a0a4b0;
+  background: var(--color-accent-blue);
   animation: dot-bounce 1.2s infinite ease-in-out both;
 }
 .typing-dot:nth-child(1) { animation-delay: -0.32s; }
@@ -1339,7 +1340,7 @@ function toolSummary(grp: MsgGroup): string {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 11px;
   font-family: 'SF Mono', 'Consolas', monospace;
   background: #f0f1f3;
