@@ -2,6 +2,7 @@ use tauri::Manager;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use std::fs;
+use std::sync::Mutex;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -20,9 +21,34 @@ fn spawn_hidden(cmd: &mut std::process::Command) -> std::io::Result<std::process
         .spawn()
 }
 
+/// 保存 server 子进程句柄，用于退出时清理
+struct ServerChild(Mutex<Option<std::process::Child>>);
+
+impl ServerChild {
+    fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+
+    fn set(&self, child: std::process::Child) {
+        if let Ok(mut guard) = self.0.lock() {
+            let _ = guard.take().map(|mut old| old.kill());
+            *guard = Some(child);
+        }
+    }
+
+    fn kill(&self) {
+        if let Ok(mut guard) = self.0.lock() {
+            if let Some(ref mut child) = *guard {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            *guard = None;
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 获取 exe 同目录
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
@@ -31,11 +57,25 @@ pub fn run() {
     let port_file = exe_dir.join("server").join(".server-port");
     let resource_dir = exe_dir.join("config");
 
+    let server_child = ServerChild::new();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .manage(server_child)
         .setup(move |app| {
             let window = app.get_webview_window("main").unwrap();
             window.set_title("IceBubble Desktop").unwrap();
+
+            // 监听窗口关闭事件，清理 server 子进程
+            let server_handle = app.state::<ServerChild>();
+            let on_close = window.on_window_event(move |_event| {
+                // 当窗口请求关闭时，杀掉 server 子进程
+                if let tauri::WindowEvent::CloseRequested { .. } = _event {
+                    server_handle.kill();
+                }
+            });
+            // 保存防止被 drop
+            app.manage(on_close);
 
             let mut server_started = false;
 
@@ -55,7 +95,9 @@ pub fn run() {
                             .env("ICE_DIST_DIR", exe_dir.join("server"))
                             .current_dir(&exe_dir)
                     ) {
-                        Ok(_) => {
+                        Ok(child) => {
+                            let handle = app.state::<ServerChild>();
+                            handle.set(child);
                             server_started = true;
                             break;
                         }
@@ -77,7 +119,9 @@ pub fn run() {
                             .env("ICE_DIST_DIR", exe_dir.join("server"))
                             .current_dir(&exe_dir)
                     ) {
-                        Ok(_) => {
+                        Ok(child) => {
+                            let handle = app.state::<ServerChild>();
+                            handle.set(child);
                             server_started = true;
                         }
                         Err(e) => {
@@ -88,10 +132,8 @@ pub fn run() {
             }
 
             if server_started {
-                // 等待 Express server 写入端口文件（用于 API 代理）
                 let server_port = wait_for_server_port(&port_file);
                 if let Some(port) = server_port {
-                    // 前端由 Tauri 内置 serve，API 请求走 Express proxy
                     let _ = window.eval(&format!(
                         "window.__ICE_SERVER_PORT = {};",
                         port
