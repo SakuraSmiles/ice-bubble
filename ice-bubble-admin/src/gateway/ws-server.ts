@@ -84,7 +84,6 @@ export class GatewayWsServer {
 
     for (const event of broadcastEvents) {
       const unsub = this.proxy.on(event, (payload: unknown) => {
-        console.log(`[WsServer] Broadcasting: ${event}`, JSON.stringify(payload).substring(0, 200));
         this.broadcastFromGateway(event, payload);
       });
       this.cleanupFns.push(unsub);

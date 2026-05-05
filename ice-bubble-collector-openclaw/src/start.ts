@@ -14,6 +14,10 @@ import { Logger } from './utils/logger.js';
 
 const startLogger = new Logger('Start');
 
+export const VERSION = '1.0.0';
+
+export const startCollector = start;
+
 async function start() {
   startLogger.info('🚀 启动 OpenClaw 采集器...\n');
 

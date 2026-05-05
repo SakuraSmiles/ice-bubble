@@ -54,7 +54,8 @@ function createProxyMiddleware() {
         }
       }
       forwardHeaders["host"] = targetUrl.host;
-      if (config.authToken && !forwardHeaders["authorization"] && !forwardHeaders["Authorization"]) {
+      const hasAuth = Object.keys(forwardHeaders).some((k) => k.toLowerCase() === "authorization");
+      if (config.authToken && !hasAuth) {
         forwardHeaders["Authorization"] = `Bearer ${config.authToken}`;
       }
       const requestOptions = {

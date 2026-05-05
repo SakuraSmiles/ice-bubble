@@ -27,7 +27,6 @@ export function createProxyMiddleware() {
     }
 
     const originalPath = req.originalUrl || req.url;
-    console.log(`[Proxy] ${req.method} ${originalPath}`);
 
     const targetModule = findModuleByPath(originalPath);
 
@@ -71,7 +70,8 @@ export function createProxyMiddleware() {
 
       // If modules.json has authToken configured and the incoming request
       // didn't already provide an Authorization header, inject our token.
-      if (config.authToken && !forwardHeaders['authorization'] && !forwardHeaders['Authorization']) {
+      const hasAuth = Object.keys(forwardHeaders).some(k => k.toLowerCase() === 'authorization');
+      if (config.authToken && !hasAuth) {
         forwardHeaders['Authorization'] = `Bearer ${config.authToken}`;
       }
 

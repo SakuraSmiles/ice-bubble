@@ -1,0 +1,13 @@
+{
+  "name": "ice-bubble",
+  "version": "1.0.0",
+  "private": true,
+  "description": "IceBubble - OpenClaw Desktop Manager",
+  "scripts": {
+    "version:sync": "echo 'Use manual version update'",
+    "build:all": "npm run build --workspaces --if-present",
+    "start:admin": "cd ice-bubble-admin && npm start",
+    "start:collector": "cd ice-bubble-collector-openclaw && npm start",
+    "start:desktop": "cd ice-bubble-desktop && npm start"
+  }
+}

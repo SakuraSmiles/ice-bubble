@@ -268,9 +268,14 @@ export async function startAdmin(): Promise<void> {
     app.use('/api', createSessionPreferencesRouter({ db: dbManager.getConnection() }));
 
     // ── Chat Gateway Integration (B7) ──
+    // NOTE: 这里创建的 GatewayConnection/GatewayRpc 用于 SSE 聊天推送（浏览器直连 Admin）。
+    // 上方的 GatewayProxy 用于 WebSocket 代理转发 Desktop 请求到 Gateway。
+    // 两者协议不同（SSE vs WS），用途不同，非重复连接。Token 统一使用 GatewayProxy 的来源。
     const gwConfig = configData.gateway || {};
     const gatewayUrl = gwConfig.url || 'ws://127.0.0.1:18789';
-    const gatewayToken = gwConfig.token || '';
+    // 复用 GatewayProxy 的 token 获取逻辑（OpenClaw config > env var > fallback）
+    // 避免 configData.gateway.token 与 GatewayProxy 的 token 来源不一致
+    const gatewayToken = gwConfig.token || process.env.GATEWAY_AUTH_TOKEN || '';
     const gatewayConn = new GatewayConnection(gatewayUrl, gatewayToken);
     const gatewayRpc = new GatewayRpc(gatewayConn);
     const sseManager = new SSEManager(gatewayRpc);
