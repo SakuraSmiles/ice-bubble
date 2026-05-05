@@ -2,12 +2,27 @@ import { readFileSync, existsSync, watchFile, unwatchFile } from "fs";
 import { join } from "path";
 import { fileURLToPath } from "url";
 function getProjectRoot() {
-  if (typeof process !== "undefined" && process.cwd) {
-    return process.cwd();
-  }
   const __filename = fileURLToPath(import.meta.url);
-  const __dirname = join(__filename, "..", "..");
-  return __dirname;
+  const __dirname = join(__filename, "..");
+  const tauriConfigDir = join(__dirname, "..", "config");
+  if (existsSync(join(tauriConfigDir, "modules.json"))) {
+    return tauriConfigDir;
+  }
+  const localConfigDir = join(__dirname, "config");
+  if (existsSync(join(localConfigDir, "modules.json"))) {
+    return localConfigDir;
+  }
+  if (typeof process !== "undefined" && process.cwd) {
+    const cwd = process.cwd();
+    if (existsSync(join(cwd, "config", "modules.json"))) {
+      return join(cwd, "config");
+    }
+  }
+  const fallback = join(__dirname, "..", "..", "config");
+  if (existsSync(join(fallback, "modules.json"))) {
+    return fallback;
+  }
+  return join(process.cwd(), "config");
 }
 const DEFAULT_CONFIG = {
   modules: [
@@ -20,8 +35,7 @@ const DEFAULT_CONFIG = {
   ]
 };
 function getConfigPath() {
-  const root = getProjectRoot();
-  return join(root, "config", "modules.json");
+  return join(getProjectRoot(), "modules.json");
 }
 function loadConfig() {
   const configPath = getConfigPath();

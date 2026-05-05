@@ -8,12 +8,46 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 
 function getProjectRoot(): string {
-  if (typeof process !== 'undefined' && process.cwd) {
-    return process.cwd();
-  }
   const __filename = fileURLToPath(import.meta.url);
-  const __dirname = join(__filename, '..', '..');
-  return __dirname;
+  const __dirname = join(__filename, '..');
+
+  // 0. 环境变量优先（sidecar 模式下由 lib.rs 注入）
+  if (typeof process !== 'undefined' && process.env.ICE_RESOURCE_DIR) {
+    const envDir = process.env.ICE_RESOURCE_DIR;
+    if (existsSync(join(envDir, 'modules.json'))) {
+      return envDir;
+    }
+  }
+
+  // 1. Tauri 打包模式：config 目录在 exe_dir/server 的同级
+  const tauriConfigDir = join(__dirname, '..', 'config');
+  if (existsSync(join(tauriConfigDir, 'modules.json'))) {
+    return tauriConfigDir;
+  }
+
+  // 1b. 当 config.server.js 作为独立文件在 exe_dir/ 运行时：
+  //     __dirname = exe_dir/ → join(__dirname, 'config') = exe_dir/config/ ✅
+  const localConfigDir = join(__dirname, 'config');
+  if (existsSync(join(localConfigDir, 'modules.json'))) {
+    return localConfigDir;
+  }
+
+  // 2. 开发模式：process.cwd()/config/modules.json
+  if (typeof process !== 'undefined' && process.cwd) {
+    const cwd = process.cwd();
+    if (existsSync(join(cwd, 'config', 'modules.json'))) {
+      return join(cwd, 'config');
+    }
+  }
+
+  // 3. 直接 tsx 运行：__dirname/../../config/modules.json
+  const fallback = join(__dirname, '..', '..', 'config');
+  if (existsSync(join(fallback, 'modules.json'))) {
+    return fallback;
+  }
+
+  // 4. 兜底
+  return join(process.cwd(), 'config');
 }
 
 export interface ModuleConfig {
@@ -50,8 +84,7 @@ const DEFAULT_CONFIG: ModulesConfig = {
 };
 
 export function getConfigPath(): string {
-  const root = getProjectRoot();
-  return join(root, 'config', 'modules.json');
+  return join(getProjectRoot(), 'modules.json');
 }
 
 export function loadConfig(): ModulesConfig {

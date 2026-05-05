@@ -4,7 +4,7 @@
  */
 
 import { createServer, IncomingMessage } from 'http';
-import { writeFileSync, existsSync } from 'fs';
+import { writeFileSync, existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import express, { Request, Response } from 'express';
@@ -13,12 +13,32 @@ import { enableHotReload, disableHotReload, reloadConfig, findModuleByKey, getCo
 import { createProxyMiddleware } from '../middleware/proxy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// 静态文件目录：sidecar 模式下由环境变量指定，否则使用相对路径
+const distDir = process.env.ICE_DIST_DIR
+  ? join(process.env.ICE_DIST_DIR)
+  : join(__dirname, '..', 'dist');
 const START_PORT = 14000;
 const MAX_PORT = 14010;
 
 // 写入端口文件供前端读取
+// sidecar 模式：写入工作目录（由 lib.rs 设置 current_dir）
+// 开发模式：项目根目录
+function getPortFilePath(): string {
+  // sidecar 模式下工作目录由 lib.rs 设置为 exe_dir
+  const cwd = process.cwd();
+  const cwdPort = join(cwd, 'server', '.server-port');
+  try {
+    const dir = dirname(cwdPort);
+    if (existsSync(dir)) return cwdPort;
+  } catch {}
+
+  // fallback: __dirname 相对路径
+  return join(__dirname, '.server-port');
+}
+
 function writePortFile(port: number) {
-  const portFile = join(__dirname, '../../.server-port');
+  const portFile = getPortFilePath();
   try {
     writeFileSync(portFile, String(port));
     console.log(`[Server] 端口: ${port}`);
@@ -74,15 +94,91 @@ if (isDev) {
   enableHotReload();
 }
 
-// 动态代理中间件 - 处理 /api/* 请求
+// 本地配置 API（不走代理）
+import { getConfigPath, getConfig as getServerConfig } from '../config.server.js';
+
+// GET /api/desktop/config — 读取当前 modules.json 配置
+app.get('/api/desktop/config', (_req: Request, res: Response) => {
+  try {
+    const config = getServerConfig();
+    // 不暴露完整 authToken，只返回是否已配置
+    res.json({
+      configured: !!config.authToken,
+      adminUrl: config.modules.find(m => m.key === 'admin')?.url || '',
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/desktop/config — 测试连接并保存配置
+app.post('/api/desktop/config', async (req: Request, res: Response) => {
+  const { url, token } = req.body || {};
+  if (!url) {
+    res.status(400).json({ error: 'URL is required' });
+    return;
+  }
+
+  // 先测试连接
+  try {
+    const testUrl = new URL('/api/stats', url);
+    const isHttps = testUrl.protocol === 'https:';
+    const transport = isHttps ? await import('https') : await import('http');
+    await new Promise<void>((resolve, reject) => {
+      const req = transport.request(testUrl, { timeout: 5000 }, (proxyRes: any) => {
+        let data = '';
+        proxyRes.on('data', (chunk: any) => data += chunk);
+        proxyRes.on('end', () => {
+          if (proxyRes.statusCode && proxyRes.statusCode >= 200 && proxyRes.statusCode < 400) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${proxyRes.statusCode}: ${data.slice(0, 200)}`));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Connection timeout')); });
+      req.end();
+    });
+  } catch (e: any) {
+    res.status(502).json({ error: `Connection failed: ${e.message}` });
+    return;
+  }
+
+  // 保存配置到 modules.json
+  try {
+    const configPath = getConfigPath();
+    let config: any = { modules: [{ key: 'admin', name: 'Admin 管理后台', url, enabled: true }] };
+    if (existsSync(configPath)) {
+      const raw = readFileSync(configPath, 'utf-8');
+      config = JSON.parse(raw);
+      const admin = config.modules?.find((m: any) => m.key === 'admin');
+      if (admin) admin.url = url;
+    }
+    if (token) config.authToken = token;
+    writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+    res.json({ success: true, url });
+  } catch (e: any) {
+    res.status(500).json({ error: `Save failed: ${e.message}` });
+  }
+});
+
+// 动态代理中间件 - 处理 /api/* 请求（排除 /api/desktop/*）
+app.use('/api', (req: Request, res: Response, next: any) => {
+  if (req.path.startsWith('/desktop/')) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  next();
+});
 app.use('/api', createProxyMiddleware());
 
 // 静态文件服务 - 开发环境使用 Vite，生产环境使用 dist
-app.use(express.static(join(__dirname, '../dist')));
+app.use(express.static(distDir));
 
 // 处理 SPA 路由 - 确保 index.html 被正确返回
 app.get('/{*path}', (_req: Request, res: Response) => {
-  const indexPath = join(__dirname, '../dist/index.html');
+  const indexPath = join(distDir, 'index.html');
   
   if (existsSync(indexPath)) {
     res.sendFile(indexPath);

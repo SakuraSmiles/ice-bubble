@@ -36,7 +36,9 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../dist-server": "server"
-    }
+      "../dist-server": "server",
+      "../config": "config"
+    },
+    "externalBin": ["binaries/server"]
   }
 }
