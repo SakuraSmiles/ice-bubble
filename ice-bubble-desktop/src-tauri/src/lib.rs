@@ -80,19 +80,18 @@ pub fn run() {
             }
 
             if server_started {
-                // 等待 Express server 写入端口文件
-                let server_url = wait_for_server(&port_file);
-                match server_url {
-                    Some(url) => {
-                        println!("Navigating to: {}", url);
-                        let _ = window.eval(&format!(
-                            "window.location.href = '{}';",
-                            url
-                        ));
-                    }
-                    None => {
-                        eprintln!("Server did not start in time, using bundled frontend");
-                    }
+                // 等待 Express server 写入端口文件（用于 API 代理）
+                let server_port = wait_for_server_port(&port_file);
+                if let Some(port) = server_port {
+                    println!("Server started on port: {}", port);
+                    // 前端由 Tauri 内置 serve，API 请求走 Express proxy
+                    // 前端需要知道 Express 的端口来发 API 请求
+                    let _ = window.eval(&format!(
+                        "window.__ICE_SERVER_PORT = {};",
+                        port
+                    ));
+                } else {
+                    eprintln!("Server did not start in time");
                 }
             }
 
@@ -102,8 +101,8 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// 等待 Express server 启动并返回其 URL
-fn wait_for_server(port_file: &PathBuf) -> Option<String> {
+/// 等待 Express server 启动并返回其端口号
+fn wait_for_server_port(port_file: &PathBuf) -> Option<u16> {
     let start = Instant::now();
     let timeout = Duration::from_secs(5);
 
@@ -112,7 +111,7 @@ fn wait_for_server(port_file: &PathBuf) -> Option<String> {
             let port = content.trim();
             if !port.is_empty() {
                 std::thread::sleep(Duration::from_millis(200));
-                return Some(format!("http://localhost:{}", port));
+                return port.parse::<u16>().ok();
             }
         }
         std::thread::sleep(Duration::from_millis(100));

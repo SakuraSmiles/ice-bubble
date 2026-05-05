@@ -9,10 +9,17 @@ const adminUrl = ref('');
 const testing = ref(false);
 const errorMsg = ref('');
 
+function apiBase(): string {
+  if (typeof window !== 'undefined' && (window as any).__ICE_SERVER_PORT) {
+    return `http://localhost:${(window as any).__ICE_SERVER_PORT}`;
+  }
+  return '';
+}
+
 // 检测当前配置
 onMounted(async () => {
   try {
-    const res = await fetch('/api/desktop/config');
+    const res = await fetch(`${apiBase()}/api/desktop/config`);
     if (res.ok) {
       const data = await res.json();
       if (data.adminUrl) {
@@ -48,7 +55,7 @@ async function testConnection() {
   errorMsg.value = '';
 
   try {
-    const res = await fetch('/api/desktop/config', {
+    const res = await fetch(`${apiBase()}/api/desktop/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
