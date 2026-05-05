@@ -11,7 +11,7 @@
     "start": "tsx src/server/index.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:server": "esbuild src/server/index.ts --platform=node --format=esm --outfile=dist-server/index.js && esbuild src/config.server.ts --platform=node --format=esm --outfile=config.server.js && esbuild src/middleware/proxy.ts --platform=node --format=esm --outfile=middleware/proxy.js",
+    "build:server": "esbuild src/server/index.ts --platform=node --format=esm --outfile=dist-server/index.js --drop:console && esbuild src/config.server.ts --platform=node --format=esm --outfile=config.server.js --drop:console && esbuild src/middleware/proxy.ts --platform=node --format=esm --outfile=middleware/proxy.js --drop:console",
     "test": "vitest run",
     "test:watch": "vitest"
   },

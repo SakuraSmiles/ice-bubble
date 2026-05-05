@@ -79,7 +79,11 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    emptyOutDir: true
+    emptyOutDir: true,
+    minify: 'esbuild',
+    esbuild: {
+      drop: ['console']
+    }
   },
   // 确保 resolve 能够正确处理模块
   resolve: {

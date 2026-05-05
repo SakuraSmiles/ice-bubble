@@ -16,7 +16,6 @@ function createProxyMiddleware() {
       }
     }
     const originalPath = req.originalUrl || req.url;
-    console.log(`[Proxy] ${req.method} ${originalPath}`);
     const targetModule = findModuleByPath(originalPath);
     if (!targetModule) {
       res.status(404).json({ error: "Module not configured" });
@@ -52,15 +51,12 @@ function createProxyMiddleware() {
         res.setHeader("Content-Type", result.contentType);
       }
       if (result.buffer) {
-        console.log(`[Proxy] \u8FD4\u56DE\u4E8C\u8FDB\u5236: ${result.buffer.length} bytes`);
         res.setHeader("Content-Length", result.buffer.length);
         res.end(result.buffer);
       } else {
-        console.log(`[Proxy] \u8FD4\u56DE\u6587\u672C: ${result.data.length} bytes`);
         res.end(result.data);
       }
     } catch (error) {
-      console.error(`[Proxy] \u8F6C\u53D1\u8BF7\u6C42\u5931\u8D25:`, error);
       res.status(502).json({ error: `Failed to reach ${targetModule.key}` });
     }
   };
@@ -75,12 +71,10 @@ function forwardRequest(options) {
     const hostname = url.hostname;
     const port = parseInt(url.port || "80", 10);
     const path = url.pathname + url.search;
-    console.log(`[Proxy] -> ${options.method} ${hostname}:${port}${path}`);
     const socket = net.connect({
       host: hostname,
       port
     }, () => {
-      console.log(`[Proxy] \u{1F50C} TCP\u8FDE\u63A5\u6210\u529F`);
       socket.setTimeout(3e4);
       const reqHeaders = { ...options.headers, "Connection": "close" };
       const headerLines = Object.entries(reqHeaders).filter(([k]) => k.toLowerCase() !== "proxy-connection").map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join("\r\n");
@@ -106,7 +100,6 @@ ${headerLines}\r
     socket.on("end", () => {
       const duration = Date.now() - startTime;
       const allData = Buffer.concat(chunks);
-      console.log(`[Proxy] \u{1F50C} \u8FDE\u63A5\u7ED3\u675F, \u8017\u65F6: ${duration}ms, \u603B\u6570\u636E: ${allData.length} bytes`);
       const headerEndIdx = allData.indexOf("\r\n\r\n");
       if (headerEndIdx === -1) {
         reject(new Error("\u65E0\u6548\u7684 HTTP \u54CD\u5E94"));
@@ -129,7 +122,6 @@ ${headerLines}\r
           if (key === "content-length") contentLength = parseInt(val, 10);
         }
       }
-      console.log(`[Proxy] \u{1F4E6} \u54CD\u5E94: status=${statusCode}, type=${contentType}, length=${contentLength || bodyData.length}`);
       const isBinary = !!(contentType && (contentType.startsWith("image/") || contentType.startsWith("audio/") || contentType.startsWith("video/") || contentType.includes("octet-stream")));
       resolve({
         status: statusCode,
@@ -140,11 +132,9 @@ ${headerLines}\r
       });
     });
     socket.on("error", (err) => {
-      console.error(`[Proxy] \u274C Socket\u9519\u8BEF: ${err.message}`);
       reject(err);
     });
     socket.on("timeout", () => {
-      console.error(`[Proxy] \u23F0 \u8FDE\u63A5\u8D85\u65F6`);
       socket.destroy();
       reject(new Error("Request timeout"));
     });
