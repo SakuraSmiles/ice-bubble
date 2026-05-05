@@ -41,11 +41,11 @@ onUnmounted(() => {
 });
 
 const menuItems = [
-  { path: '/', label: '工作台' },
-  { path: '/chat', label: '聊天' },
-  { path: '/agents', label: '成员' },
-  { path: '/sessions', label: '会话' },
-  { path: '/modules', label: '模块' },
+  { path: '/', label: '工作台', match: (p: string) => p === '/' },
+  { path: '/chat', label: '聊天', match: (p: string) => p === '/chat' || p.startsWith('/workspace/') },
+  { path: '/agents', label: '成员', match: (p: string) => p === '/agents' },
+  { path: '/sessions', label: '会话', match: (p: string) => p === '/sessions' },
+  { path: '/modules', label: '模块', match: (p: string) => p === '/modules' },
 ];
 </script>
 
@@ -63,7 +63,7 @@ const menuItems = [
           :key="item.path"
           :to="item.path"
           class="nav-item"
-          :class="{ active: route.path === item.path }"
+          :class="{ active: item.match(route.path) }"
         >
           <span class="nav-icon">
             <svg v-if="item.path === '/'" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">

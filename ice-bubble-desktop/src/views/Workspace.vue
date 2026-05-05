@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { gatewayClient } from '@/services/gateway-client';
 import ConnectionAlert from '../components/ConnectionAlert.vue';
 import AppFooter from '../components/AppFooter.vue';
+import PageHeader from '../components/PageHeader.vue';
 import ChatTimeline from './components/ChatTimeline.vue';
 import SessionList from './components/SessionList.vue';
 
@@ -22,79 +23,58 @@ const agentId = computed(() => {
 });
 
 // 视图状态：list 或 chat（无 UUID 时强制显示 list）
-const view = ref<'list' | 'chat'>('list');
-const agentName = ref('');
-const label = ref('');
-const status = ref('');
-const created = ref('');
+const view = ref<'list' | 'chat' | 'loading'>('list');
 const inputText = ref('');
 const sending = ref(false);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const timelineRef = ref<InstanceType<typeof ChatTimeline> | null>(null);
 
-// =========== 会话信息 ===========
-async function loadSessionInfo() {
-  if (!sessionKey.value) return;
-  try {
-    const res = await fetch('/api/gateway/sessions');
-    if (!res.ok) return;
-    const data = await res.json();
-    const found = (data.sessions || []).find((s: any) => s.key === sessionKey.value);
-    if (found) {
-      const m = found.key.match(/^agent:([^:]+)/);
-      agentName.value = m ? m[1] : '';
-      const dName = found.displayName || '';
-      label.value = found.label || (dName ? dName.replace(/^[a-z-]+:/, '') : found.key.split(':').pop() || '');
-      status.value = found.status || '';
-      created.value = found.updatedAt ? new Date(found.updatedAt).toLocaleString() : '';
-    }
-  } catch (e) {
-    // ignore
-  }
-}
-
-function statusLabel(s: string | null): string {
-  switch (s) {
-    case 'running': return '进行中';
-    case 'done': return '已完成';
-    case 'failed': return '失败';
-    case 'timeout': return '超时';
-    default: return '';
-  }
-}
-
-function statusType(s: string | null): string {
-  switch (s) {
-    case 'running': return 'primary';
-    case 'done': return 'success';
-    case 'failed': return 'danger';
-    case 'timeout': return 'warning';
-    default: return 'info';
-  }
-}
-
 const canSend = computed(() => {
-  if (!sessionKey.value) return false;
-  if (!status.value || status.value === 'running' || status.value === 'done') return true;
-  return false;
+  return !!sessionKey.value;
 });
 
 watch(sessionKey, async (key) => {
   if (key) {
     view.value = 'chat';
-    await loadSessionInfo();
+  } else if (route.path === '/chat') {
+    // /chat 路由无 key：轻量查找 main agent 的 direct session 并自动跳转
+    view.value = 'loading';
+    autoRedirectChat();
   } else {
     view.value = 'list';
   }
 }, { immediate: true });
 
+// /chat 路由自动跳转到 main agent 的 direct session
+async function autoRedirectChat() {
+  try {
+    // 通过 Gateway sessions API 轻量查找 main agent 的 direct session
+    const res = await fetch('/api/gateway/sessions');
+    if (!res.ok) return;
+    const data = await res.json();
+    const sessions = (data.sessions || []) as any[];
+    const mainDirect = sessions
+      .filter((s: any) => {
+        const m = s.key.match(/^agent:([^:]+)/);
+        return m && m[1] === 'main' && s.key.includes(':direct:');
+      })
+      .sort((a: any, b: any) => {
+        const ta = new Date(a.updatedAt || 0).getTime();
+        const tb = new Date(b.updatedAt || 0).getTime();
+        return tb - ta;
+      })[0];
+    if (mainDirect) {
+      router.replace('/workspace/' + encodeURIComponent(mainDirect.key));
+      return;
+    }
+  } catch { /* ignore */ }
+  // 找不到则跳转到全部会话
+  router.replace('/sessions');
+}
+
 // =========== Session 选择 ===========
 function onSessionSelect(sessionKeyStr: string) {
   router.push('/workspace/' + encodeURIComponent(sessionKeyStr));
-}
-
-function goBackToList() {
-  router.push('/workspace/agent:' + agentId.value);
 }
 
 // =========== 发送消息 ===========
@@ -149,34 +129,23 @@ function resetInputHeight() {
 
 <template>
   <div class="workspace-page">
-    <header class="workspace-header">
-      <div class="header-top">
-        <div class="header-left">
-          <!-- chat 视图: 返回列表；list 视图: 返回首页 -->
-          <button class="back-btn" @click="view === 'chat' ? goBackToList() : router.push('/')">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/>
-            </svg>
-          </button>
-          <div class="title-area">
-            <h1 v-if="view === 'chat'" class="page-title">{{ label || '会话详情' }}</h1>
-            <h1 v-else class="page-title">{{ agentId || 'Agent' }} — 会话列表</h1>
-            <span class="page-subtitle">{{ view === 'chat' ? agentName : '' }}</span>
-          </div>
-        </div>
-        <div class="header-actions">
-          <el-tag v-if="view === 'chat' && status" :type="statusType(status)" size="small" effect="plain">
-            {{ statusLabel(status) }}
-          </el-tag>
-          <span v-if="view === 'chat' && created" class="meta-time">{{ new Date(created).toLocaleString('zh-CN') }}</span>
-        </div>
-      </div>
+    <PageHeader v-if="view === 'chat'" title="聊天">
       <ConnectionAlert />
-    </header>
+    </PageHeader>
+
+    <PageHeader v-else-if="view === 'list'" :title="(agentId || 'Agent') + ' — 会话列表'">
+      <ConnectionAlert />
+    </PageHeader>
 
     <div class="workspace-body">
+      <!-- 加载中状态 -->
+      <div v-if="view === 'loading'" class="loading-state">
+        <div class="loading-spinner"></div>
+        <span class="loading-text">正在查找会话...</span>
+      </div>
+
       <!-- Session 列表视图 -->
-      <SessionList v-if="view === 'list'" :agent-id="agentId" @select="onSessionSelect" />
+      <SessionList v-else-if="view === 'list'" :agent-id="agentId" @select="onSessionSelect" />
 
       <!-- 聊天视图 -->
       <template v-else>
@@ -215,95 +184,41 @@ function resetInputHeight() {
   overflow: hidden;
 }
 
-.workspace-header {
+.loading-state {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 16px 24px 0;
-  padding-bottom: 12px;
-  flex-shrink: 0;
-}
-
-.header-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.back-btn {
-  display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
+  gap: 12px;
+  color: var(--color-text-tertiary);
 }
 
-.back-btn:hover {
-  background: var(--el-fill-color-light);
-  color: var(--color-text);
+.loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
-.title-area {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
-.page-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-text);
-  margin: 0;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.page-subtitle {
+.loading-text {
   font-size: 13px;
   color: var(--color-text-tertiary);
-  font-weight: 400;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 36px;
-  padding-top: 6px;
-  flex-shrink: 0;
-}
-
-.meta-time {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  border-left: 1px solid var(--color-border-subtle);
-  padding-left: 12px;
 }
 
 .workspace-body {
   flex: 1;
   min-height: 0;
-  margin: 8px 20px;
+  margin: 0 20px 8px;
   background: var(--color-bg-canvas);
-  border-radius: 0 0 8px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-subtle);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -313,11 +228,10 @@ function resetInputHeight() {
 .chat-input-bar {
   display: flex;
   align-items: flex-end;
-  padding: 10px 20px;
+  padding: 12px 20px;
   border-top: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
-  background: var(--color-bg-subtle);
-  border-radius: 0 0 8px 8px;
+  background: var(--color-bg-canvas);
 }
 
 .chat-input-wrapper {
@@ -328,7 +242,6 @@ function resetInputHeight() {
   border: 1px solid var(--color-border);
   border-radius: 10px;
   background: var(--color-bg-inset);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   transition: border-color 0.15s;
 }
 

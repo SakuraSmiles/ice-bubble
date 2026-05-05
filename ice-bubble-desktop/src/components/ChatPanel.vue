@@ -340,9 +340,10 @@ defineExpose({ fetchMessages });
 }
 
 .bubble-user {
-  background: var(--color-accent-blue);
-  color: #fff;
+  background: var(--color-accent-blue-subtle);
+  color: var(--color-text);
   border-bottom-right-radius: 4px;
+  border: 1px solid var(--color-border-subtle);
 }
 
 .bubble-agent {

@@ -23,7 +23,7 @@ interface ToolCallEntry {
 }
 
 interface TimelineMessage {
-  id: number;
+  id: string;
   session_key: string;
   agent_id: string;
   agent_name: string | null;
@@ -59,6 +59,8 @@ interface TimelineResponse {
 
 // =========== 数据 ===========
 const messages = ref<TimelineMessage[]>([]);
+/** Gateway 消息的最早 timestamp（作为 Admin 历史的"分界线"） */
+let gatewayBoundary: string | null = null;
 const loading = ref(false);
 const loadingMore = ref(false);
 const hasMore = ref(true);
@@ -67,14 +69,20 @@ const atBottom = ref(true);
 const containerRef = ref<HTMLElement | null>(null);
 
 const PAGE_SIZE = 50;
-/** 初始加载量（更大，减少首次撑不满概率） */
-const INITIAL_LIMIT = 50;
-/** Admin 消息 id 前缀，与 Gateway id 区分用于去重 */
-const ADMIN_ID_PREFIX = 1_000_000_000;
-/** 已知消息去重集合（Gateway 用原始 id，Admin 用原始 id + ADMIN_ID_PREFIX） */
-let knownIds = new Set<number>();
-/** 是否已通过 Gateway 加载过初始消息（控制 loadMore 走 Admin 分页） */
-let gatewayLoaded = false;
+
+/** 统一 timestamp 格式为 ISO 字符串（兼容 Unix ms、数字字符串、ISO 字符串） */
+function normalizeTimestamp(ts: string | number | undefined): string {
+  if (!ts) return new Date().toISOString();
+  if (typeof ts === 'number') return new Date(ts).toISOString();
+  if (ts.includes('T') || ts.includes('Z')) return ts;
+  const num = Number(ts);
+  if (!isNaN(num) && num > 1e12) return new Date(num).toISOString();
+  return ts;
+}
+/** 已知消息去重集合（Gateway 用 gw_ 前缀，Admin 用 admin_ 前缀） */
+let knownIds = new Set<string>();
+/** Admin 分页游标（timestamp），避免去重导致的死循环 */
+let adminPageCursor: string | null = null;
 const showTypingIndicator = ref(false);
 const agentAvatar = ref<string | null>(null);
 
@@ -89,9 +97,16 @@ function checkBottom() {
 }
 
 /** 默认过滤参数：排除系统噪音和定时任务（computed，确保 prop 变化后 filter 正确） */
-const filters = computed(() =>
-  `exclude_system_noise=true&exclude_cron=true${props.sessionKey ? `&session_key=${encodeURIComponent(props.sessionKey)}` : ''}`
-);
+const filters = computed(() => {
+  // 从 sessionKey 提取 agentId（如 "agent:main:main" → "main"），用 agent_ids 过滤以覆盖所有 session
+  const agentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
+  return `exclude_system_noise=true&exclude_cron=true&message_types=user,agent${agentId ? `&agent_ids=${agentId}` : ''}`;
+});
+
+/** 重置 Admin 分页游标（session 切换或 loadLatest 时调用） */
+function resetAdminCursor() {
+  adminPageCursor = null;
+}
 
 /** 滚到底部 */
 function scrollToBottom(smooth = true) {
@@ -103,40 +118,70 @@ function scrollToBottom(smooth = true) {
 /** 初始加载：最新 N 条 */
 async function loadLatest() {
   loading.value = true;
-  gatewayLoaded = false;
+  knownIds.clear();
+  gatewayBoundary = null;
+  resetAdminCursor();
+
   try {
+    let gatewayMsgs: TimelineMessage[] = [];
+
+    // Step 1: Gateway 取最新消息（≤10 条）
     if (props.sessionKey) {
-      // Gateway 加载最新消息（确保实时性）
-      const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=1000`;
-      console.log('[ChatTimeline] loadLatest via Gateway, sessionKey:', props.sessionKey);
-      const historyRes = await fetch(historyUrl, { credentials: 'include' });
-      if (historyRes.ok) {
-        const result = await historyRes.json() as any;
-        const rawMsgs = result?.messages ?? result?.history ?? result ?? [];
-        const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
-        const allMsgs = gatewayMsgsToTimeline(arr);
-        if (allMsgs.length > 0) {
-          const latest = allMsgs.slice(-INITIAL_LIMIT);
-          console.log('[ChatTimeline] Gateway result:', allMsgs.length, 'displayed:', latest.length);
-          setMessages(latest);
-          hasMore.value = allMsgs.length > INITIAL_LIMIT;
-          gatewayLoaded = true;
-          await fetchAgentAvatar();
-          return;
+      try {
+        const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=10`;
+        const historyRes = await fetch(historyUrl, { credentials: 'include' });
+        if (historyRes.ok) {
+          const result = await historyRes.json() as any;
+          const rawMsgs = result?.messages ?? result?.history ?? result ?? [];
+          const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
+          gatewayMsgs = gatewayMsgsToTimeline(arr);
+
+          if (gatewayMsgs.length > 0) {
+            // 记录分界线：Gateway 最早消息的 timestamp
+            gatewayBoundary = gatewayMsgs[0].timestamp;
+            gatewayMsgs.forEach(m => knownIds.add(m.id));
+          }
         }
-        // Gateway 返回空（session 已结束），降级到 Admin
-        console.log('[ChatTimeline] Gateway returned 0 messages, falling back to Admin');
+      } catch (e) {
+        console.warn('[ChatTimeline] Gateway loadLatest failed, falling back to Admin', e);
       }
     }
 
-    // Admin 降级（Gateway 不可用或无 sessionKey）
-    const url = `/api/messages/timeline?limit=${INITIAL_LIMIT}&${filters.value}`;
-    console.log('[ChatTimeline] loadLatest via Admin, url:', url);
-    const res = await fetch(url, { credentials: 'include' });
-    if (!res.ok) throw new Error(`loadLatest HTTP ${res.status}`);
-    const data: TimelineResponse = await res.json();
-    setMessages(data.messages);
-    hasMore.value = data.has_more;
+    // Step 2: Admin 取历史消息
+    let adminMsgs: TimelineMessage[] = [];
+    const adminUrl = gatewayBoundary
+      ? `/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(new Date(new Date(gatewayBoundary).getTime() - 1).toISOString())}&${filters.value}`
+      : `/api/messages/timeline?limit=${PAGE_SIZE}&${filters.value}`;
+
+    const res = await fetch(adminUrl, { credentials: 'include' });
+    if (res.ok) {
+      const data: TimelineResponse = await res.json();
+      adminMsgs = (data.messages || []).map(m => ({
+        ...m,
+        id: `admin_${m.id}`,
+        clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+      }));
+      adminMsgs = adminMsgs.filter(m => !knownIds.has(m.id));
+      adminMsgs = adminMsgs.filter(m => !isTimelineSystemNoise(m));
+      adminMsgs.forEach(m => knownIds.add(m.id));
+      // 如果 Admin 返回空但有 gatewayBoundary，说明当前 session 消息可能未同步到 Admin
+      // 保守保留 hasMore=true，让 loadMore 去探查（历史上可能有大量数据）
+      if (adminMsgs.length === 0 && gatewayBoundary) {
+        hasMore.value = true;
+      } else {
+        hasMore.value = data.has_more;
+      }
+    }
+
+    // Step 3: 合并（历史在前，最新在后），按 timestamp 排序
+    const merged = [...adminMsgs, ...gatewayMsgs].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    setMessages(merged);
+    await fetchAgentAvatar();
+
+    // 如果消息不够撑满容器，继续加载
     await fillScrollable();
   } catch (e) {
     console.error('加载聊天记录失败', e);
@@ -154,38 +199,50 @@ async function loadMore() {
   const prevScrollHeight = el?.scrollHeight ?? 0;
 
   try {
-    if (props.sessionKey && gatewayLoaded) {
-      // 有 sessionKey 且已通过 Gateway 加载：走 Admin 分页获取更早历史
-      const oldest = messages.value[0].timestamp;
-      // 加 1ms 偏移避免同时间戳消息被 before < 严格比较遗漏
-      const beforeCursor = new Date(new Date(oldest).getTime() + 1).toISOString();
-      const url = `/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`;
-      console.log('[ChatTimeline] loadMore via Admin, url:', url);
-      const res = await fetch(url, { credentials: 'include' });
-      if (!res.ok) { hasMore.value = false; return; }
-      const data: TimelineResponse = await res.json();
-      if (!Array.isArray(data.messages) || data.messages.length === 0) { hasMore.value = false; return; }
-      // Admin 消息 id 加前缀后去重（避免与 Gateway id 冲突）
-      const adminMsgs = data.messages.map(m => ({ ...m, id: m.id + ADMIN_ID_PREFIX }));
-      const newMsgs = adminMsgs.filter(m => !knownIds.has(m.id));
-      if (newMsgs.length === 0) { hasMore.value = data.has_more; return; }
-      newMsgs.forEach(m => knownIds.add(m.id));
-      messages.value = [...newMsgs, ...messages.value];
-      hasMore.value = data.has_more;
+    // 使用 adminPageCursor 作为分页游标（如果已初始化），否则用当前最早消息的 timestamp
+    let beforeTs: string;
+    if (adminPageCursor) {
+      beforeTs = adminPageCursor;
     } else {
-      // Admin 分页（Gateway 不可用或无 sessionKey）
       const oldest = messages.value[0].timestamp;
-      const beforeCursor = new Date(new Date(oldest).getTime() + 1).toISOString();
-      const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`, { credentials: 'include' });
-      if (!res.ok) return;
-      const data: TimelineResponse = await res.json();
-      if (!Array.isArray(data.messages) || data.messages.length === 0) { hasMore.value = false; return; }
-      const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
-      if (newMsgs.length === 0) { hasMore.value = false; return; }
-      newMsgs.forEach(m => knownIds.add(m.id));
-      messages.value = [...newMsgs, ...messages.value];
-      hasMore.value = data.has_more;
+      beforeTs = new Date(new Date(oldest).getTime() - 1).toISOString();
     }
+    const url = `/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeTs)}&${filters.value}`;
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) { hasMore.value = false; return; }
+    const data: TimelineResponse = await res.json();
+    if (!Array.isArray(data.messages) || data.messages.length === 0) {
+      hasMore.value = data.has_more; return;
+    }
+
+    // Admin ID 加前缀 + 过滤系统噪音 + 内容去重
+    const adminMsgs = data.messages.map(m => ({
+        ...m, id: `admin_${m.id}`,
+        clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+      }))
+      .filter(m => !isTimelineSystemNoise(m));
+    // 先用 knownIds 过滤，再用 contentKey 去重
+    const idFiltered = adminMsgs.filter(m => !knownIds.has(m.id));
+    const newMsgs = dedupByContent(idFiltered, messages.value);
+
+    // 更新游标：用 Admin 返回的消息中最早的 timestamp - 1ms 作为下次的 before
+    // 这样即使 newMsgs 为空，下次请求也会返回不同的数据，避免去重死循环
+    const earliestReturned = adminMsgs.reduce((min, m) => {
+      const t = new Date(m.timestamp).getTime();
+      return t < min ? t : min;
+    }, Infinity);
+    if (earliestReturned < Infinity) {
+      adminPageCursor = new Date(earliestReturned - 1).toISOString();
+    }
+
+    if (newMsgs.length === 0) {
+      // 这批全部重复，但游标已推进，下次会请求更早的数据
+      hasMore.value = data.has_more;
+      return;
+    }
+    newMsgs.forEach(m => knownIds.add(m.id));
+    messages.value = [...newMsgs, ...messages.value];
+    hasMore.value = data.has_more;
   } catch (e) {
     console.error('加载更多失败', e);
   } finally {
@@ -218,17 +275,24 @@ async function fillScrollable() {
     const oldest = messages.value[0]?.timestamp;
     if (!oldest) break;
 
-    const beforeCursor = new Date(new Date(oldest).getTime() + 1).toISOString();
+    // 使用 -1ms 而非 +1ms：与 loadMore 对齐
+    const beforeCursor = new Date(new Date(oldest).getTime() - 1).toISOString();
     const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`, { credentials: 'include' });
     if (!res.ok) break;
     const data: TimelineResponse = await res.json();
     if (!Array.isArray(data.messages) || data.messages.length === 0) {
-      hasMore.value = false;
+      hasMore.value = data.has_more;
       break;
     }
 
-    const newMsgs = data.messages.filter(m => !knownIds.has(m.id));
-    if (newMsgs.length === 0) break;
+    const newMsgs = data.messages.map(m => ({
+        ...m, id: `admin_${m.id}`,
+        clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+      })).filter(m => !knownIds.has(m.id)).filter(m => !isTimelineSystemNoise(m));
+    if (newMsgs.length === 0) {
+      hasMore.value = data.has_more;
+      break;
+    }
 
     newMsgs.forEach(m => knownIds.add(m.id));
     messages.value = [...newMsgs, ...messages.value].sort(
@@ -255,9 +319,9 @@ function makeMsg(
   content: string, timestamp: string,
   rawId: any, avatar: string | null, runId?: string,
 ): TimelineMessage {
-  const stableId = typeof rawId === 'number' ? rawId
-    : typeof rawId === 'string' ? simpleHash(rawId)
-    : simpleHash(`${type}:${timestamp}:${content.substring(0, 80)}`);
+  const stableId = typeof rawId === 'number' || typeof rawId === 'string'
+    ? `gw_${rawId}`
+    : `gw_${simpleHash(`${type}:${timestamp}:${content.substring(0, 80)}`)}`;
   return {
     id: stableId,
     session_key: props.sessionKey || '',
@@ -288,9 +352,7 @@ function gatewayMsgsToTimeline(rawMessages: any[]): TimelineMessage[] {
     if (role !== 'user' && role !== 'assistant' && role !== 'tool' && role !== 'toolResult') continue;
 
     const runId = m.runId as string | undefined;
-    const timestamp = m.timestamp
-      ? (typeof m.timestamp === 'number' ? new Date(m.timestamp).toISOString() : m.timestamp)
-      : new Date().toISOString();
+    const timestamp = normalizeTimestamp(m.timestamp);
 
     // ── 用户消息 ──
     if (role === 'user') {
@@ -304,8 +366,7 @@ function gatewayMsgsToTimeline(rawMessages: any[]): TimelineMessage[] {
     // ── assistant 消息：拆分 text 和 toolCall ──
     if (role === 'assistant') {
       if (typeof m.content === 'string') {
-        if (!m.content.trim() || m.content.trim() === 'NO_REPLY') continue;
-        if (m.content.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
+        if (isSystemNoise(m.content)) continue;
         result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, m.content, timestamp, m.id, null, runId));
         continue;
       }
@@ -326,7 +387,7 @@ function gatewayMsgsToTimeline(rawMessages: any[]): TimelineMessage[] {
       }
 
       const combinedText = textParts.join('');
-      if (combinedText.trim() && !combinedText.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>') && combinedText.trim() !== 'NO_REPLY') {
+      if (!isSystemNoise(combinedText)) {
         result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, combinedText, timestamp, m.id, null, runId));
       }
 
@@ -351,22 +412,79 @@ function gatewayMsgsToTimeline(rawMessages: any[]): TimelineMessage[] {
   return result;
 }
 
+/** 判断内容是否为系统噪音（不应在聊天界面显示） */
+function isSystemNoise(content: string | null | undefined): boolean {
+  if (!content) return true;
+  const trimmed = content.trim();
+  if (!trimmed) return true;
+  if (trimmed === 'NO_REPLY') return true;
+  if (trimmed === 'HEARTBEAT_OK') return true;
+  if (trimmed.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) return true;
+  // exec 完成通知、定时任务 delivery 等系统注入
+  if (/^An async command completion event was triggered/.test(trimmed)) return true;
+  if (/^\[Inter-session message\]/.test(trimmed)) return true;
+  if (/^Sender \(untrusted metadata\)/.test(trimmed)) return true;
+  return false;
+}
+
 /** 空内容过滤：排除内容为空的用户消息（如 HEARTBEAT_OK, NO_REPLY 等系统注入） */
 function isEmptyUserMsg(m: TimelineMessage): boolean {
   return m.message_type === 'user' && !m.content && !m.clean_content;
 }
 
+/** 过滤 Admin timeline 中的系统噪音消息（subagent 通知、heartbeat、元数据包裹等） */
+function isTimelineSystemNoise(m: TimelineMessage): boolean {
+  const content = m.content || '';
+  const clean = m.clean_content || '';
+  // 空 content 的 agent 消息（纯工具调用产生的占位符）
+  if (m.message_type === 'agent' && !content.trim() && !clean.trim()) return true;
+  // content 以 Sender metadata 开头且 clean_content 为空（元数据包裹，无实际内容）
+  if (content.startsWith('Sender (untrusted metadata):') && !clean.trim()) return true;
+  // NO_REPLY
+  if (clean.trim() === 'NO_REPLY') return true;
+  return false;
+}
+
+/** 清洗 Admin content 中的 OpenClaw 系统元数据，返回纯用户文本 */
+function stripOpenClawMetadata(text: string): string {
+  if (!text) return text;
+  // 去除 Sender (untrusted metadata) JSON 块
+  let cleaned = text.replace(/Sender \(untrusted metadata\):\s*```json\s*[\s\S]*?```\s*\n*/g, '');
+  // 去除行首的时间戳前缀，如 [Tue 2026-05-05 10:55 GMT+8]
+  cleaned = cleaned.replace(/^\[[A-Z][a-z]{2}\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+GMT[+-]\d+\]\s*/gm, '');
+  return cleaned.trim() || text;
+}
+
+/** 内容级去重 key（基于 content 前 200 字符，不含 timestamp） */
+function contentKey(m: TimelineMessage): string {
+  const text = (m.clean_content || m.content || '').substring(0, 200).trim();
+  return text;
+}
+
+/** 从候选消息中去掉与已有消息内容重复的条目 */
+function dedupByContent(msgs: TimelineMessage[], existing: TimelineMessage[]): TimelineMessage[] {
+  const existingKeys = new Set(existing.map(m => contentKey(m)));
+  const seenInBatch = new Set<string>();
+  return msgs.filter(m => {
+    const ck = contentKey(m);
+    if (existingKeys.has(ck)) return false; // 与已有消息重复
+    if (seenInBatch.has(ck)) return false;   // 同批内重复
+    seenInBatch.add(ck);
+    return true;
+  });
+}
+
 function setMessages(msgs: TimelineMessage[]) {
   knownIds.clear();
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   const seenContent = new Set<string>();
   const filtered = msgs.filter(m => {
     if (isEmptyUserMsg(m)) return false;
     if (seen.has(m.id)) return false;
     // 二次去重：同一 content + 同一 timestamp 不会出现两次
-    const contentKey = `${m.timestamp}::${(m.content || '').substring(0, 200)}`;
-    if (seenContent.has(contentKey)) return false;
-    seenContent.add(contentKey);
+    const ck = contentKey(m);
+    if (seenContent.has(ck)) return false;
+    seenContent.add(ck);
     seen.add(m.id);
     return true;
   });
@@ -402,6 +520,15 @@ function subscribeGatewayEvents() {
     // 将 push 过来的消息转为 TimelineMessage 格式并追加
     const msg = payloadToMessage(data);
     if (!msg || knownIds.has(msg.id)) return;
+    // 过滤实时推送的系统噪音
+    if (isSystemNoise(msg.content)) return;
+    // 二次去重：内容+时间戳匹配（防止流式 final 和 session.message 推送重复）
+    const dup = messages.value.find(m =>
+      m.content && msg.content &&
+      m.content.substring(0, 200) === msg.content.substring(0, 200) &&
+      Math.abs(new Date(m.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 5000
+    );
+    if (dup) return;
 
     knownIds.add(msg.id);
     messages.value = [...messages.value, msg].sort(
@@ -485,7 +612,7 @@ function ensureStreamMsg(runId: string) {
   showTypingIndicator.value = false;
   const sessionAgentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
   messages.value = [...messages.value, {
-    id: -Date.now(),
+    id: `gw_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     session_key: props.sessionKey || '',
     agent_id: sessionAgentId || 'assistant',
     agent_name: null,
@@ -527,7 +654,7 @@ function handleChatDelta(data: Record<string, unknown>, runId: string) {
     showTypingIndicator.value = false;
     const sessionAgentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
     const streamMsg: TimelineMessage = {
-      id: -Date.now(),
+      id: `gw_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       session_key: props.sessionKey || '',
       agent_id: sessionAgentId || 'assistant',
       agent_name: (data.agentName as string) || null,
@@ -556,11 +683,20 @@ function handleChatDelta(data: Record<string, unknown>, runId: string) {
 function handleChatFinal(data: Record<string, unknown>, runId: string) {
   const msg = data.message as Record<string, unknown> | undefined;
   const finalText = msg ? extractText(msg) : null;
-  const finalId = (data.messageId ?? data.id ?? Date.now()) as number;
+  const rawFinalId = data.messageId ?? data.id ?? Date.now();
+  const finalId = typeof rawFinalId === 'number' || typeof rawFinalId === 'string'
+    ? `gw_${rawFinalId}`
+    : `gw_${Date.now()}`;
 
   const idx = findStreamMsgIndex(runId);
 
   if (idx >= 0) {
+    // 最终内容是系统噪音 → 移除这条消息
+    if (isSystemNoise(finalText)) {
+      messages.value.splice(idx, 1);
+      showTypingIndicator.value = false;
+      return;
+    }
     messages.value[idx] = {
       ...messages.value[idx],
       id: finalId,
@@ -593,7 +729,7 @@ function handleChatError(data: Record<string, unknown>, runId: string) {
     };
   } else {
     messages.value = [...messages.value, {
-      id: -Date.now(),
+      id: `gw_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       session_key: props.sessionKey || '',
       agent_id: 'system',
       agent_name: null,
@@ -702,10 +838,12 @@ function payloadToMessage(data: Record<string, unknown>): TimelineMessage | null
 
   const msgType = role === 'user' ? 'user' : role === 'tool' ? 'tool' : 'agent';
 
-  const stableId = data.id as number | undefined;
-  const fallbackId = stableId ?? simpleHash(
-    `${(data.sessionKey as string) || ''}:${(data.timestamp as string) || ''}:${(content || '').substring(0, 80)}`
-  );
+  const rawId = data.id as number | string | undefined;
+  const fallbackId = rawId !== undefined
+    ? `gw_${rawId}`
+    : `gw_${simpleHash(
+        `${(data.sessionKey as string) || ''}:${(data.timestamp as string) || ''}:${(content || '').substring(0, 80)}`
+      )}`;
 
   return {
     id: fallbackId,
@@ -721,7 +859,7 @@ function payloadToMessage(data: Record<string, unknown>): TimelineMessage | null
     is_system_noise: false,
     source_channel: (data.sourceChannel as string) ?? null,
     model: (data.model as string) ?? null,
-    timestamp: (data.timestamp as string) || new Date().toISOString(),
+    timestamp: normalizeTimestamp(data.timestamp as string | number | undefined),
   };
 }
 
@@ -757,7 +895,8 @@ watch(() => props.sessionKey, (newKey) => {
   if (newKey !== undefined) {
     agentAvatar.value = null;
     knownIds.clear();
-    gatewayLoaded = false;
+    gatewayBoundary = null;
+    resetAdminCursor();
     messages.value = [];
     loadLatest();
   }
@@ -781,7 +920,7 @@ defineExpose({
   getMessages: () => messages.value,
   addOptimisticMessage(content: string, role: string = 'user') {
     const msg: TimelineMessage = {
-      id: Date.now(),
+      id: `gw_${Date.now()}`,
       session_key: props.sessionKey || '',
       agent_id: role === 'user' ? 'user' : 'assistant',
       agent_name: role === 'user' ? 'You' : '',
@@ -1014,7 +1153,7 @@ function toolSummary(grp: MsgGroup): string {
               </div>
 
               <div class="bubble-text" v-for="(m, mi) in grp.messages" :key="mi">
-                <MarkdownContent :content="m.content || ''" />
+                <MarkdownContent :content="m.clean_content || m.content || ''" />
                 <span
                   v-if="m.streamState === 'streaming'"
                   class="streaming-cursor"
@@ -1076,7 +1215,7 @@ function toolSummary(grp: MsgGroup): string {
 }
 .new-msg-banner:hover { opacity: 0.9; }
 
-/* 滚动区域 - 类微信聊天背景 */
+/* 滚动区域 */
 .chat-scroll {
   flex: 1;
   min-height: 0;
@@ -1085,7 +1224,7 @@ function toolSummary(grp: MsgGroup): string {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #ffffff;
+  background: var(--color-bg-canvas);
 }
 
 /* 加载更多按钮 */
@@ -1209,10 +1348,19 @@ function toolSummary(grp: MsgGroup): string {
   word-break: break-word;
 }
 .bubble--user {
-  background: var(--color-accent-blue);
-  color: #ffffff;
-  border-radius: 16px 16px 4px 16px;
-  box-shadow: 0 1px 2px rgba(9,105,218,0.2);
+  background: var(--color-accent-blue-subtle);
+  color: var(--color-text);
+  border-radius: 16px 4px 16px 16px;
+  border: 1px solid var(--color-border-subtle);
+}
+.bubble--user .bubble-time {
+  color: var(--color-text-tertiary);
+}
+.bubble--user :deep(pre),
+.bubble--user :deep(code) {
+  background: rgba(0,0,0,0.06);
+  color: var(--color-text);
+  border-radius: 6px;
 }
 .bubble--agent {
   background: #fff;

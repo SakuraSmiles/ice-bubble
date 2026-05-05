@@ -19,7 +19,7 @@ let unsubSessionsChanged: (() => void) | null = null;
 async function fetchAllSessions() {
   loading.value = true;
   try {
-    const data = await api.getUnifiedSessions({ limit: 10000, offset: 0 });
+    const data = await api.getUnifiedSessions({ limit: 200, offset: 0 });
     allSessions.value = data.sessions || [];
   } catch (e) {
     console.error('Failed to load sessions:', e);
@@ -144,9 +144,7 @@ function handleClick(s: SessionDTO) {
   router.push(`/workspace/${encodeURIComponent(s.session_key)}`);
 }
 
-function goBack() {
-  router.back();
-}
+
 
 // ====== 辅助 ======
 function formatTitle(s: SessionDTO): string {
@@ -218,10 +216,6 @@ onUnmounted(() => {
   <div class="all-sessions">
     <!-- 顶部导航 -->
     <div class="all-sessions-header">
-      <button class="back-btn" @click="goBack">
-        <el-icon><ArrowLeft /></el-icon>
-        <span>返回</span>
-      </button>
       <h2 class="page-title">📋 全部会话</h2>
       <span class="session-count">{{ filteredTotal }} 条会话</span>
     </div>
@@ -340,7 +334,10 @@ onUnmounted(() => {
         <div class="empty-hint">尝试调整过滤条件</div>
       </div>
 
-      <div v-if="loading" class="loading-indicator">加载中...</div>
+      <div v-if="loading" class="loading-indicator">
+        <div class="loading-spinner"></div>
+        <span>加载中...</span>
+      </div>
     </div>
 
     <!-- 分页器 -->
@@ -373,25 +370,6 @@ onUnmounted(() => {
   padding: 14px 24px;
   border-bottom: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius, 6px);
-  background: var(--color-bg-canvas);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-size: 13px;
-  transition: all 0.2s ease;
-}
-
-.back-btn:hover {
-  background: var(--el-fill-color-light);
-  color: var(--color-text);
 }
 
 .page-title {
@@ -625,10 +603,27 @@ onUnmounted(() => {
 
 /* 加载指示 */
 .loading-indicator {
-  text-align: center;
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
   font-size: 13px;
   color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* 分页器 */
