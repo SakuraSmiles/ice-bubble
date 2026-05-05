@@ -66,17 +66,6 @@ pub fn run() {
             let window = app.get_webview_window("main").unwrap();
             window.set_title("IceBubble Desktop").unwrap();
 
-            // 监听窗口关闭事件，清理 server 子进程
-            let server_handle = app.state::<ServerChild>();
-            let on_close = window.on_window_event(move |_event| {
-                // 当窗口请求关闭时，杀掉 server 子进程
-                if let tauri::WindowEvent::CloseRequested { .. } = _event {
-                    server_handle.kill();
-                }
-            });
-            // 保存防止被 drop
-            app.manage(on_close);
-
             let mut server_started = false;
 
             // 方式 1: 尝试启动 sidecar server.exe（Tauri 打包模式）
@@ -142,6 +131,12 @@ pub fn run() {
             }
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                let handle = window.state::<ServerChild>();
+                handle.kill();
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
