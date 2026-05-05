@@ -3,12 +3,13 @@
  * 动态代理中间件集成
  */
 
-import { createServer } from 'http';
+import { createServer, IncomingMessage } from 'http';
 import { writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import express, { Request, Response } from 'express';
-import { enableHotReload, disableHotReload, reloadConfig } from '../config.server.js';
+import WebSocket, { WebSocketServer } from 'ws';
+import { enableHotReload, disableHotReload, reloadConfig, findModuleByKey, getConfig } from '../config.server.js';
 import { createProxyMiddleware } from '../middleware/proxy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -90,6 +91,90 @@ app.get('/{*path}', (_req: Request, res: Response) => {
   }
 });
 
+// WebSocket 代理 — 将 /ws 升级请求转发到 Admin
+function setupWebSocketProxy(server: ReturnType<typeof createServer>) {
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (req: IncomingMessage, socket, head) => {
+    const { pathname } = new URL(req.url || '/', `http://${req.headers.host}`);
+
+    if (pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+
+    // Token 鉴权（WebSocket 没有 Authorization header，依赖查询参数）
+    const config = getConfig();
+    if (config.authToken) {
+      const url = new URL(req.url || '/', `http://${req.headers.host}`);
+      const token = url.searchParams.get('token');
+      if (!token || token !== config.authToken) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+    }
+
+    const adminModule = findModuleByKey('admin');
+    if (!adminModule || !adminModule.enabled) {
+      socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    const adminUrl = new URL('/ws', adminModule.url);
+    const isSecure = adminUrl.protocol === 'wss:';
+    const targetWs = new WebSocket(`${isSecure ? 'wss' : 'ws'}://${adminUrl.host}${adminUrl.pathname}${adminUrl.search}`, {
+      rejectUnauthorized: false,
+    });
+
+    targetWs.on('open', () => {
+      wss.handleUpgrade(req, socket, head, (clientWs) => {
+        // 双向转发
+        clientWs.on('message', (data, isBinary) => {
+          if (targetWs.readyState === WebSocket.OPEN) {
+            targetWs.send(data, { binary: isBinary });
+          }
+        });
+
+        targetWs.on('message', (data, isBinary) => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(data, { binary: isBinary });
+          }
+        });
+
+        clientWs.on('close', (code, reason) => {
+          if (targetWs.readyState === WebSocket.OPEN) {
+            targetWs.close(code, reason);
+          }
+        });
+
+        targetWs.on('close', (code, reason) => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.close(code, reason);
+          }
+        });
+
+        clientWs.on('error', (err) => {
+          console.error('[WS Proxy] Client error:', err.message);
+          targetWs.terminate();
+        });
+
+        targetWs.on('error', (err) => {
+          console.error('[WS Proxy] Target error:', err.message);
+          clientWs.terminate();
+        });
+      });
+    });
+
+    targetWs.on('error', (err) => {
+      console.error('[WS Proxy] Connection to admin failed:', err.message);
+      socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+      socket.destroy();
+    });
+  });
+}
+
 // 追踪当前运行的 server 实例
 let currentServer: ReturnType<typeof createServer> | null = null;
 
@@ -100,6 +185,8 @@ async function tryListen(port: number): Promise<number | null> {
     const newServer = createServer(app);
     currentServer = newServer;
     
+    setupWebSocketProxy(newServer);
+
     newServer.listen(port, () => {
       console.log(`[Server] Desktop 启动: http://localhost:${port}`);
       resolve(port);

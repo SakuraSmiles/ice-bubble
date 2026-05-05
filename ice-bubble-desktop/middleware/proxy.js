@@ -1,4 +1,5 @@
-import net from "net";
+import http from "http";
+import https from "https";
 import { findModuleByPath, getConfig } from "../config.server.js";
 function createProxyMiddleware() {
   return async (req, res) => {
@@ -33,112 +34,64 @@ function createProxyMiddleware() {
         body = Buffer.from(JSON.stringify(req.body));
       }
     }
-    const targetUrl = targetModule.url;
-    const targetPath = originalPath;
+    const targetUrl = new URL(originalPath, targetModule.url);
     try {
-      const result = await forwardRequest({
-        method: req.method,
-        targetUrl,
-        targetPath,
-        headers: {
-          ...req.headers,
-          host: new URL(targetUrl).host
-        },
-        body
-      });
-      res.status(result.status);
-      if (result.contentType) {
-        res.setHeader("Content-Type", result.contentType);
-      }
-      if (result.buffer) {
-        res.setHeader("Content-Length", result.buffer.length);
-        res.end(result.buffer);
-      } else {
-        res.end(result.data);
-      }
-    } catch (error) {
-      res.status(502).json({ error: `Failed to reach ${targetModule.key}` });
-    }
-  };
-}
-const MAX_RESPONSE_SIZE = 50 * 1024 * 1024;
-function forwardRequest(options) {
-  return new Promise((resolve, reject) => {
-    const startTime = Date.now();
-    const chunks = [];
-    let totalSize = 0;
-    const url = new URL(options.targetPath, options.targetUrl);
-    const hostname = url.hostname;
-    const port = parseInt(url.port || "80", 10);
-    const path = url.pathname + url.search;
-    const socket = net.connect({
-      host: hostname,
-      port
-    }, () => {
-      socket.setTimeout(3e4);
-      const reqHeaders = { ...options.headers, "Connection": "close" };
-      const headerLines = Object.entries(reqHeaders).filter(([k]) => k.toLowerCase() !== "proxy-connection").map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join("\r\n");
-      const httpRequest = `${options.method} ${path} HTTP/1.1\r
-Host: ${hostname}:${port}\r
-${headerLines}\r
-\r
-`;
-      socket.write(httpRequest);
-      if (options.body.length > 0) {
-        socket.write(options.body);
-      }
-    });
-    socket.on("data", (chunk) => {
-      totalSize += chunk.length;
-      if (totalSize > MAX_RESPONSE_SIZE) {
-        socket.destroy();
-        reject(new Error("Response too large"));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    socket.on("end", () => {
-      const duration = Date.now() - startTime;
-      const allData = Buffer.concat(chunks);
-      const headerEndIdx = allData.indexOf("\r\n\r\n");
-      if (headerEndIdx === -1) {
-        reject(new Error("\u65E0\u6548\u7684 HTTP \u54CD\u5E94"));
-        return;
-      }
-      const headerStr = allData.subarray(0, headerEndIdx).toString("utf8");
-      const bodyData = allData.subarray(headerEndIdx + 4);
-      const statusLine = headerStr.split("\r\n")[0];
-      const statusMatch = statusLine.match(/HTTP\/1\.\d\s+(\d+)/);
-      const statusCode = statusMatch ? parseInt(statusMatch[1]) : 200;
-      let contentType;
-      let contentLength;
-      const headerLines = headerStr.split("\r\n").slice(1);
-      for (const line of headerLines) {
-        const colonIdx = line.indexOf(":");
-        if (colonIdx !== -1) {
-          const key = line.substring(0, colonIdx).trim().toLowerCase();
-          const val = line.substring(colonIdx + 1).trim();
-          if (key === "content-type") contentType = val;
-          if (key === "content-length") contentLength = parseInt(val, 10);
+      const isHttps = targetUrl.protocol === "https:";
+      const transport = isHttps ? https : http;
+      const forwardHeaders = {};
+      const hopByHop = /* @__PURE__ */ new Set([
+        "connection",
+        "keep-alive",
+        "transfer-encoding",
+        "te",
+        "trailer",
+        "upgrade",
+        "proxy-connection"
+      ]);
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (!hopByHop.has(key.toLowerCase())) {
+          forwardHeaders[key] = value;
         }
       }
-      const isBinary = !!(contentType && (contentType.startsWith("image/") || contentType.startsWith("audio/") || contentType.startsWith("video/") || contentType.includes("octet-stream")));
-      resolve({
-        status: statusCode,
-        data: isBinary ? "" : bodyData.toString("utf8"),
-        buffer: isBinary ? bodyData : void 0,
-        contentType,
-        isBinary
+      forwardHeaders["host"] = targetUrl.host;
+      if (config.authToken && !forwardHeaders["authorization"] && !forwardHeaders["Authorization"]) {
+        forwardHeaders["Authorization"] = `Bearer ${config.authToken}`;
+      }
+      const requestOptions = {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || (isHttps ? 443 : 80),
+        path: targetUrl.pathname + targetUrl.search,
+        method: req.method,
+        headers: forwardHeaders
+      };
+      const proxyReq = transport.request(requestOptions, (proxyRes) => {
+        res.status(proxyRes.statusCode || 200);
+        const resHeaders = proxyRes.headers;
+        for (const [key, value] of Object.entries(resHeaders)) {
+          if (value != null && !hopByHop.has(key.toLowerCase())) {
+            res.setHeader(key, value);
+          }
+        }
+        proxyRes.pipe(res);
       });
-    });
-    socket.on("error", (err) => {
-      reject(err);
-    });
-    socket.on("timeout", () => {
-      socket.destroy();
-      reject(new Error("Request timeout"));
-    });
-  });
+      proxyReq.on("error", (err) => {
+        if (!res.headersSent) {
+          res.status(502).json({ error: `Failed to reach ${targetModule.key}` });
+        }
+      });
+      proxyReq.setTimeout(3e4, () => {
+        proxyReq.destroy(new Error("Request timeout"));
+      });
+      if (body.length > 0) {
+        proxyReq.write(body);
+      }
+      proxyReq.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        res.status(502).json({ error: `Failed to reach ${targetModule.key}` });
+      }
+    }
+  };
 }
 export {
   createProxyMiddleware
