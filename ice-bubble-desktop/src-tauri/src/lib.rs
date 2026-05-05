@@ -3,6 +3,23 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use std::fs;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+/// 启动子进程并隐藏控制台窗口
+fn spawn_hidden(cmd: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 获取 exe 同目录
@@ -23,7 +40,6 @@ pub fn run() {
             let mut server_started = false;
 
             // 方式 1: 尝试启动 sidecar server.exe（Tauri 打包模式）
-            // Tauri 将 sidecar 放在 exe 同级目录，文件名格式: {name}-{target-triple}.exe
             let sidecar_patterns = [
                 "server-x86_64-pc-windows-msvc.exe",
                 "server-aarch64-pc-windows-msvc.exe",
@@ -33,18 +49,14 @@ pub fn run() {
             for pattern in &sidecar_patterns {
                 let sidecar_path = exe_dir.join(pattern);
                 if sidecar_path.exists() {
-                    println!("Starting sidecar from: {:?}", sidecar_path);
-                    match std::process::Command::new(&sidecar_path)
-                        .env("ICE_RESOURCE_DIR", &resource_dir)
-                        .env("ICE_DIST_DIR", exe_dir.join("server"))
-                        .current_dir(&exe_dir)
-                        .stdout(std::process::Stdio::piped())
-                        .stderr(std::process::Stdio::piped())
-                        .spawn()
-                    {
+                    match spawn_hidden(
+                        std::process::Command::new(&sidecar_path)
+                            .env("ICE_RESOURCE_DIR", &resource_dir)
+                            .env("ICE_DIST_DIR", exe_dir.join("server"))
+                            .current_dir(&exe_dir)
+                    ) {
                         Ok(_) => {
                             server_started = true;
-                            println!("Sidecar server started");
                             break;
                         }
                         Err(e) => {
@@ -58,19 +70,15 @@ pub fn run() {
             if !server_started {
                 let server_path = exe_dir.join("server").join("index.js");
                 if server_path.exists() {
-                    println!("Starting node server from: {:?}", server_path);
-                    match std::process::Command::new("node")
-                        .arg(&server_path)
-                        .env("ICE_RESOURCE_DIR", &resource_dir)
-                        .env("ICE_DIST_DIR", exe_dir.join("server"))
-                        .current_dir(&exe_dir)
-                        .stdout(std::process::Stdio::piped())
-                        .stderr(std::process::Stdio::piped())
-                        .spawn()
-                    {
+                    match spawn_hidden(
+                        std::process::Command::new("node")
+                            .arg(&server_path)
+                            .env("ICE_RESOURCE_DIR", &resource_dir)
+                            .env("ICE_DIST_DIR", exe_dir.join("server"))
+                            .current_dir(&exe_dir)
+                    ) {
                         Ok(_) => {
                             server_started = true;
-                            println!("Node server started");
                         }
                         Err(e) => {
                             eprintln!("Node server also failed: {}", e);
@@ -83,15 +91,11 @@ pub fn run() {
                 // 等待 Express server 写入端口文件（用于 API 代理）
                 let server_port = wait_for_server_port(&port_file);
                 if let Some(port) = server_port {
-                    println!("Server started on port: {}", port);
                     // 前端由 Tauri 内置 serve，API 请求走 Express proxy
-                    // 前端需要知道 Express 的端口来发 API 请求
                     let _ = window.eval(&format!(
                         "window.__ICE_SERVER_PORT = {};",
                         port
                     ));
-                } else {
-                    eprintln!("Server did not start in time");
                 }
             }
 
@@ -117,6 +121,5 @@ fn wait_for_server_port(port_file: &PathBuf) -> Option<u16> {
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    eprintln!("Timed out waiting for server port file");
     None
 }
