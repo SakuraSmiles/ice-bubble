@@ -11,7 +11,7 @@
     "start": "tsx src/server/index.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:server": "esbuild src/server/index.ts --platform=node --format=cjs --bundle --outfile=dist-server/index.js --drop:console --external:fsevents --banner:js=\"const __importMetaUrl=require('url').pathToFileURL(__filename).href;\" --define:import.meta.url=__importMetaUrl",
+    "build:server": "esbuild src/server/index.ts --platform=node --format=cjs --bundle --outfile=dist-server/index.cjs --drop:console --external:fsevents --banner:js=\"const __importMetaUrl=require('url').pathToFileURL(__filename).href;\" --define:import.meta.url=__importMetaUrl",
     "pkg:server": "node scripts/build-sidecar.js",
     "test": "vitest run",
     "test:watch": "vitest"

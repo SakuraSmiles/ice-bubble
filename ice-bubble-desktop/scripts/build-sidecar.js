@@ -42,7 +42,7 @@ function installPkg() {
 
 function copyServerCode() {
   console.log('Copying built server code...');
-  cpSync(join(ROOT, 'dist-server', 'index.js'), join(BUILD_DIR, 'index.js'));
+  cpSync(join(ROOT, 'dist-server', 'index.cjs'), join(BUILD_DIR, 'index.cjs'));
 
   // Copy config directory if exists
   const configDir = join(ROOT, 'config');
@@ -68,7 +68,7 @@ function createPkgConfig() {
 
 function buildExe() {
   console.log('Building server.exe with pkg...');
-  execSync('npx pkg index.js --config package.json --compress GZip -o server', {
+  execSync('npx pkg index.cjs --config package.json --compress GZip -o server', {
     cwd: BUILD_DIR,
     stdio: 'inherit'
   });

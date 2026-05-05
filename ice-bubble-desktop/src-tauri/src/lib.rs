@@ -99,7 +99,7 @@ pub fn run() {
 
             // 方式 2: Fallback — 用 node 启动 index.js（开发环境）
             if !server_started {
-                let server_path = exe_dir.join("server").join("index.js");
+                let server_path = exe_dir.join("server").join("index.cjs");
                 if server_path.exists() {
                     match spawn_hidden(
                         std::process::Command::new("node")
