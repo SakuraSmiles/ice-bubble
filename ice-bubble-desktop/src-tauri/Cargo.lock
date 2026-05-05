@@ -1390,7 +1390,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ice_bubble_topdesk"
+name = "ice_bubble_desktop"
 version = "1.0.0"
 dependencies = [
  "serde",

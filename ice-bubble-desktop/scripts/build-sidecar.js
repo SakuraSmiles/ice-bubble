@@ -56,7 +56,13 @@ function createMinimalPackage() {
 
 function installDeps() {
   console.log('Installing server-only dependencies...');
-  execSync('npm install --production', { cwd: BUILD_DIR, stdio: 'inherit' });
+  // Install runtime deps first
+  execSync('npm install --omit=dev', { cwd: BUILD_DIR, stdio: 'inherit' });
+  // Install @yao-pkg/pkg for sidecar packaging
+  const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'));
+  const pkgVer = rootPkg.devDependencies?.['@yao-pkg/pkg'] || '^5.12.0';
+ console.log('Installing @yao-pkg/pkg...');
+  execSync(`npm install @yao-pkg/pkg@${pkgVer}`, { cwd: BUILD_DIR, stdio: 'inherit' });
 }
 
 function copyServerCode() {

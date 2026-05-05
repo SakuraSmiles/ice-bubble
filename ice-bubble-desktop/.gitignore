@@ -38,3 +38,8 @@ Desktop.ini
 
 # Test
 coverage/
+
+# Build artifacts
+dist-server-sidecar/
+dist-server/server.exe
+*.exe
