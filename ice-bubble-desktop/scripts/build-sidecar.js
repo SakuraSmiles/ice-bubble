@@ -29,7 +29,6 @@ function createMinimalPackage() {
   const pkg = {
     name: 'ice-bubble-server',
     version: '1.0.0',
-    type: 'module',
   };
   writeFileSync(join(BUILD_DIR, 'package.json'), JSON.stringify(pkg, null, 2));
 }
