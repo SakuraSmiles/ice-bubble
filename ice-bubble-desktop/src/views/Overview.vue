@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { apiMonitor, type MonitorStats } from '../utils/monitor';
+import {
+  ChatDotRound, Connection, Calendar, Monitor
+} from '@element-plus/icons-vue';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api } from '../api/client';
@@ -36,6 +39,28 @@ const agentOverviewData = ref<{ agents: AgentDTO[] } | null>(null);
 
 
 // =========== 数据状态卡片 ===========
+
+// =========== 统计卡片 ===========
+
+interface StatsData {
+  sessionCount: number;
+  messageCount: number;
+  agentCount: number;
+  todayMessageCount: number;
+  lastSyncTime: string | null;
+}
+
+const statsData = ref<StatsData | null>(null);
+
+async function fetchStats(): Promise<void> {
+  try {
+    const res = await fetch('/api/stats');
+    if (!res.ok) return;
+    statsData.value = await res.json();
+  } catch {
+    // silent
+  }
+}
 
 interface DataStatus {
   todayFiltered: number;
@@ -185,12 +210,14 @@ function startPolling(): void {
     pollPending = true;
     refreshData();
     refreshModules().finally(() => { pollPending = false; });
-    // 30s 任务：fetchAgentOverview + fetchDataStatus（每 3 ticks）
+    // 30s 任务：fetchAgentOverview + fetchDataStatus + fetchStats（每 3 ticks）
     if (tickCounter % 3 === 0) {
       pollPending = true;
       fetchAgentOverview();
       pollPending = true;
       fetchDataStatus().finally(() => { pollPending = false; });
+      pollPending = true;
+      fetchStats().finally(() => { pollPending = false; });
     }
   }, interval);
 }
@@ -251,6 +278,7 @@ onMounted(() => {
   refreshData();
   fetchAll(true);
   fetchDataStatus();
+  fetchStats();
   startPolling();
   document.addEventListener('visibilitychange', onVisibilityChange);
 
@@ -289,6 +317,30 @@ onUnmounted(() => {
       />
     </PageHeader>
 
+    <!-- 统计卡片 -->
+    <div class="stats-row">
+      <el-card class="stat-card" shadow="never">
+        <el-statistic title="消息总数" :value="statsData?.messageCount ?? 0">
+          <template #prefix><el-icon><ChatDotRound /></el-icon></template>
+        </el-statistic>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <el-statistic title="会话总数" :value="statsData?.sessionCount ?? 0">
+          <template #prefix><el-icon><Connection /></el-icon></template>
+        </el-statistic>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <el-statistic title="今日消息" :value="statsData?.todayMessageCount ?? 0">
+          <template #prefix><el-icon><Calendar /></el-icon></template>
+        </el-statistic>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <el-statistic title="Agent 数量" :value="statsData?.agentCount ?? 0">
+          <template #prefix><el-icon><Monitor /></el-icon></template>
+        </el-statistic>
+      </el-card>
+    </div>
+
     <el-card class="content-area" shadow="never">
       <div class="main-layout">
         <RecentSessions :loading="loading" />
@@ -307,6 +359,46 @@ onUnmounted(() => {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+/* 统计卡片行 */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 8px 24px;
+}
+
+@media (max-width: 768px) {
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.stat-card {
+  background: var(--color-bg-canvas);
+  border-radius: var(--radius);
+  border: 1px solid var(--el-border-color-extra-light);
+}
+
+.stat-card :deep(.el-card__body) {
+  padding: 16px;
+}
+
+.stat-card :deep(.el-statistic__head) {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.stat-card :deep(.el-statistic__content) {
+  color: var(--el-text-color-primary);
+  font-family: var(--font-exo2);
+}
+
+.stat-card :deep(.el-statistic__prefix) {
+  margin-right: 6px;
+  color: var(--color-accent-blue);
 }
 
 .content-area {

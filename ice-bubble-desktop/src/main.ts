@@ -26,6 +26,7 @@ const router = createRouter({
         },
         { path: 'workspace/:key', component: () => import('./views/Workspace.vue') },
         { path: 'sessions', component: () => import('./views/AllSessions.vue') },
+        { path: 'tasks', component: () => import('./views/Tasks.vue') },
       ],
     },
   ],

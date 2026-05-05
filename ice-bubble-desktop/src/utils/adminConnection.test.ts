@@ -80,10 +80,11 @@ describe('AdminConnection.configure - URL 校验', () => {
     expect(adminConnection.getState()).toBe('CONFIG_ERROR');
   });
 
-  it('非法 URL（非 localhost/IP 域名）触发 CONFIG_ERROR', async () => {
+  it('合法 URL（标准域名）可被接受，连接失败触发 CONN_FAILED', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('Connection refused'));
     const result = await adminConnection.configure('http://example.com:13000');
     expect(result).toBe(false);
-    expect(adminConnection.getState()).toBe('CONFIG_ERROR');
+    expect(adminConnection.getState()).toBe('CONN_FAILED');
   });
 
   it('非法 URL（无效 IP 段 >255）触发 CONFIG_ERROR', async () => {

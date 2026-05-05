@@ -64,7 +64,7 @@ async function testConnection() {
     return;
   }
   if (!isUrlValid(url)) {
-    inputError.value = '地址格式：http://localhost:13000';
+    inputError.value = '格式：http(s)://地址:端口，如 http://localhost:13000';
     return;
   }
   inputError.value = '';
@@ -125,7 +125,7 @@ onUnmounted(() => {
     <div class="alert-controls">
       <el-input
         v-model="inputUrl"
-        placeholder="http://localhost:13000"
+        placeholder="http(s)://地址:端口"
         size="small"
         class="url-input"
         :class="{ 'has-error': inputError }"

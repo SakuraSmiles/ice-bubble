@@ -29,11 +29,11 @@ app.use((req, res, next) => {
   } else if (config.cors?.origins && config.cors.origins.length > 0) {
     allowedOrigins = config.cors.origins;
   } else {
-    allowedOrigins = ["http://localhost", "http://127.0.0.1"];
+    allowedOrigins = ["*"];
   }
   const origin = req.header("origin");
-  if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
+  if (origin && (allowedOrigins.includes("*") || allowedOrigins.includes(origin))) {
+    res.setHeader("Access-Control-Allow-Origin", allowedOrigins.includes("*") ? "*" : origin);
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");

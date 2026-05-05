@@ -145,11 +145,21 @@ export async function startAdmin(): Promise<void> {
     const app = express();
     app.use(express.json());
 
-    // Bearer token auth middleware (skipped if no token configured — backward compatible)
+    // CORS middleware — 允许外部访问（开发/内网阶段）
+    app.use((_req, res, next) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      if (_req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+      }
+      next();
+    });
+
+    // Bearer token auth middleware (always enforced; auto-generates token if none configured)
     const authToken = getAuthToken(configData.auth?.token);
-    if (authToken) {
-        app.use('/api', createBearerAuthMiddleware({ token: authToken }));
-    }
+    app.use('/api', createBearerAuthMiddleware({ token: authToken }));
 
     const PORT = configData.server?.port || 13000;
     const HOST = configData.server?.host || 'localhost';

@@ -44,13 +44,13 @@ app.use((req: Request, res: Response, next) => {
   } else if (config.cors?.origins && config.cors.origins.length > 0) {
     allowedOrigins = config.cors.origins;
   } else {
-    // 配置文件不存在或无 origins 时，默认只允许 localhost
-    allowedOrigins = ['http://localhost', 'http://127.0.0.1'];
+    // 配置文件不存在或无 origins 时，默认允许所有来源（内网/开发阶段）
+    allowedOrigins = ['*'];
   }
 
   const origin = req.header('origin');
-  if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
+  if (origin && (allowedOrigins.includes('*') || allowedOrigins.includes(origin))) {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigins.includes('*') ? '*' : origin);
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');

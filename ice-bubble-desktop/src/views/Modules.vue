@@ -7,6 +7,7 @@ import AppFooter from '../components/AppFooter.vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import EmptyState from '../components/EmptyState.vue';
 import { formatTime } from '../utils/format';
+import { isUrlValid } from '../utils/validators';
 import { api } from '../api/client';
 import type { ModuleDTO } from '../api/client';
 
@@ -63,37 +64,10 @@ const rules = {
     { required: true, message: '请输入模块地址', trigger: 'blur' },
     {
       validator: (_rule: any, value: string, callback: any) => {
-        try {
-          const url = new URL(value);
-          if (!['http:', 'https:'].includes(url.protocol)) {
-            callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
-            return;
-          }
-          const host = url.hostname;
-          // 支持 localhost 或 4段IP
-          const isLocalhost = host === 'localhost';
-          const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(host);
-          if (!isLocalhost && !isIp) {
-            callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
-            return;
-          }
-          // IP 每段 0-255
-          if (isIp) {
-            const parts = host.split('.').map(Number);
-            if (parts.some(p => p > 255)) {
-              callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
-              return;
-            }
-          }
-          // 端口
-          const port = parseInt(url.port, 10);
-          if (!port || port < 1 || port > 65535) {
-            callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
-            return;
-          }
+        if (isUrlValid(value)) {
           callback();
-        } catch {
-          callback(new Error('格式：http://localhost:13000 或 http://127.0.0.1:端口'));
+        } else {
+          callback(new Error('格式：http(s)://地址:端口，如 http://localhost:13000 或 https://admin.example.com'));
         }
       },
       trigger: 'blur',
@@ -498,7 +472,7 @@ onUnmounted(() => {
         <el-form-item label="地址" prop="baseUrl">
           <el-input
             v-model="formData.baseUrl"
-            placeholder="http://localhost:13100"
+            placeholder="http(s)://地址:端口"
           />
         </el-form-item>
         <el-form-item label="Key">

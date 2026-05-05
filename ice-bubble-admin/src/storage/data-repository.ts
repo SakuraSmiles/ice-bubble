@@ -1852,17 +1852,20 @@ export class DataRepository {
     sessionCount: number;
     messageCount: number;
     agentCount: number;
+    todayMessageCount: number;
     lastSyncTime: string | null;
   } {
     const sessionRow = this.db.prepare('SELECT COUNT(*) as count FROM admin_sessions').get() as { count: number };
     const messageRow = this.db.prepare('SELECT COUNT(*) as count FROM admin_messages').get() as { count: number };
     const agentRow = this.db.prepare('SELECT COUNT(*) as count FROM admin_agents').get() as { count: number };
+    const todayRow = this.db.prepare("SELECT COUNT(*) as count FROM admin_messages WHERE date(timestamp) = date('now')").get() as { count: number };
     const syncRow = this.db.prepare("SELECT MAX(last_sync_time) as time FROM sync_progress").get() as { time: string | null };
 
     return {
       sessionCount: sessionRow.count,
       messageCount: messageRow.count,
       agentCount: agentRow.count,
+      todayMessageCount: todayRow.count,
       lastSyncTime: syncRow.time
     };
   }
