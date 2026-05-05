@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useNow } from '@/composables/useNow';
-import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
 import type { SessionDTO } from '@/api/client';
 import { useSessionPreferencesStore } from '@/stores/sessionPreferencesStore';
 import { gatewayClient } from '@/services/gateway-client';
 
-const router = useRouter();
 const prefsStore = useSessionPreferencesStore();
 
 // ====== 数据加载 ======
@@ -139,11 +137,6 @@ function handlePin(key: string) {
 function handleHide(key: string) {
   prefsStore.toggleHide(key);
 }
-
-function handleClick(s: SessionDTO) {
-  router.push(`/workspace/${encodeURIComponent(s.session_key)}`);
-}
-
 
 
 // ====== 辅助 ======
@@ -284,7 +277,7 @@ onUnmounted(() => {
                 v-for="s in pagedSessions"
                 :key="s.session_key"
                 class="session-card"
-                @click="handleClick(s)"
+
               >
                 <div class="session-card-main">
                   <div class="session-card-header">
@@ -487,7 +480,6 @@ onUnmounted(() => {
   border: 1px solid var(--color-border-subtle);
   border-left: 3px solid transparent;
   border-radius: var(--radius, 8px);
-  cursor: pointer;
   transition: all 0.2s ease;
 }
 
