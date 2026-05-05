@@ -6,30 +6,57 @@ import { api } from '../api/client';
 import { formatRelativeTime } from '../utils/format';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
-import ChatPanel from '../components/ChatPanel.vue';
 import type { SessionDTO } from '../api/client.ts';
 import LoadingSkeleton from './components/LoadingSkeleton.vue';
 import EmptyState from '../components/EmptyState.vue';
 
-const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
-
 const allSessions = ref<SessionDTO[]>([]);
 const loading = ref(false);
 const refreshSpin = ref(false);
-const selectedSession = ref<SessionDTO | null>(null);
-const selectedSessionKey = ref<string | null>(null);
 const searchQuery = ref('');
+const agentFilter = ref('');
+const statusFilter = ref<'all' | 'pinned' | 'hidden'>('all');
+const pinnedKeys = ref<Set<string>>(new Set());
+const hiddenKeys = ref<Set<string>>(new Set());
+const currentPage = ref(1);
+const pageSize = ref(20);
 
-const totalSessions = computed(() => allSessions.value.length);
-const totalAgents = computed(() => new Set(allSessions.value.map(s => (s as SessionDTO).agent_id)).size);
+// Load pinned/hidden from localStorage
+function loadLocalState() {
+  try {
+    const p = localStorage.getItem('sessions-pinned');
+    if (p) pinnedKeys.value = new Set(JSON.parse(p));
+    const h = localStorage.getItem('sessions-hidden');
+    if (h) hiddenKeys.value = new Set(JSON.parse(h));
+  } catch { /* ignore */ }
+}
 
-const subtitle = computed(() =>
-  `共 ${totalSessions.value} 个会话，分布在 ${totalAgents.value} 个 Agent`
-);
+function savePinned() {
+  localStorage.setItem('sessions-pinned', JSON.stringify([...pinnedKeys.value]));
+}
+function saveHidden() {
+  localStorage.setItem('sessions-hidden', JSON.stringify([...hiddenKeys.value]));
+}
 
-const sessionOptions = computed(() => {
+const totalAgents = computed(() => new Set(allSessions.value.map(s => s.agent_id)).size);
+const subtitle = computed(() => `共 ${allSessions.value.length} 个会话，${totalAgents.value} 个 Agent`);
+
+// Unique agents for filter dropdown
+const agentOptions = computed(() => {
+  const ids = new Set(allSessions.value.map(s => s.agent_id));
+  return [...ids].sort();
+});
+
+// Filtered + searched list
+const filteredSessions = computed(() => {
   let list = [...allSessions.value];
 
+  // Agent filter
+  if (agentFilter.value) {
+    list = list.filter(s => s.agent_id === agentFilter.value);
+  }
+
+  // Search
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.toLowerCase();
     list = list.filter(s =>
@@ -39,85 +66,64 @@ const sessionOptions = computed(() => {
     );
   }
 
+  // Status filter
+  if (statusFilter.value === 'pinned') {
+    list = list.filter(s => pinnedKeys.value.has(s.session_key));
+  } else if (statusFilter.value === 'hidden') {
+    list = list.filter(s => hiddenKeys.value.has(s.session_key));
+  }
+
+  // Default exclude hidden (unless explicitly viewing hidden)
+  if (statusFilter.value !== 'hidden') {
+    list = list.filter(s => !hiddenKeys.value.has(s.session_key));
+  }
+
+  // Sort: pinned first, then by last_message_at desc
   list.sort((a, b) => {
+    const aPinned = pinnedKeys.value.has(a.session_key) ? 1 : 0;
+    const bPinned = pinnedKeys.value.has(b.session_key) ? 1 : 0;
+    if (bPinned !== aPinned) return bPinned - aPinned;
     const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
     const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
     return tb - ta;
   });
 
-  return list.map(s => ({
-    value: s.session_key,
-    label: s.session_key,
-    session: s,
-    _agentId: s.agent_id,
-    _channel: s.channel,
-    _lastAt: s.last_message_at,
-    _count: s.message_count,
-  }));
+  return list;
 });
 
-const SESSIONS_LIMIT_PER_AGENT = 5;
-
-const groupedSessions = computed(() => {
-  const groups: Record<string, { sessions: typeof sessionOptions.value; totalCount: number }> = {};
-  
-  for (const opt of sessionOptions.value) {
-    const agentId = opt._agentId;
-    if (!groups[agentId]) {
-      groups[agentId] = { sessions: [], totalCount: 0 };
-    }
-    groups[agentId].sessions.push(opt);
-    groups[agentId].totalCount++;
-  }
-  
-  // Sort sessions within each group by last_message_at desc
-  for (const group of Object.values(groups)) {
-    group.sessions.sort((a, b) => {
-      const ta = a._lastAt ? new Date(a._lastAt).getTime() : 0;
-      const tb = b._lastAt ? new Date(b._lastAt).getTime() : 0;
-      return tb - ta;
-    });
-  }
-  
-  // Convert to array, limit displayed sessions per agent, sort groups by most recent
-  return Object.entries(groups)
-    .map(([agentId, group]) => ({
-      agentId,
-      sessions: group.sessions.slice(0, SESSIONS_LIMIT_PER_AGENT),
-      totalCount: group.totalCount,
-    }))
-    .sort((a, b) => {
-      const aLatest = a.sessions[0]?._lastAt ? new Date(a.sessions[0]._lastAt).getTime() : 0;
-      const bLatest = b.sessions[0]?._lastAt ? new Date(b.sessions[0]._lastAt).getTime() : 0;
-      return bLatest - aLatest;
-    });
+const pagedSessions = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredSessions.value.slice(start, start + pageSize.value);
 });
-
 
 function getShortKey(key: string): string {
-  // 格式化: agent:main:local:default:direct:UUID -> local:direct:UUID
   const parts = key.split(':');
-  // 找到 'local' 的位置，从那里开始保留
   const localIdx = parts.indexOf('local');
-  if (localIdx >= 0) {
-    return parts.slice(localIdx).join(':');
-  }
+  if (localIdx >= 0) return parts.slice(localIdx).join(':');
   return key;
+}
+
+function isPinned(key: string) { return pinnedKeys.value.has(key); }
+function isHidden(key: string) { return hiddenKeys.value.has(key); }
+
+function togglePin(key: string) {
+  if (pinnedKeys.value.has(key)) pinnedKeys.value.delete(key);
+  else pinnedKeys.value.add(key);
+  savePinned();
+}
+
+function toggleHide(key: string) {
+  if (hiddenKeys.value.has(key)) hiddenKeys.value.delete(key);
+  else hiddenKeys.value.add(key);
+  saveHidden();
 }
 
 async function fetchAllSessions() {
   loading.value = true;
   refreshSpin.value = true;
   try {
-    const data = await api.getSessions({ limit: 50 });
+    const data = await api.getSessions({ limit: 200 });
     allSessions.value = data.sessions || [];
-    // 自动选中第一条会话
-    if (allSessions.value.length > 0 && !selectedSessionKey.value) {
-      const first = allSessions.value[0];
-      selectedSession.value = first;
-      selectedSessionKey.value = first.session_key;
-      chatPanelRef.value?.fetchMessages();
-    }
   } catch (e: any) {
     ElMessage.error('获取会话列表失败: ' + (e.message || e));
   } finally {
@@ -126,31 +132,16 @@ async function fetchAllSessions() {
   }
 }
 
-function handleSelectSession(key: string) {
-  const session = allSessions.value.find(s => s.session_key === key) ?? null;
-  selectedSession.value = session;
-  selectedSessionKey.value = key;
-  // fetchMessages 由 ChatPanel watch(props.session) 处理，避免重复调用
-}
-
 async function handleRefresh() {
   await fetchAllSessions();
-  if (selectedSession.value) {
-    chatPanelRef.value?.fetchMessages();
-  }
 }
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
+  loadLocalState();
   await fetchAllSessions();
-  // 每 30 秒自动刷新会话列表和当前会话消息
-  refreshTimer = setInterval(() => {
-    fetchAllSessions();
-    if (selectedSession.value) {
-      chatPanelRef.value?.fetchMessages();
-    }
-  }, 30000);
+  refreshTimer = setInterval(() => fetchAllSessions(), 30000);
 });
 
 onUnmounted(() => {
@@ -167,59 +158,121 @@ onUnmounted(() => {
       <el-button circle size="small" :disabled="loading" @click="handleRefresh" title="刷新">
         <el-icon :class="{ spinning: refreshSpin }"><Refresh /></el-icon>
       </el-button>
-
-      <el-select
-        v-model="selectedSessionKey"
-        placeholder="选择会话"
-        filterable
-        @change="(key: string) => handleSelectSession(key)"
-        class="session-selector"
-        no-data-text="无匹配会话"
-        placeholder-text="选择会话"
-        :visible-item-count="12"
-        popper-class="session-dropdown"
-        placement="bottom-end"
-      >
-        <template #empty>
-          <div class="dropdown-empty">无匹配会话</div>
-        </template>
-
-        <el-option-group
-          v-for="group in groupedSessions"
-          :key="group.agentId"
-          :label="group.agentId + ' (' + group.totalCount + ')'"
-        >
-          <el-option
-            v-for="opt in group.sessions"
-            :key="opt.value"
-            :value="opt.value"
-            :label="getShortKey(opt.label)"
-          >
-            <div class="session-option-inner">
-              <span class="option-key">{{ getShortKey(opt.label) }}</span>
-              <span class="option-meta">
-                <span class="option-count">{{ opt._count }}</span>
-                <span class="option-time">{{ formatRelativeTime(opt._lastAt) }}</span>
-              </span>
-            </div>
-          </el-option>
-        </el-option-group>
-      </el-select>
     </PageHeader>
 
-    <div class="content-area">
-      <ChatPanel
-        v-if="selectedSession"
-        ref="chatPanelRef"
-        :session="selectedSession"
-      />
-
-      <!-- 加载骨架屏 -->
-      <div v-else-if="loading" class="loading-skeleton-wrapper">
-        <LoadingSkeleton type="list" :rows="6" />
+    <div v-loading="loading" class="content-wrapper">
+      <!-- 过滤栏 -->
+      <div class="filter-bar">
+        <el-input
+          v-model="searchQuery"
+          placeholder="搜索会话..."
+          clearable
+          class="search-input"
+          prefix-icon="Search"
+        />
+        <el-select
+          v-model="agentFilter"
+          placeholder="全部 Agent"
+          clearable
+          class="filter-select"
+        >
+          <el-option
+            v-for="agent in agentOptions"
+            :key="agent"
+            :label="agent"
+            :value="agent"
+          />
+        </el-select>
+        <el-radio-group v-model="statusFilter" size="small">
+          <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="pinned">已置顶</el-radio-button>
+          <el-radio-button value="hidden">已隐藏</el-radio-button>
+        </el-radio-group>
       </div>
 
-      <EmptyState v-else icon="💬" title="请从右上角选择会话" />
+      <!-- 空状态 -->
+      <EmptyState v-if="filteredSessions.length === 0 && !loading" icon="💬" :title="searchQuery || agentFilter || statusFilter !== 'all' ? '无匹配会话' : '暂无会话'" />
+
+      <!-- 加载骨架屏 -->
+      <div v-if="filteredSessions.length === 0 && loading" class="loading-skeleton-area">
+        <LoadingSkeleton type="list" :rows="8" />
+      </div>
+
+      <!-- 会话表格 -->
+      <el-table
+        v-if="pagedSessions.length > 0"
+        :data="pagedSessions"
+        class="session-table"
+        :header-cell-style="{ background: 'transparent', color: 'var(--el-text-color-secondary)', fontWeight: 500 }"
+        :row-class-name="(data: any) => isPinned(data.row?.session_key) ? 'pinned-row' : ''"
+      >
+        <el-table-column label="会话" min-width="300" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="session-key-cell">
+              <span v-if="isPinned(row.session_key)" class="pin-indicator" title="已置顶">📌</span>
+              <span class="session-key">{{ getShortKey(row.session_key) }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="Agent" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="agent-id">{{ row.agent_id }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="渠道" min-width="80" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="channel-text">{{ row.channel }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="消息数" width="90" align="right">
+          <template #default="{ row }">
+            <span class="msg-count">{{ row.message_count ?? 0 }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="最后活动" width="120" align="right">
+          <template #default="{ row }">
+            <span class="last-active">{{ formatRelativeTime(row.last_message_at) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" align="center" fixed="right">
+          <template #default="{ row }">
+            <div class="action-buttons">
+              <el-tooltip :content="isPinned(row.session_key) ? '取消置顶' : '置顶'" placement="top">
+                <el-button
+                  link
+                  size="small"
+                  @click.stop="togglePin(row.session_key)"
+                  :class="{ 'is-active': isPinned(row.session_key) }"
+                >
+                  📌
+                </el-button>
+              </el-tooltip>
+              <el-tooltip :content="isHidden(row.session_key) ? '取消隐藏' : '隐藏'" placement="top">
+                <el-button
+                  link
+                  size="small"
+                  @click.stop="toggleHide(row.session_key)"
+                  :class="{ 'is-active': isHidden(row.session_key) }"
+                >
+                  👁️
+                </el-button>
+              </el-tooltip>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 分页 -->
+      <div v-if="filteredSessions.length > pageSize" class="pagination-wrapper">
+        <el-pagination
+          v-model:current-page="currentPage"
+          :page-size="pageSize"
+          :total="filteredSessions.length"
+          layout="total, prev, pager, next"
+          small
+          background
+        />
+      </div>
     </div>
 
     <AppFooter />
@@ -231,62 +284,142 @@ onUnmounted(() => {
   width: 100%;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
   height: 100%;
   overflow: hidden;
 }
 
-.session-selector {
-  width: 420px;
-}
-
-.content-area {
+.content-wrapper {
   flex: 1;
   min-height: 0;
-  margin: 8px 24px;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-bg-canvas);
-  border-radius: var(--radius);
-  overflow: hidden;
+  padding: 8px 24px 0;
+  overflow-y: auto;
 }
 
-.empty-state {
-  flex: 1;
+.content-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+.content-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+.content-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(144, 147, 153, 0.3);
+  border-radius: 3px;
+}
+.content-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(144, 147, 153, 0.5);
+}
+
+/* 过滤栏 */
+.filter-bar {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  width: 280px;
+}
+
+.filter-select {
+  width: 180px;
+}
+
+/* 表格 */
+.session-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--el-fill-color-light);
+  --el-table-border-color: var(--el-border-color);
+  --el-table-text-color: var(--el-text-color-primary);
+  --el-table-header-text-color: var(--el-text-color-secondary);
+  width: 100%;
+}
+
+.session-table :deep(.el-table__body-wrapper::-webkit-scrollbar) {
+  width: 6px;
+}
+.session-table :deep(.el-table__body-wrapper::-webkit-scrollbar-thumb) {
+  background: rgba(144, 147, 153, 0.3);
+  border-radius: 3px;
+}
+
+.session-key-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pin-indicator {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.session-key {
+  font-family: var(--font-exo2);
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+}
+
+.agent-id {
+  font-family: var(--font-exo2);
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+
+.channel-text {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.msg-count {
+  font-family: var(--font-exo2);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--el-color-primary);
+}
+
+.last-active {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-family: var(--font-exo2);
+}
+
+.action-buttons {
+  display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed var(--el-border-color);
-  border-radius: 8px;
-  min-height: 400px;
-  background: var(--el-bg-color);
+  gap: 4px;
 }
 
-.loading-skeleton-wrapper {
-  flex: 1;
-  padding: 16px;
-  border: 1px dashed var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
-}
-
-.empty-icon {
-  font-size: 48px;
+.action-buttons .el-button {
+  font-size: 16px;
+  padding: 4px;
   opacity: 0.5;
-  margin-bottom: 12px;
+  transition: opacity 0.2s;
 }
 
-.empty-text {
-  font-size: 14px;
-  color: var(--el-text-color-secondary);
+.action-buttons .el-button:hover,
+.action-buttons .el-button.is-active {
+  opacity: 1;
 }
 
-.dropdown-empty {
-  padding: 12px;
-  text-align: center;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+.pinned-row {
+  background: var(--el-fill-color-lighter) !important;
+}
+
+/* 分页 */
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0;
+}
+
+/* 骨架屏 */
+.loading-skeleton-area {
+  padding: 16px;
 }
 
 /* 刷新按钮旋转动画 */
@@ -298,98 +431,5 @@ onUnmounted(() => {
   to {
     transform: rotate(360deg);
   }
-}
-
-/* Dropdown option styles - with tree indent */
-.session-option-inner {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  gap: 8px;
-  font-size: 12px;
-}
-
-.option-key {
-  font-size: 12px;
-  font-family: var(--font-exo2);
-  color: var(--el-text-color-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-  max-width: 300px;
-}
-
-.option-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-  flex-shrink: 0;
-}
-
-.option-count {
-  color: var(--el-color-primary);
-  font-weight: 500;
-  min-width: 35px;
-  text-align: right;
-}
-
-.option-time {
-  min-width: 45px;
-  text-align: right;
-}
-</style>
-
-<style>
-/* Global dropdown popper styles */
-.session-dropdown.el-select__dropdown {
-  max-height: 70vh !important;
-  width: 420px !important;
-}
-
-.session-dropdown .el-select-dropdown__wrap {
-  max-height: 70vh !important;
-  overflow-y: auto !important;
-}
-
-.session-dropdown .el-select-dropdown__list {
-  padding: 0 !important;
-}
-
-.session-dropdown .el-select-dropdown__item {
-  margin-left: 30px !important;
-  padding: 6px 16px !important;
-  height: auto !important;
-  min-height: 28px !important;
-  line-height: 1.4 !important;
-  border-left: 2px solid var(--el-border-color);
-}
-
-.session-dropdown .el-select-dropdown__item-group {
-  background-color: var(--el-fill-color-light) !important;
-  padding: 8px 16px !important;
-  font-weight: 600 !important;
-  color: var(--el-text-color-primary) !important;
-  font-size: 12px !important;
-  position: sticky !important;
-  top: 0 !important;
-  z-index: 10 !important;
-}
-
-.session-dropdown .el-select-dropdown__item-group::before {
-  content: "👤 " !important;
-  margin-right: 4px;
-}
-
-.session-dropdown .el-select-dropdown__item.is-selected {
-  background-color: var(--el-color-primary-light-9) !important;
-  font-weight: 500 !important;
-}
-
-.session-dropdown .el-select-dropdown__item.is-disabled {
-  display: none !important;
 }
 </style>
