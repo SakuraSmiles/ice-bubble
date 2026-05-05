@@ -91,6 +91,40 @@ app.get('/{*path}', (_req: Request, res: Response) => {
   }
 });
 
+// 校验 WebSocket 请求的 Origin header
+function isOriginAllowed(req: IncomingMessage): boolean {
+  const origin = req.headers.origin as string | undefined;
+  const host = req.headers.host as string | undefined;
+
+  // 允许空 origin（非浏览器客户端）
+  if (!origin) return true;
+
+  // 允许 localhost / loopback
+  try {
+    const originUrl = new URL(origin);
+    const { hostname } = originUrl;
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1'
+    ) {
+      return true;
+    }
+
+    // 允许同源请求（origin 的 host 部分与请求 host 匹配）
+    if (host) {
+      const originHost = originUrl.host; // includes port
+      if (originHost === host) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 // WebSocket 代理 — 将 /ws 升级请求转发到 Admin
 function setupWebSocketProxy(server: ReturnType<typeof createServer>) {
   const wss = new WebSocketServer({ noServer: true });
@@ -99,6 +133,13 @@ function setupWebSocketProxy(server: ReturnType<typeof createServer>) {
     const { pathname } = new URL(req.url || '/', `http://${req.headers.host}`);
 
     if (pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+
+    // Origin 校验
+    if (!isOriginAllowed(req)) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
     }
@@ -124,8 +165,9 @@ function setupWebSocketProxy(server: ReturnType<typeof createServer>) {
 
     const adminUrl = new URL('/ws', adminModule.url);
     const isSecure = adminUrl.protocol === 'wss:';
+    const rejectUnauthorized = config.rejectUnauthorized ?? true;
     const targetWs = new WebSocket(`${isSecure ? 'wss' : 'ws'}://${adminUrl.host}${adminUrl.pathname}${adminUrl.search}`, {
-      rejectUnauthorized: false,
+      rejectUnauthorized,
     });
 
     targetWs.on('open', () => {

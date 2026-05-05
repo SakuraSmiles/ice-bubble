@@ -59,11 +59,37 @@ app.get("/{*path}", (_req, res) => {
     res.status(404).send("Not found");
   }
 });
+function isOriginAllowed(req) {
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  if (!origin) return true;
+  try {
+    const originUrl = new URL(origin);
+    const { hostname } = originUrl;
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+      return true;
+    }
+    if (host) {
+      const originHost = originUrl.host;
+      if (originHost === host) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
 function setupWebSocketProxy(server) {
   const wss = new WebSocketServer({ noServer: true });
   server.on("upgrade", (req, socket, head) => {
     const { pathname } = new URL(req.url || "/", `http://${req.headers.host}`);
     if (pathname !== "/ws") {
+      socket.destroy();
+      return;
+    }
+    if (!isOriginAllowed(req)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
       socket.destroy();
       return;
     }
@@ -85,8 +111,9 @@ function setupWebSocketProxy(server) {
     }
     const adminUrl = new URL("/ws", adminModule.url);
     const isSecure = adminUrl.protocol === "wss:";
+    const rejectUnauthorized = config.rejectUnauthorized ?? true;
     const targetWs = new WebSocket(`${isSecure ? "wss" : "ws"}://${adminUrl.host}${adminUrl.pathname}${adminUrl.search}`, {
-      rejectUnauthorized: false
+      rejectUnauthorized
     });
     targetWs.on("open", () => {
       wss.handleUpgrade(req, socket, head, (clientWs) => {

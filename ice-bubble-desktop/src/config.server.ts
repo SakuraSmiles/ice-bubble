@@ -34,6 +34,8 @@ export interface ModulesConfig {
   authToken?: string;
   /** 可选：CORS 允许来源 */
   cors?: CorsConfig;
+  /** 可选：代理连接是否验证 TLS 证书（默认 true） */
+  rejectUnauthorized?: boolean;
 }
 
 const DEFAULT_CONFIG: ModulesConfig = {
