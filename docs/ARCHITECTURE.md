@@ -1,6 +1,6 @@
 # ice-bubble 架构设计文档
 
-> 最近更新：2026-04-11
+> 最近更新：2026-05-06
 
 ---
 
@@ -12,10 +12,10 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                      VIEW LAYER                              │
 │              ice-bubble-desktop (Desktop)                   │
-│         Tauri + Vue3 + Element Plus + Express JS           │
-│                    端口：14000 / 1420                       │
+│              Tauri + Vue3 + Element Plus                   │
+│                    端口：1420                               │
 └──────────────────────────┬──────────────────────────────────┘
-                         │ /api 代理
+                         │ 直连
 ┌──────────────────────────▼──────────────────────────────────┐
 │                      BIZ LAYER                               │
 │                 ice-bubble-admin (Admin)                    │
@@ -35,7 +35,7 @@
 
 | 原则 | 说明 |
 |------|------|
-| **代理模式** | Desktop 不直连 Admin，通过内置代理 /api 转发 |
+| **直连模式** | Desktop 通过 Vite proxy（开发）或 Tauri（生产）直连 Admin |
 | **数据库驱动** | 配置存 config.json，状态存 SQLite |
 | **双状态机** | enabled（配置状态）+ status（运行时状态）分离 |
 | **时区安全** | 使用 ISO 8601 时间戳（带 Z 后缀） |
@@ -78,16 +78,11 @@ module_runtime_status: 运行时状态（含 lastPollTime）
 
 ```typescript
 // 架构模式
-- 开发环境：Vite Dev Server + 独立 Node.js 代理
-- 生产环境：Tauri 打包，内置代理自动启动
-
-// 内置代理机制
-- 端口范围：14000-14010
-- 端口冲突：自动尝试下一个
-- 前端通过 /api 代理请求
+- 开发环境：Vite Dev Server + Vite proxy 转发
+- 生产环境：Tauri 打包，前端直连 Admin
 ```
 
-**端口**：14000（代理），1420（开发）
+**端口**：1420
 
 
 ---
@@ -177,25 +172,10 @@ interface FormRules {
 ```bash
 # 1. 构建前端
 npm run build
-# → vite build + esbuild server
 
 # 2. 打包 Tauri
 npm run tauri build
-# → 生成 exe（包含 dist/ 和 dist-server/）
-```
-
-### 5.2 内置代理启动
-
-exe 启动时：
-1. 尝试端口 14000
-2. 冲突则尝试 1.0.0 → ... → 14010
-3. 失败则跳过，使用外部服务
-
-### 5.3 端口选择 API
-
-```bash
-GET /__port
-# 返回: { "port": 14000 }
+# → 生成安装包（包含 dist/）
 ```
 
 ---
@@ -206,7 +186,7 @@ GET /__port
 |------|------|
 | Desktop | Tauri + Vue3 + Element Plus + TypeScript |
 | Admin | Express + TypeScript + better-sqlite3 |
-| Collector | Python + aiohttp + SQLite |
+| Collector | Node.js + TypeScript + better-sqlite3 |
 | 构建 | Vite + esbuild + Tauri |
 
 ---
@@ -258,4 +238,4 @@ interface TaskEnhancement {
 | 日期 | 版本 | 变更 |
 |------|------|------|
 | 2026-04-10 | 1.0.0 | 初始版本，三层架构完成 |
-| 2026-04-11 | 1.0.0 | 内置代理、Tauri 打包优化 |
+| 2026-05-06 | 1.0.0 | 移除 Express 代理，改为直连模式 |

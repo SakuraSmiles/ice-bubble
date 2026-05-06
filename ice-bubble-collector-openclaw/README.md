@@ -388,6 +388,9 @@ ice-bubble-collector-openclaw/
 │   ├── converters/                  # 转换层
 │   │   └── openclaw-to-unified.ts   #   OpenClaw → UnifiedMessage
 │   │
+│   ├── api/                        # HTTP API 层
+│   │   └── ...                      #   REST 端点实现
+│   │
 │   ├── processors/                  # 处理层
 │   │   ├── DataValidator.ts         #   数据验证
 │   │   ├── deduplicator.ts          #   LRU 去重
@@ -709,5 +712,5 @@ config/
 
 ---
 
-**最后更新**: 2026-04-09
+**最后更新**: 2026-05-06
 **测试状态**: 298/298 全通过 (100%)

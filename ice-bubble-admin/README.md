@@ -107,12 +107,28 @@ npm run start
     "port": 13000,
     "host": "localhost"
   },
+  "auth": {
+    "enabled": false,
+    "token": null
+  },
   "cors": {
     "enabled": true,
-    "origins": ["http://localhost:3000"]
+    "origins": ["http://localhost:1420"]
   },
   "database": {
     "path": "../data/admin.db"
+  },
+  "logging": {
+    "level": "info",
+    "file": "../data/admin.log"
+  },
+  "cleanup": {
+    "enabled": false,
+    "retentionDays": 90
+  },
+  "gateway": {
+    "enabled": false,
+    "url": null
   },
   "modules": [
     {
@@ -141,6 +157,10 @@ npm run start
 |------|------|------|
 | GET | /api/modules | 获取所有模块列表 |
 | GET | /api/modules/:key | 获取单个模块详情 |
+| POST | /api/modules | 新增模块 |
+| PUT | /api/modules/:key | 更新模块配置 |
+| DELETE | /api/modules/:key | 删除模块 |
+| POST | /api/modules/test-connection | 测试模块连接 |
 | GET | /api/modules/:key/status | 获取模块状态 |
 | GET | /api/modules/:key/config | 获取模块配置 |
 

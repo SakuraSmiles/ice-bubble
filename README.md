@@ -28,7 +28,7 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 | 层级 | 模块 | 版本 | 说明 |
 |------|------|------|------|
-| **VIEW LAYER** | **ice-bubble-desktop** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus + Express），面向最终用户 |
+| **VIEW LAYER** | **ice-bubble-desktop** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus），面向最终用户 |
 | **BIZ LAYER** | **ice-bubble-admin** | `1.0.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
 | **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.0.0` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 |
 
@@ -70,6 +70,7 @@ ice-bubble/
 ├── docs/
 │   ├── ice-bubble.drawio.svg         ← 系统架构图
 │   └── integration.md                 ← 模块接入规范
+├── skills/                            ← OpenClaw Skills（任务管理等）
 ├── ice-bubble-admin/                  ← BIZ LAYER：核心业务逻辑
 │   ├── README.md
 │   ├── config/
@@ -92,9 +93,10 @@ ice-bubble/
 
 | 模块 | 端口 | 说明 |
 |------|------|------|
-| desktop 后端 | 14000 | Express API 代理 |
+| desktop 前端 | 1420 | Vite Dev Server（开发）/ Tauri 窗口（生产） |
 | admin | 13000 | 业务 API |
 | collector | 13100 | 数据采集 API |
+| task | 13102 | 任务管理 API |
 
 ## 快速开始
 
@@ -103,23 +105,28 @@ ice-bubble/
 ```
 1. collector-openclaw  (13100)  — 数据源，最先启动
 2. admin              (13000)  — 依赖 collector，提供业务 API
-4. desktop            (14000)  — 代理层，聚合 admin + task 数据
+3. task               (13102)  — 依赖 admin，任务管理服务
+4. desktop            (1420)   — 前端展示，直连 admin + task
 ```
 
 ### 启动命令
 
 ```bash
+# 一键启动所有服务
+npm run dev
+
+# 或分别启动
 # 1. 数据采集层
 cd ice-bubble-collector-openclaw && npm run dev
 
 # 2. 业务管理层（另起终端）
 cd ice-bubble-admin && npm run dev
 
-# 4. 桌面端（另起终端）
-cd ice-bubble-desktop && npm run dev:all
+# 3. 桌面端（另起终端）
+cd ice-bubble-desktop && npm run dev
 ```
 
-> Desktop 的 Express 代理会自动将所有 `/api/*` 转发至对应后端服务。
+> 生产模式使用 `npm run tauri dev` 启动 Desktop（Tauri 窗口）。
 
 ### 认证配置
 
@@ -140,11 +147,7 @@ export ICE_AUTH_TOKEN="your-secret-token"
 
 **Desktop 前端配置：**
 
-在 Desktop 的 `.env` 文件中配置：
-
-```bash
-VITE_ICE_AUTH_TOKEN=your-secret-token
-```
+通过 Desktop 的 Setup 页面（`/setup`）或直接在浏览器 localStorage 中配置 Auth Token，无需 `.env` 文件。
 
 ---
 

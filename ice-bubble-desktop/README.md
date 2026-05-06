@@ -30,7 +30,6 @@
 | 桌面框架 | Tauri 2.0 | Rust 后端 + Web 前端 |
 | 前端框架 | Vue 3.5 | Composition API |
 | UI 组件库 | Element Plus | GitHub 风格主题 |
-| 后端服务 | Express | API 代理 + 静态文件服务 |
 | 语言 | TypeScript 5.5 | 严格模式 |
 | 构建工具 | Vite 6.0 | 快速构建 |
 
@@ -53,20 +52,7 @@
 │                    Vue 3 前端 (fetch /api/*)                        │
 └───────────────────────────────┼────────────────────────────────────┘
                                 │
-                                │ :14000
-                    ┌───────────▼───────────┐
-                    │   Express 后端代理    │
-                    │  ┌─────────────────┐  │
-                    │  │  API 代理       │  │
-                    │  │  /api/* → admin │  │
-                    │  └─────────────────┘  │
-                    │  ┌─────────────────┐  │
-                    │  │  静态文件服务    │  │
-                    │  │  (dist/*)       │  │
-                    │  └─────────────────┘  │
-                    └───────────┬─────────────┘
-                                │
-                                │ HTTP API (13000)
+                     Vite proxy（开发）/ Tauri（生产）
                                 │
                     ┌───────────▼─────────────┐
                     │    ice-bubble-admin     │
@@ -85,8 +71,7 @@
 
 | 模块 | 端口 | 说明 |
 |------|------|------|
-| desktop 前端 | 1420 | Vite 开发服务器 |
-| desktop 后端 | 14000 | Express 代理服务 |
+| desktop 前端 | 1420 | Vite Dev Server（开发）/ Tauri 窗口（生产） |
 | admin | 13000 | 管理 API |
 | collector | 13100 | 数据采集 API |
 
@@ -110,12 +95,9 @@ sudo apt-get install libwebkit2gtk-4.1-dev
 
 ### 配置
 
-复制 `.env.example` 为 `.env`（如果不存在则创建）：
+复制 `.env.example` 为 `.env`（如果不存在则创建）。
 
-```env
-PORT=14000
-ADMIN_API=http://localhost:13000
-```
+> Desktop 通过 Setup 页面配置 Admin 地址，`.env` 文件仅用于开发环境变量。
 
 ### 开发模式
 
@@ -123,22 +105,18 @@ ADMIN_API=http://localhost:13000
 # 安装依赖
 npm install
 
-# 启动前后端（推荐）
-npm run dev:all
-
-# 或分别启动
-npm run dev      # 前端 Vite (1420)
-npm run dev:server  # 后端 Express (14000)
+# 启动开发服务器
+npm run dev
 ```
 
 ### 生产模式
 
 ```bash
+# Tauri 开发模式
+npm run tauri dev
+
 # 构建
 npm run build
-
-# 启动（使用 Express 提供静态文件 + API 代理）
-npm start
 ```
 
 ---
@@ -169,7 +147,7 @@ npm start
 
 ### Admin API 地址
 
-在代码中配置 `src/config.ts`：
+在代码中配置 `src/config/index.ts`：
 
 ```typescript
 export const ADMIN_API_BASE = 'http://localhost:13000';
@@ -181,15 +159,20 @@ export const ADMIN_API_BASE = 'http://localhost:13000';
 
 | 页面 | 路径 | 功能 |
 |------|------|------|
+| 初始设置 | /setup | 配置 Admin 地址和 Auth Token |
 | 概览 | / | 系统统计、模块状态 |
 | 模块管理 | /modules | 查看各模块运行状态 |
-| 会话记录 | /sessions | 会话列表和详情 |
+| 成员列表 | /agents | Agent 列表和状态 |
+| 全部会话 | /sessions | 所有会话列表和详情 |
+| 任务管理 | /tasks | 任务列表和管理 |
+| 工作区 | /workspace/:key | 单个 Agent 的工作区视图 |
+| 聊天 | /chat | 对话界面 |
 
 ---
 
 ## API 调用
 
-desktop 通过 Express 代理转发请求至 admin/task 服务：
+desktop 通过 Vite proxy（开发）或 Tauri（生产）直连 admin/task 服务：
 
 | 方法 | 路径 | 目标服务 | 说明 |
 |------|------|---------|------|
@@ -220,15 +203,20 @@ desktop 通过 Express 代理转发请求至 admin/task 服务：
 src/
 ├── main.ts                 # Vue 入口
 ├── App.vue                 # 根组件
-├── config.ts              # 统一配置
+├── config/
+│   └── index.ts           # 统一配置
 ├── api/
 │   └── client.ts          # API 调用封装
-├── server/
-│   └── index.ts           # Express 后端入口
 ├── views/
 │   ├── Overview.vue       # 概览页
 │   ├── Modules.vue        # 模块管理页
-│   └── Sessions.vue       # 会话记录页
+│   ├── Sessions.vue       # 会话记录页
+│   ├── Agents.vue         # 成员列表页
+│   ├── AllSessions.vue    # 全部会话页
+│   ├── Tasks.vue          # 任务管理页
+│   ├── Setup.vue          # 初始设置页
+│   ├── Workspace.vue      # 工作区页
+│   └── Chat.vue           # 聊天页
 └── components/
     └── ...
 
@@ -247,10 +235,7 @@ src-tauri/
 | 命令 | 说明 |
 |------|------|
 | npm run dev | Vite 前端开发服务器 |
-| npm run dev:server | Express 后端开发服务器 |
-| npm run dev:all | 同时启动前端 + 后端 |
 | npm run build | 构建前端 |
-| npm run start | 生产模式启动 |
 | npm run tauri dev | Tauri 开发模式 |
 | npm run tauri build | 构建 Tauri 应用 |
 

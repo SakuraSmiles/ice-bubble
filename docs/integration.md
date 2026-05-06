@@ -24,7 +24,7 @@ ice-bubble 采用模块化架构，新增模块只需实现标准接口即可接
 
 每个模块必须实现以下两个基础端点，供 admin 轮询使用：
 
-### 2.1 GET /meta
+### 2.1 GET /api/meta/status
 
 返回模块元信息，admin 据此完成注册。
 
@@ -50,7 +50,7 @@ ice-bubble 采用模块化架构，新增模块只需实现标准接口即可接
 | version | string | 是 | 当前版本号，语义化版本 |
 | description | string | 否 | 模块功能描述 |
 
-### 2.2 GET /status
+### 2.2 GET /api/meta/status
 
 返回模块运行时状态。
 
@@ -106,46 +106,21 @@ ice-bubble 采用模块化架构，新增模块只需实现标准接口即可接
 
 ## 四、模块注册流程
 
-1. **发现**：admin 根据 `config/modules.json` 中配置的 `baseUrl` 向目标模块发送 `GET /meta`
+1. **发现**：admin 根据 `config/modules.json` 中配置的 `baseUrl` 向目标模块发送 `GET /api/meta/status`
 2. **注册**：响应验证通过后，写入 `module_registry` 表
-3. **轮询**：admin 每隔 `pollInterval`（毫秒）调用 `GET /status` 更新运行状态
+3. **轮询**：admin 每隔 `pollInterval`（毫秒）调用 `GET /api/meta/status` 更新运行状态
 4. **状态合并**：runtime state + enabled 配置状态决定最终展示
 
 ---
 
-## 五、数据上报接口（Collector 特化）
+## 五、数据同步机制（DataSync）
 
-Collector 模块在完成数据采集后，需要将数据推送给 admin：
+Admin 通过 DataSync 服务主动从 Collector **拉取**数据，而非 Collector 推送。
 
-### 5.1 上报消息
-
-```
-POST {admin_baseUrl}/collectors/ingest
-Content-Type: application/json
-
-{
-  "session_key": "xxx",
-  "agent_id": "xxx",
-  "channel": "xxx",
-  "message_type": "user|agent|tool",
-  "content": "...",
-  "timestamp": "2026-04-26T10:30:00.000Z",
-  "metadata": {}
-}
-```
-
-### 5.2 上报 Agent 状态
-
-```
-POST {admin_baseUrl}/collectors/agents/status
-Content-Type: application/json
-
-{
-  "agent_id": "xxx",
-  "status": "active|idle|offline",
-  "task_enhancement": { ... }
-}
-```
+同步流程：
+1. Admin 的 DataSync 按配置的 `pollInterval` 定期调用 Collector 的数据 API
+2. Collector 暴露 `/api/data/sessions`、`/api/data/messages`、`/api/data/stats` 等端点
+3. Admin 增量拉取新数据，基于时间戳去重写入本地 SQLite
 
 ---
 
