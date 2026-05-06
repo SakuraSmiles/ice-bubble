@@ -4,7 +4,7 @@
     "host": "localhost"
   },
   "auth": {
-    "token": ""
+    "token": "e926d9e48798d6e6cc41863fca9ebb206657c081c889936f"
   },
   "cors": {
     "enabled": true,
