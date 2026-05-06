@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { API_BASE } from '../../config';
 import type { TaskItemDTO, ParentTaskDTO, AgentDTO } from '../../api/client';
 
 // =========== Props ===========
@@ -66,8 +67,8 @@ const involvedAgents = computed(() => {
 
 /** 获取 agent 头像 URL */
 function getAvatarUrl(agent: AgentDTO): string {
-  if (agent.avatar) return `/api/resources/avatars/${agent.avatar}`;
-  return `/api/resources/avatars/${agent.agent_id}.png`;
+  if (agent.avatar) return `${API_BASE}/resources/avatars/${agent.avatar}`;
+  return `${API_BASE}/resources/avatars/${agent.agent_id}.png`;
 }
 
 /** 进度标签 */

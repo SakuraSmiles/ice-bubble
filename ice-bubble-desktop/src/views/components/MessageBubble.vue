@@ -3,6 +3,7 @@
  * MessageBubble — 聊天气泡组件
  */
 import { computed } from 'vue'
+import { API_BASE } from '../../config'
 import MarkdownContent from '../../components/MarkdownContent.vue'
 
 interface Props {
@@ -72,7 +73,7 @@ const agentInitial = computed(() => {
     <div class="agent-avatar-col">
       <img
         v-if="message.avatar"
-        :src="`/api/resources/avatars/${message.avatar}`"
+        :src="`${API_BASE}/resources/avatars/${message.avatar}`"
         class="avatar"
         alt=""
       />

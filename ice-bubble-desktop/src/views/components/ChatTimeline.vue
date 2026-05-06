@@ -129,7 +129,7 @@ async function loadLatest() {
     // Step 1: Gateway 取最新消息（≤10 条）
     if (props.sessionKey) {
       try {
-        const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=10`;
+        const historyUrl = `${API_BASE}/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=10`;
         const historyRes = await fetch(historyUrl);
         if (historyRes.ok) {
           const result = await historyRes.json() as any;
@@ -151,8 +151,8 @@ async function loadLatest() {
     // Step 2: Admin 取历史消息
     let adminMsgs: TimelineMessage[] = [];
     const adminUrl = gatewayBoundary
-      ? `/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(new Date(new Date(gatewayBoundary).getTime() - 1).toISOString())}&${filters.value}`
-      : `/api/messages/timeline?limit=${PAGE_SIZE}&${filters.value}`;
+      ? `${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(new Date(new Date(gatewayBoundary).getTime() - 1).toISOString())}&${filters.value}`
+      : `${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&${filters.value}`;
 
     const res = await fetch(adminUrl);
     if (res.ok) {
@@ -208,7 +208,7 @@ async function loadMore() {
       const oldest = messages.value[0].timestamp;
       beforeTs = new Date(new Date(oldest).getTime() - 1).toISOString();
     }
-    const url = `/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeTs)}&${filters.value}`;
+    const url = `${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeTs)}&${filters.value}`;
     const res = await fetch(url);
     if (!res.ok) { hasMore.value = false; return; }
     const data: TimelineResponse = await res.json();
@@ -1121,7 +1121,7 @@ function toolSummary(grp: MsgGroup): string {
           <div class="agent-avatar-col">
             <img
               v-if="grp.avatar"
-              :src="`/api/resources/avatars/${grp.avatar}`"
+              :src="`${API_BASE}/resources/avatars/${grp.avatar}`"
               class="avatar"
             />
             <div class="avatar-placeholder" v-else>{{ (grp.agentName || '?')[0] }}</div>

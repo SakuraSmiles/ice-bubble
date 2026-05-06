@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { formatTime, formatRelativeTime, truncatePath, formatNumber } from '../utils/format';
 import { api, AgentWithActivityDTO } from '../api/client';
+import { API_BASE } from '../config';
 import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
 import LoadingSkeleton from './components/LoadingSkeleton.vue';
@@ -293,7 +294,7 @@ async function fetchAll(withActivity = true) {
 
 function getAvatarUrl(avatar: string | null): string | null {
   if (!avatar) return null;
-  return `/api/resources/avatars/${avatar}`;
+  return `${API_BASE}/resources/avatars/${avatar}`;
 }
 
 function startTimers() {

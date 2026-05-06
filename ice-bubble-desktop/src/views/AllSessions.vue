@@ -5,6 +5,7 @@ import { api } from '@/api/client';
 import type { SessionDTO } from '@/api/client';
 import { useSessionPreferencesStore } from '@/stores/sessionPreferencesStore';
 import { gatewayClient } from '@/services/gateway-client';
+import { API_BASE } from '../config';
 
 const prefsStore = useSessionPreferencesStore();
 
@@ -285,7 +286,7 @@ onUnmounted(() => {
                       class="session-card-avatar"
                       :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }"
                     >
-                      <img v-if="s.avatar" :src="`/api/resources/avatars/${s.avatar}`" class="avatar-img" />
+                      <img v-if="s.avatar" :src="`${API_BASE}/resources/avatars/${s.avatar}`" class="avatar-img" />
                       <template v-else>{{ (s.agent_id || '?').charAt(0).toUpperCase() }}</template>
                     </div>
                     <div class="session-card-info">
