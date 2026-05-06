@@ -3,14 +3,12 @@
  * 所有 view 层 API 请求必须通过此模块
  */
 
-import { API_BASE } from '../config';
+import { API_BASE, getAdminAuthToken } from '../config';
 import { apiMonitor } from '../utils/monitor';
 
-// Auth token: read from environment variable (Vite) or config
+// Auth token: read from localStorage (set during Setup)
 function getAuthToken(): string {
-  // Vite uses import.meta.env for env vars
-  const envToken = (import.meta as any).env?.VITE_ICE_AUTH_TOKEN;
-  return envToken || '';
+  return getAdminAuthToken();
 }
 
 // ============ DTO 接口 ============

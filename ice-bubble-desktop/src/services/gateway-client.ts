@@ -104,8 +104,7 @@ export class GatewayClient {
     }
 
     this.intentionalClose = false
-    const serverPort = typeof window !== 'undefined' && (window as any).__ICE_SERVER_PORT;
-    const wsHost = serverPort ? `localhost:${serverPort}` : window.location.host;
+    const wsHost = window.location.host;
     const url = `ws://${wsHost}/ws`
 
     return new Promise<void>((resolve, reject) => {

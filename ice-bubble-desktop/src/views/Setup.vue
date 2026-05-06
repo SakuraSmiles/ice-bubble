@@ -2,32 +2,31 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import { setAdminUrl, setAdminAuthToken } from '../config';
 
 const router = useRouter();
 
 const adminUrl = ref('');
+const authToken = ref('');
 const testing = ref(false);
 const errorMsg = ref('');
-
-function apiBase(): string {
-  if (typeof window !== 'undefined' && (window as any).__ICE_SERVER_PORT) {
-    return `http://localhost:${(window as any).__ICE_SERVER_PORT}`;
-  }
-  return '';
-}
+const needsToken = ref(false);
 
 // 检测当前配置
-onMounted(async () => {
+onMounted(() => {
   try {
-    const res = await fetch(`${apiBase()}/api/desktop/config`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.adminUrl) {
-        adminUrl.value = data.adminUrl;
+    const raw = localStorage.getItem('ice-bubble-admin-config');
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data.url) {
+        adminUrl.value = data.url;
+      }
+      if (data.authToken) {
+        authToken.value = data.authToken;
       }
     }
   } catch {
-    // 配置读取失败，使用空值
+    // ignore
   }
 });
 
@@ -37,7 +36,6 @@ async function testConnection() {
     return;
   }
 
-  // 简单的 URL 格式校验
   let url = adminUrl.value.trim();
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = 'http://' + url;
@@ -53,21 +51,34 @@ async function testConnection() {
 
   testing.value = true;
   errorMsg.value = '';
+  needsToken.value = false;
 
   try {
-    const res = await fetch(`${apiBase()}/api/desktop/config`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      ElMessage.success('连接成功！');
-      // 保存成功，跳转到首页
-      router.replace('/');
-    } else {
-      errorMsg.value = data.error || '连接失败';
+    const baseUrl = url.replace(/\/+$/, '');
+    const headers: Record<string, string> = {};
+    if (authToken.value.trim()) {
+      headers['Authorization'] = `Bearer ${authToken.value.trim()}`;
     }
+    const res = await fetch(`${baseUrl}/api/stats`, { headers });
+
+    if (res.status === 401) {
+      needsToken.value = true;
+      errorMsg.value = '需要认证，请输入 Token';
+      return;
+    }
+
+    if (!res.ok) {
+      errorMsg.value = `连接失败: HTTP ${res.status}`;
+      return;
+    }
+
+    // 连接成功，保存配置
+    setAdminUrl(url);
+    if (authToken.value.trim()) {
+      setAdminAuthToken(authToken.value.trim());
+    }
+    ElMessage.success('连接成功！');
+    router.replace('/');
   } catch (e: any) {
     errorMsg.value = `请求失败: ${e.message}`;
   } finally {
@@ -90,7 +101,7 @@ function handleSkip() {
 
       <div class="setup-body">
         <p class="description">
-          请输入 Admin 管理后台的地址，以便 Desktop 连接到后端服务。
+          请输入 Admin 管理后台的地址，以便 Desktop 直连后端服务。
         </p>
 
         <el-form label-position="top" @submit.prevent="testConnection">
@@ -104,6 +115,22 @@ function handleSkip() {
             >
               <template #prefix>
                 <span style="color: var(--el-text-color-placeholder);">🔗</span>
+              </template>
+            </el-input>
+          </el-form-item>
+
+          <el-form-item v-if="needsToken" label="Auth Token">
+            <el-input
+              v-model="authToken"
+              placeholder="输入 Admin 认证 Token"
+              size="large"
+              type="password"
+              show-password
+              clearable
+              @keydown.enter="testConnection"
+            >
+              <template #prefix>
+                <span style="color: var(--el-text-color-placeholder);">🔑</span>
               </template>
             </el-input>
           </el-form-item>
@@ -140,7 +167,7 @@ function handleSkip() {
       </div>
 
       <div class="setup-footer">
-        <p>配置文件保存在 <code>config/modules.json</code>，可随时手动修改</p>
+        <p>配置保存在浏览器本地，可随时通过连接状态组件重新配置</p>
       </div>
     </div>
   </div>
@@ -206,13 +233,6 @@ function handleSkip() {
 
 .setup-footer p {
   color: var(--el-text-color-placeholder);
-  font-size: 12px;
-}
-
-.setup-footer code {
-  background: var(--el-fill-color);
-  padding: 2px 6px;
-  border-radius: 4px;
   font-size: 12px;
 }
 </style>

@@ -11,23 +11,20 @@ import App from './App.vue';
 import Layout from './views/Layout.vue';
 
 // 检查是否需要进入配置引导
-// 如果 Admin 未配置（url 仍为 localhost 或 authToken 为空），则跳转到 /setup
-async function needsSetup(): Promise<boolean> {
+// 纯前端检查：localStorage 中是否有有效的 admin URL 配置
+function needsSetup(): boolean {
   try {
-    const res = await fetch('/api/desktop/config');
-    if (res.ok) {
-      const data = await res.json();
-      // 未配置：没有 adminUrl 或仍是默认 localhost
-      if (!data.adminUrl || data.adminUrl.includes('localhost')) {
-        return true;
+    const raw = localStorage.getItem('ice-bubble-admin-config');
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data.url && !data.url.includes('localhost')) {
+        return false;
       }
-      return false;
     }
-    // API 不可用（可能 server 未启动），允许进入
-    return false;
   } catch {
-    return false;
+    // ignore parse errors
   }
+  return true;
 }
 
 const router = createRouter({
@@ -40,8 +37,8 @@ const router = createRouter({
     {
       path: '/',
       component: Layout,
-      beforeEnter: async (_to, _from, next) => {
-        const setup = await needsSetup();
+      beforeEnter: (_to, _from, next) => {
+        const setup = needsSetup();
         if (setup && _to.path !== '/setup') {
           next('/setup');
         } else {

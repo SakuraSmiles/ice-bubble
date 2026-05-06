@@ -4,6 +4,7 @@
  */
 
 import { isValidUrl } from './validators';
+import { getAdminUrl, setAdminUrl, getAdminAuthToken } from '../config';
 
 // ============ 类型定义 ============
 
@@ -18,6 +19,7 @@ export type ConnectionState =
 export interface AdminConfig {
   url: string;
   lastConnected?: number;
+  authToken?: string;
 }
 
 type StateChangeCallback = (state: ConnectionState) => void;
@@ -26,14 +28,24 @@ type StateChangeCallback = (state: ConnectionState) => void;
 
 const STORAGE_KEY = 'ice-bubble-admin-config';
 const HEALTH_CHECK_INTERVAL = 30000; // 30秒心跳检测
+const DEFAULT_ADMIN_URL = 'http://localhost:13000';
 
 // ============ 内部工具 ============
 
-// 通过 Desktop 代理访问 Admin API（避免跨域 CORS 问题）
+// 直接访问 Admin API（不再通过本地代理）
 async function fetchAdminApi<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const adminUrl = getAdminUrl();
+  const authToken = getAdminAuthToken();
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
+
+  const response = await fetch(`${adminUrl}${path}`, {
     ...options,
-    credentials: 'include'
+    headers,
   });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
@@ -63,7 +75,6 @@ class AdminConnection {
       if (raw) {
         this.config = JSON.parse(raw) as AdminConfig;
         this.currentUrl = this.config!.url;
-        // 有配置则尝试检测连接
         this.detectConnection();
         return;
       }
@@ -72,25 +83,21 @@ class AdminConnection {
     }
 
     // 无配置：尝试默认地址自动检测（不保存到 localStorage，直到用户确认）
-    this.currentUrl = 'http://localhost:13000';
+    this.currentUrl = DEFAULT_ADMIN_URL;
     this.autoDetectDefault();
   }
 
   /** 无配置时自动检测默认地址，成功则静默连接 */
   private async autoDetectDefault(): Promise<void> {
-    // 防止重复检测（destroy 后重新创建等场景）
     if (this.autoDetecting) return;
     this.autoDetecting = true;
     this.setState('CONFIGURING');
     try {
-      await fetchAdminApi<any>('/stats');
-      // 默认地址可连接，自动保存并上线
-      this.saveConfig(this.currentUrl);
+      await this.fetchDirect<any>(`${DEFAULT_ADMIN_URL}/api/stats`);
+      this.saveConfig(DEFAULT_ADMIN_URL);
       this.setState('CONNECTED');
       this.startHealthCheck();
     } catch {
-      // 默认地址不可用，回退到未配置状态，等待用户手动输入
-      // 但保留空字符串，不要污染 currentUrl
       if (this.state === 'CONFIGURING') {
         this.currentUrl = '';
         this.setState('UNCONFIGURED');
@@ -100,13 +107,25 @@ class AdminConnection {
     }
   }
 
+  /** 直接 fetch 指定 URL（不依赖 localStorage 配置） */
+  private async fetchDirect<T>(url: string, options?: RequestInit): Promise<T> {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response.json();
+  }
+
   private saveConfig(url: string): void {
     this.config = {
       url,
-      lastConnected: Date.now()
+      lastConnected: Date.now(),
+      authToken: this.config?.authToken,
     };
     this.currentUrl = url;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.config));
+    // 同步更新 config/index.ts 的 API_BASE
+    setAdminUrl(url);
   }
 
   // ============ 状态转换 ============
@@ -132,7 +151,6 @@ class AdminConnection {
 
     this.setState('CONFIGURING');
     try {
-      // 优先调用 /stats 接口检测
       await fetchAdminApi<any>('/stats');
       this.saveConfig(this.config.url);
       this.setState('CONNECTED');
@@ -170,23 +188,14 @@ class AdminConnection {
 
   // ============ 公开 API ============
 
-  /**
-   * 获取当前连接状态
-   */
   getState(): ConnectionState {
     return this.state;
   }
 
-  /**
-   * 获取当前配置的 URL
-   */
   getCurrentUrl(): string {
     return this.currentUrl;
   }
 
-  /**
-   * 获取配置
-   */
   getConfig(): AdminConfig | null {
     return this.config;
   }
@@ -194,10 +203,10 @@ class AdminConnection {
   /**
    * 配置并测试连接
    * @param url Admin 服务地址
+   * @param authToken 可选的鉴权 token
    * @returns 是否连接成功
    */
-  async configure(url: string): Promise<boolean> {
-    // URL 格式校验
+  async configure(url: string, authToken?: string): Promise<boolean> {
     if (!isValidUrl(url)) {
       this.currentUrl = url;
       this.setState('CONFIG_ERROR');
@@ -206,8 +215,21 @@ class AdminConnection {
 
     this.setState('CONFIGURING');
     try {
-      await fetchAdminApi<any>('/stats');
+      const headers: Record<string, string> = {};
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+      await this.fetchDirect<any>(`${url.replace(/\/+$/, '')}/api/stats`, { headers });
       this.saveConfig(url);
+      if (authToken) {
+        // 保存 token 到 localStorage
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const existing = raw ? JSON.parse(raw) : {};
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          ...existing,
+          authToken,
+        }));
+      }
       this.setState('CONNECTED');
       this.startHealthCheck();
       return true;
@@ -218,9 +240,6 @@ class AdminConnection {
     }
   }
 
-  /**
-   * 执行一次健康检测
-   */
   async checkHealth(): Promise<boolean> {
     if (!this.config?.url) {
       this.setState('UNCONFIGURED');
@@ -236,23 +255,14 @@ class AdminConnection {
     }
   }
 
-  /**
-   * 订阅状态变化
-   * @param callback 状态变化回调
-   * @returns 取消订阅函数
-   */
   onStateChange(callback: StateChangeCallback): () => void {
     this.subscribers.add(callback);
-    // 立即通知当前状态
     callback(this.state);
     return () => {
       this.subscribers.delete(callback);
     };
   }
 
-  /**
-   * 销毁，清理定时器
-   */
   destroy(): void {
     this.autoDetecting = false;
     this.stopHealthCheck();

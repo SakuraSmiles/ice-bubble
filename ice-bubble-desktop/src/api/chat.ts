@@ -3,7 +3,7 @@
  * POST /api/chat/send  |  GET /api/chat/stream  |  POST /api/chat/abort
  */
 
-import { API_BASE } from '../config';
+import { API_BASE, getAdminAuthToken } from '../config';
 import { apiMonitor } from '../utils/monitor';
 
 // ============ DTO ============
@@ -50,9 +50,9 @@ export interface SSEHandlers {
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {}
-  const envToken = (import.meta as any).env?.VITE_ICE_AUTH_TOKEN
-  if (envToken) {
-    headers['Authorization'] = `Bearer ${envToken}`
+  const token = getAdminAuthToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
   }
   return headers
 }
@@ -106,7 +106,12 @@ export function getChatStream(
   sessionKey: string,
   handlers: SSEHandlers = {},
 ): EventSource {
-  const url = `${API_BASE}/chat/stream?session=${encodeURIComponent(sessionKey)}`
+  let url = `${API_BASE}/chat/stream?session=${encodeURIComponent(sessionKey)}`
+  // EventSource 不支持自定义 headers，token 通过 query 参数传递
+  const token = getAdminAuthToken()
+  if (token) {
+    url += `&token=${encodeURIComponent(token)}`
+  }
   const es = new EventSource(url)
 
   es.addEventListener('message', (e: MessageEvent) => {

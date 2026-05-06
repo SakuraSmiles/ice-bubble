@@ -18,6 +18,11 @@ vi.mock('../utils/monitor', () => ({
   apiMonitor: { record: mockRecord }
 }));
 
+vi.mock('../config', () => ({
+  API_BASE: '/api',
+  getAdminAuthToken: () => '',
+}));
+
 vi.stubGlobal('fetch', mockFetch);
 
 import { api } from './client';

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { apiMonitor, type MonitorStats } from '../utils/monitor';
+import { API_BASE } from '../config';
 import {
   ChatDotRound, Connection, Calendar, Monitor
 } from '@element-plus/icons-vue';
@@ -54,7 +55,7 @@ const statsData = ref<StatsData | null>(null);
 
 async function fetchStats(): Promise<void> {
   try {
-    const res = await fetch('/api/stats');
+    const res = await fetch(`${API_BASE}/stats`);
     if (!res.ok) return;
     statsData.value = await res.json();
   } catch {
@@ -89,7 +90,7 @@ function extractDataStatus(data: TimelineResponseDTO): void {
 /** 定时拉取 timeline meta 以更新数据状态 */
 async function fetchDataStatus(): Promise<void> {
   try {
-    const res = await fetch('/api/messages/timeline?limit=1');
+    const res = await fetch(`${API_BASE}/messages/timeline?limit=1`);
     if (!res.ok) return;
     const data: TimelineResponseDTO = await res.json();
     extractDataStatus(data);

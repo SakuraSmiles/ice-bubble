@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import MarkdownContent from '../../components/MarkdownContent.vue';
 import { gatewayClient } from '@/services/gateway-client';
+import { API_BASE } from '../../config';
 
 // =========== Props ===========
 const props = withDefaults(defineProps<{
@@ -277,7 +278,7 @@ async function fillScrollable() {
 
     // 使用 -1ms 而非 +1ms：与 loadMore 对齐
     const beforeCursor = new Date(new Date(oldest).getTime() - 1).toISOString();
-    const res = await fetch(`/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`, { credentials: 'include' });
+    const res = await fetch(`${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`, { credentials: 'include' });
     if (!res.ok) break;
     const data: TimelineResponse = await res.json();
     if (!Array.isArray(data.messages) || data.messages.length === 0) {
@@ -869,7 +870,7 @@ async function fetchAgentAvatar() {
   try {
     const agentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
     if (!agentId) return;
-    const res = await fetch('/api/agents', { credentials: 'include' });
+    const res = await fetch(`${API_BASE}/agents`, { credentials: 'include' });
     if (!res.ok) return;
     const data = await res.json() as any;
     const agents: any[] = data?.agents ?? [];

@@ -53,19 +53,19 @@ const VITE_PORT = 1420;
 // API 代理配置
 // 开发模式：所有 /api/* 转发到本地 Express 服务器（端口由 .server-port 文件决定）
 // Express 服务器内部使用 config/modules.json 进行动态路由
+const adminWsUrl = adminUrl.replace(/^http/, 'ws');
+
 const apiProxy = {
-  // 开发模式下 /api 请求代理到 Express 服务器
-  // Express 服务器负责根据 modules.json 动态转发
+  // 开发模式下 /api 请求代理到 Admin 服务器（直连，无 Express 中间层）
   '/api': {
-    target: `http://localhost:14000`,
+    target: adminUrl,
     changeOrigin: true,
-    // 调整代理超时设置
     timeout: 30000,
     proxyTimeout: 30000,
   },
   // WebSocket 代理：/ws 转发到 Admin 服务器的 WebSocket 端点
   '/ws': {
-    target: 'ws://localhost:13000',
+    target: adminWsUrl,
     ws: true,
     changeOrigin: true,
   },
