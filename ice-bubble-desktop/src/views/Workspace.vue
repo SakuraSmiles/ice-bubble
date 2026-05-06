@@ -8,6 +8,7 @@ import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
 import ChatTimeline from './components/ChatTimeline.vue';
 import SessionList from './components/SessionList.vue';
+import { Loading } from '@element-plus/icons-vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -138,15 +139,15 @@ function resetInputHeight() {
       <ConnectionAlert />
     </PageHeader>
 
-    <div class="workspace-body">
-      <!-- 加载中状态 -->
-      <div v-if="view === 'loading'" class="loading-state">
-        <div class="loading-spinner"></div>
-        <span class="loading-text">正在查找会话...</span>
-      </div>
+    <!-- 加载中状态（无白色容器） -->
+    <div v-if="view === 'loading'" class="loading-state">
+      <el-icon class="is-loading" :size="20" color="var(--color-text-tertiary)"><Loading /></el-icon>
+      <span>正在查找会话...</span>
+    </div>
 
+    <div v-else class="workspace-body">
       <!-- Session 列表视图 -->
-      <SessionList v-else-if="view === 'list'" :agent-id="agentId" @select="onSessionSelect" />
+      <SessionList v-if="view === 'list'" :agent-id="agentId" @select="onSessionSelect" />
 
       <!-- 聊天视图 -->
       <template v-else>
@@ -191,26 +192,9 @@ function resetInputHeight() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 8px;
   color: var(--color-text-tertiary);
-}
-
-.loading-spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid var(--color-border);
-  border-top-color: var(--color-accent-blue);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.loading-text {
   font-size: 13px;
-  color: var(--color-text-tertiary);
 }
 
 .workspace-body {

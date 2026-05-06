@@ -92,6 +92,7 @@
   --el-bg-color: #ffffff;
   --el-bg-color-page: #f6f8fa;
   --el-bg-color-overlay: #ffffff;
+  --el-mask-color: rgba(246, 248, 250, 0.8);
 
 
   /* 圆角 */

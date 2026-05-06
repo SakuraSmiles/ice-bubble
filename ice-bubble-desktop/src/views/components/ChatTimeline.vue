@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { Loading } from '@element-plus/icons-vue';
 import MarkdownContent from '../../components/MarkdownContent.vue';
 import { gatewayClient } from '@/services/gateway-client';
 import { API_BASE } from '../../config';
@@ -1102,7 +1103,10 @@ function toolSummary(grp: MsgGroup): string {
       </div>
 
       <!-- 首加载 -->
-      <div v-if="loading && messages.length === 0" class="empty-tip">加载中...</div>
+      <div v-if="loading && messages.length === 0" class="loading-tip">
+        <el-icon class="is-loading" :size="20"><Loading /></el-icon>
+        <span>加载中...</span>
+      </div>
       <div v-else-if="messages.length === 0" class="empty-tip">暂无消息</div>
 
       <!-- 消息组 -->
@@ -1253,11 +1257,15 @@ function toolSummary(grp: MsgGroup): string {
   cursor: not-allowed;
 }
 
-.load-tip, .empty-tip {
+.load-tip, .empty-tip, .loading-tip {
   text-align: center;
-  color: #999;
+  color: var(--color-text-tertiary);
   font-size: 12px;
   padding: 20px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 /* 消息行 */

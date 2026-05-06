@@ -1,22 +1,29 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { Refresh, Search } from '@element-plus/icons-vue';
 import { useNow } from '@/composables/useNow';
 import { api } from '@/api/client';
 import type { SessionDTO } from '@/api/client';
 import { useSessionPreferencesStore } from '@/stores/sessionPreferencesStore';
 import { gatewayClient } from '@/services/gateway-client';
 import { API_BASE } from '../config';
+import PageHeader from '../components/PageHeader.vue';
+import AppFooter from '../components/AppFooter.vue';
+import EmptyState from '../components/EmptyState.vue';
+import LoadingSkeleton from './components/LoadingSkeleton.vue';
 
 const prefsStore = useSessionPreferencesStore();
 
 // ====== 数据加载 ======
 const allSessions = ref<SessionDTO[]>([]);
 const loading = ref(false);
+const refreshSpin = ref(false);
 
 let unsubSessionsChanged: (() => void) | null = null;
 
 async function fetchAllSessions() {
   loading.value = true;
+  refreshSpin.value = true;
   try {
     const data = await api.getUnifiedSessions({ limit: 200, offset: 0 });
     allSessions.value = data.sessions || [];
@@ -24,6 +31,7 @@ async function fetchAllSessions() {
     console.error('Failed to load sessions:', e);
   } finally {
     loading.value = false;
+    refreshSpin.value = false;
   }
 }
 
@@ -33,6 +41,7 @@ const filterKeyword = ref('');
 const filterTimeRange = ref('all');
 const filterStatus = ref('');
 const filterMark = ref('all');
+const showAdvancedFilter = ref(false);
 
 // ====== 客户端过滤 ======
 const filteredSessions = computed(() => {
@@ -97,10 +106,6 @@ const filteredSessions = computed(() => {
 // ====== 分页 ======
 const currentPage = ref(1);
 const pageSize = ref(20);
-const pageSizes = [20, 50, 100] as const;
-void pageSizes; // used in template
-
-
 
 // 过滤条件变化时重置到第 1 页
 watch([filterAgent, filterKeyword, filterTimeRange, filterStatus, filterMark], () => {
@@ -124,6 +129,8 @@ const pagedSessions = computed(() => {
 
 const filteredTotal = computed(() => sortedSessions.value.length);
 
+const subtitle = computed(() => `${filteredTotal.value} 条会话`);
+
 // Agent 下拉选项（从全量数据生成）
 const agentOptions = computed(() => {
   const ids = new Set(allSessions.value.map(s => s.agent_id).filter(Boolean));
@@ -138,7 +145,6 @@ function handlePin(key: string) {
 function handleHide(key: string) {
   prefsStore.toggleHide(key);
 }
-
 
 // ====== 辅助 ======
 function formatTitle(s: SessionDTO): string {
@@ -187,8 +193,6 @@ function truncate(text: string | null | undefined, max: number): string {
   return text.length > max ? text.slice(0, max) + '…' : text;
 }
 
-
-
 // ====== 生命周期 ======
 onMounted(async () => {
   if (!prefsStore.loaded) {
@@ -207,186 +211,195 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="all-sessions">
-    <!-- 顶部导航 -->
-    <div class="all-sessions-header">
-      <h2 class="page-title">📋 全部会话</h2>
-      <span class="session-count">{{ filteredTotal }} 条会话</span>
-    </div>
+  <div class="sessions-page">
+    <PageHeader title="会话" :subtitle="subtitle">
+      <el-button circle size="small" :disabled="loading" @click="fetchAllSessions()" title="刷新">
+        <el-icon :class="{ spinning: refreshSpin }"><Refresh /></el-icon>
+      </el-button>
+    </PageHeader>
 
-    <!-- 过滤栏 -->
-    <div class="filter-bar">
-      <div class="filter-row">
-        <el-select
-          v-model="filterAgent"
-          placeholder="全部 Agent"
-          clearable
-          class="filter-item filter-agent"
-        >
-          <el-option
-            v-for="id in agentOptions"
-            :key="id"
-            :label="id"
-            :value="id"
-          />
-        </el-select>
+    <div v-loading="loading" class="content-wrapper">
+      <EmptyState
+        v-if="pagedSessions.length === 0 && !loading"
+        icon="🔍"
+        title="没有找到匹配的会话"
+        description="尝试调整过滤条件"
+      />
 
-        <el-input
-          v-model="filterKeyword"
-          placeholder="搜索标题或消息内容…"
-          clearable
-          class="filter-item filter-keyword"
-        >
-          <template #prefix>
-            <el-icon><Search /></el-icon>
-          </template>
-        </el-input>
+      <LoadingSkeleton v-if="pagedSessions.length === 0 && loading" type="list" :rows="6" />
 
-        <el-select
-          v-model="filterTimeRange"
-          placeholder="时间范围"
-          class="filter-item filter-time"
-        >
-          <el-option label="全部" value="all" />
-          <el-option label="今天" value="today" />
-          <el-option label="最近7天" value="7days" />
-          <el-option label="最近30天" value="30days" />
-        </el-select>
-
-        <el-select
-          v-model="filterStatus"
-          placeholder="会话状态"
-          clearable
-          class="filter-item filter-status"
-        >
-          <el-option label="活跃" value="active" />
-          <el-option label="已完成" value="completed" />
-        </el-select>
-
-        <el-radio-group v-model="filterMark" class="filter-item filter-mark" size="small">
-          <el-radio-button value="all">全部</el-radio-button>
-          <el-radio-button value="pinned">已置顶</el-radio-button>
-          <el-radio-button value="hidden">已隐藏</el-radio-button>
-        </el-radio-group>
-      </div>
-    </div>
-
-    <!-- 会话列表 -->
-    <div class="all-sessions-body">
       <template v-if="pagedSessions.length > 0">
-              <div
-                v-for="s in pagedSessions"
-                :key="s.session_key"
-                class="session-card"
+        <!-- 过滤栏 -->
+        <div class="filter-bar">
+          <div class="filter-row">
+            <el-select
+              v-model="filterAgent"
+              placeholder="全部 Agent"
+              clearable
+              class="filter-item filter-agent"
+            >
+              <el-option
+                v-for="id in agentOptions"
+                :key="id"
+                :label="id"
+                :value="id"
+              />
+            </el-select>
 
-              >
-                <div class="session-card-main">
-                  <div class="session-card-header">
-                    <div
-                      class="session-card-avatar"
-                      :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }"
-                    >
-                      <img v-if="s.avatar" :src="`${API_BASE}/resources/avatars/${s.avatar}`" class="avatar-img" />
-                      <template v-else>{{ (s.agent_id || '?').charAt(0).toUpperCase() }}</template>
-                    </div>
-                    <div class="session-card-info">
-                      <div class="session-card-title">{{ formatTitle(s) }}</div>
-                      <div class="session-card-time">
-                        {{ formatTime(s.last_message_at || s.updated_at) }}
-                        <span v-if="s.message_count" class="msg-count">· {{ s.message_count }} 条消息</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="session-card-preview">
-                    {{ truncate(s.last_message, 80) || '暂无消息' }}
-                  </div>
+            <el-input
+              v-model="filterKeyword"
+              placeholder="搜索标题或消息内容…"
+              clearable
+              class="filter-item filter-keyword"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+
+            <el-button
+              :type="showAdvancedFilter ? 'primary' : 'default'"
+              size="default"
+              class="filter-toggle"
+              @click="showAdvancedFilter = !showAdvancedFilter"
+            >
+              {{ showAdvancedFilter ? '收起筛选' : '更多筛选' }}
+            </el-button>
+          </div>
+
+          <!-- 高级筛选（折叠） -->
+          <div v-if="showAdvancedFilter" class="filter-advanced">
+            <el-select
+              v-model="filterTimeRange"
+              placeholder="时间范围"
+              class="filter-item filter-time"
+            >
+              <el-option label="全部" value="all" />
+              <el-option label="今天" value="today" />
+              <el-option label="最近7天" value="7days" />
+              <el-option label="最近30天" value="30days" />
+            </el-select>
+
+            <el-select
+              v-model="filterStatus"
+              placeholder="会话状态"
+              clearable
+              class="filter-item filter-status"
+            >
+              <el-option label="活跃" value="active" />
+              <el-option label="已完成" value="completed" />
+            </el-select>
+
+            <el-radio-group v-model="filterMark" class="filter-item filter-mark" size="small">
+              <el-radio-button value="all">全部</el-radio-button>
+              <el-radio-button value="pinned">已置顶</el-radio-button>
+              <el-radio-button value="hidden">已隐藏</el-radio-button>
+            </el-radio-group>
+          </div>
+        </div>
+
+        <!-- 会话卡片列表 -->
+        <div class="cards-grid">
+          <div
+            v-for="s in pagedSessions"
+            :key="s.session_key"
+            class="session-card"
+          >
+            <div class="session-card-main">
+              <div class="session-card-header">
+                <div
+                  class="session-card-avatar"
+                  :style="{ background: s.avatar ? 'transparent' : agentColor(s.agent_id) }"
+                >
+                  <img v-if="s.avatar" :src="`${API_BASE}/resources/avatars/${s.avatar}`" class="avatar-img" />
+                  <template v-else>{{ (s.agent_id || '?').charAt(0).toUpperCase() }}</template>
                 </div>
-                <div class="session-card-actions" @click.stop>
-                  <button
-                    class="action-btn"
-                    :class="{ active: prefsStore.isPinned(s.session_key) }"
-                    :title="prefsStore.isPinned(s.session_key) ? '取消置顶' : '置顶到侧栏'"
-                    @click="handlePin(s.session_key)"
-                  >
-                    📌
-                  </button>
-                  <button
-                    class="action-btn"
-                    :class="{ active: prefsStore.isHidden(s.session_key) }"
-                    :title="prefsStore.isHidden(s.session_key) ? '取消隐藏' : '隐藏会话'"
-                    @click="handleHide(s.session_key)"
-                  >
-                    🚫
-                  </button>
+                <div class="session-card-info">
+                  <div class="session-card-title">{{ formatTitle(s) }}</div>
+                  <div class="session-card-time">
+                    {{ formatTime(s.last_message_at || s.updated_at) }}
+                    <span v-if="s.message_count" class="msg-count">· {{ s.message_count }} 条消息</span>
+                  </div>
                 </div>
               </div>
+              <div class="session-card-preview">
+                {{ truncate(s.last_message, 80) || '暂无消息' }}
+              </div>
+            </div>
+            <div class="session-card-actions" @click.stop>
+              <button
+                class="action-btn"
+                :class="{ active: prefsStore.isPinned(s.session_key) }"
+                :title="prefsStore.isPinned(s.session_key) ? '取消置顶' : '置顶到侧栏'"
+                @click="handlePin(s.session_key)"
+              >
+                📌
+              </button>
+              <button
+                class="action-btn"
+                :class="{ active: prefsStore.isHidden(s.session_key) }"
+                :title="prefsStore.isHidden(s.session_key) ? '取消隐藏' : '隐藏会话'"
+                @click="handleHide(s.session_key)"
+              >
+                🚫
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分页器 -->
+        <div v-if="filteredTotal > pageSize" class="pagination-area">
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :total="filteredTotal"
+            layout="total, prev, pager, next"
+            small
+          />
+        </div>
       </template>
-
-      <div v-else-if="!loading" class="empty-result">
-        <div class="empty-icon">🔍</div>
-        <div class="empty-text">没有找到匹配的会话</div>
-        <div class="empty-hint">尝试调整过滤条件</div>
-      </div>
-
-      <div v-if="loading" class="loading-indicator">
-        <div class="loading-spinner"></div>
-        <span>加载中...</span>
-      </div>
     </div>
 
-    <!-- 分页器 -->
-    <div v-if="filteredTotal > 0" class="pagination-wrapper">
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="pageSizes"
-        :total="filteredTotal"
-        layout="total, sizes, prev, pager, next, jumper"
-        background
-        small
-      />
-    </div>
+    <AppFooter />
   </div>
 </template>
 
 <style scoped>
-.all-sessions {
+.sessions-page {
+  width: 100%;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
 
-.all-sessions-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  flex-shrink: 0;
+.content-wrapper {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 24px 0;
+  overflow-y: auto;
 }
 
-.page-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-text);
-  margin: 0;
-  margin-left: 4px;
+.content-wrapper::-webkit-scrollbar {
+  width: 6px;
 }
 
-.session-count {
-  font-size: 13px;
-  color: var(--color-text-tertiary, var(--color-text-secondary));
-  margin-left: auto;
+.content-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.content-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(144, 147, 153, 0.3);
+  border-radius: 3px;
+}
+
+.content-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(144, 147, 153, 0.5);
 }
 
 /* 过滤栏 */
 .filter-bar {
-  flex-shrink: 0;
-  padding: 10px 24px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-subtle);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  margin-bottom: 12px;
 }
 
 .filter-row {
@@ -408,6 +421,20 @@ onUnmounted(() => {
   width: 220px;
 }
 
+.filter-toggle {
+  flex-shrink: 0;
+}
+
+.filter-advanced {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
 .filter-time {
   width: 130px;
 }
@@ -420,57 +447,11 @@ onUnmounted(() => {
   flex-shrink: 1;
 }
 
-/* 会话列表 */
-.all-sessions-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px 24px;
+/* 会话卡片列表 */
+.cards-grid {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.all-sessions-body::-webkit-scrollbar {
-  width: 6px;
-}
-
-.all-sessions-body::-webkit-thumb {
-  background: rgba(144, 147, 153, 0.2);
-  border-radius: 3px;
-}
-
-/* 空结果 */
-.empty-result {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80px 20px;
-  color: var(--color-text-tertiary, var(--color-text-secondary));
-}
-
-.empty-icon {
-  font-size: 56px;
-  margin-bottom: 16px;
-  opacity: 0.6;
-}
-
-.empty-text {
-  font-size: 16px;
-  font-weight: 500;
-  margin-bottom: 4px;
-  color: var(--color-text-secondary);
-}
-
-.empty-hint {
-  font-size: 13px;
-  opacity: 0.7;
-  margin-top: 8px;
-}
-
-/* 会话卡片 */
-.all-sessions-body > .session-card + .session-card {
-  margin-top: 6px;
 }
 
 .session-card {
@@ -480,15 +461,14 @@ onUnmounted(() => {
   padding: 12px 16px;
   border: 1px solid var(--color-border-subtle);
   border-left: 3px solid transparent;
-  border-radius: var(--radius, 8px);
+  border-radius: var(--el-border-radius-base);
   transition: all 0.2s ease;
 }
 
 .session-card:hover {
   border-color: var(--color-border);
   border-left-color: transparent;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .session-card-main {
@@ -540,7 +520,7 @@ onUnmounted(() => {
 
 .session-card-time {
   font-size: 12px;
-  color: var(--color-text-tertiary, var(--color-text-secondary));
+  color: var(--color-text-tertiary);
   margin-top: 3px;
 }
 
@@ -586,47 +566,30 @@ onUnmounted(() => {
 }
 
 .action-btn:hover {
-  background: var(--el-fill-color-light);
+  background: var(--color-bg-subtle);
 }
 
 .action-btn.active {
   opacity: 1;
-  background: var(--el-fill-color-light);
-}
-
-/* 加载指示 */
-.loading-indicator {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 40px 20px;
-  font-size: 13px;
-  color: var(--color-text-tertiary, var(--color-text-secondary));
-}
-
-.loading-spinner {
-  width: 24px;
-  height: 24px;
-  border: 3px solid var(--color-border);
-  border-top-color: var(--color-accent-blue);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+  background: var(--color-bg-subtle);
 }
 
 /* 分页器 */
-.pagination-wrapper {
-  flex-shrink: 0;
+.pagination-area {
   display: flex;
   justify-content: center;
-  padding: 10px 24px 14px;
-  border-top: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-subtle);
+  padding: 16px 0;
+}
+
+/* 刷新按钮旋转动画 */
+:deep(.spinning) {
+  animation: spin 0.5s linear;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 768px) {
