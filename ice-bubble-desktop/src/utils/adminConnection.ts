@@ -4,7 +4,7 @@
  */
 
 import { isValidUrl } from './validators';
-import { getAdminUrl, setAdminUrl, getAdminAuthToken } from '../config';
+import { API_BASE, setAdminUrl, getAdminAuthToken } from '../config';
 
 // ============ 类型定义 ============
 
@@ -34,7 +34,6 @@ const DEFAULT_ADMIN_URL = 'http://localhost:13000';
 
 // 直接访问 Admin API（不再通过本地代理）
 async function fetchAdminApi<T>(path: string, options?: RequestInit): Promise<T> {
-  const adminUrl = getAdminUrl();
   const authToken = getAdminAuthToken();
   const headers: Record<string, string> = {
     ...(options?.headers as Record<string, string> || {}),
@@ -43,7 +42,8 @@ async function fetchAdminApi<T>(path: string, options?: RequestInit): Promise<T>
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(`${adminUrl}/api${path}`, {
+  // API_BASE: 开发环境 '/api'（走 Vite proxy），生产环境完整 URL
+  const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers,
   });

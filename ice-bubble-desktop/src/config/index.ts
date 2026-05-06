@@ -1,6 +1,7 @@
 /**
  * 客户端配置
- * 纯前端直连 Admin，无代理层
+ * 开发环境：API_BASE = '/api'（走 Vite proxy，避免 CORS 和 HTTPS 升级问题）
+ * 生产环境（Tauri）：API_BASE = adminUrl + '/api'（直连 Admin）
  */
 
 const STORAGE_KEY = 'ice-bubble-admin-config';
@@ -17,11 +18,26 @@ function loadAdminConfig(): { url: string; authToken?: string } {
   return { url: DEFAULT_ADMIN_URL };
 }
 
+/** 是否为开发环境（Vite dev server） */
+function isDev(): boolean {
+  return import.meta.env?.DEV === true;
+}
+
 /**
- * API_BASE: Admin 完整 API 地址，如 `http://192.168.1.100:13000/api`
- * 使用 `export let` 实现 ESM live binding，其他模块 import 后能拿到最新值
+ * API_BASE: API 请求基础路径
+ *
+ * 开发环境 → '/api'（相对路径，走 Vite proxy → Admin）
+ * 生产环境 → 'http://xxx:13000/api'（绝对路径，直连 Admin）
+ *
+ * 使用 `export let` 实现 ESM live binding，setAdminUrl 后其他模块自动拿到新值
  */
-export let API_BASE = loadAdminConfig().url.replace(/\/+$/, '') + '/api';
+function resolveApiBase(): string {
+  if (isDev()) return '/api';
+  const url = loadAdminConfig().url.replace(/\/+$/, '');
+  return url + '/api';
+}
+
+export let API_BASE = resolveApiBase();
 
 /** 获取当前 Admin URL（不含 /api 后缀） */
 export function getAdminUrl(): string {
@@ -31,7 +47,10 @@ export function getAdminUrl(): string {
 /** 设置 Admin URL，更新 localStorage 和 API_BASE */
 export function setAdminUrl(url: string): void {
   const cleaned = url.replace(/\/+$/, '');
-  API_BASE = cleaned + '/api';
+  // 开发环境 API_BASE 不变（始终走 Vite proxy）
+  if (!isDev()) {
+    API_BASE = cleaned + '/api';
+  }
   // 保留已有 authToken
   const existing = loadAdminConfig();
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
