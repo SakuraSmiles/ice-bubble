@@ -4,24 +4,21 @@ import { APP_VERSION } from '../version';
 
 <template>
   <footer class="copyright">
-    <div>IceBubble © 2026 · SakuraSmiles</div>
-    <div>version : {{ APP_VERSION }}</div>
+    <span>IceBubble {{ APP_VERSION }} © 2026 SakuraSmiles</span>
   </footer>
 </template>
 
 <style scoped>
 .copyright {
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-text-secondary);
-  padding: 20px 0;
+  padding: 8px 0;
   margin-top: auto;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
+  line-height: 1;
   font-family: var(--font-eurostile), var(--font-fallback);
 }
 
-.copyright div {
-  font-family: inherit;
-  line-height: 1.8;
-}
+
 </style>
