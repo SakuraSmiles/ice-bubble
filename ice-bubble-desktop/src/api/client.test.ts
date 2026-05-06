@@ -42,7 +42,7 @@ describe('API Client - fetchJson 底层能力', () => {
 
     const result = await (api as any).getStats();
     expect(result).toEqual(fakeData);
-    expect(mockFetch).toHaveBeenCalledWith('/api/stats', expect.objectContaining({ credentials: 'include' }));
+    expect(mockFetch).toHaveBeenCalledWith('/api/stats', expect.not.objectContaining({ credentials: 'include' }));
     expect(mockRecord).toHaveBeenCalledWith('/stats', 'GET', expect.any(Number), true);
   });
 
@@ -174,7 +174,7 @@ describe('API.testModuleConnection', () => {
     expect(result.success).toBe(true);
     expect(mockFetch).toHaveBeenCalledWith(
       '/api/modules/test-connection',
-      expect.objectContaining({ method: 'POST', credentials: 'include' })
+      expect.objectContaining({ method: 'POST' })
     );
   });
 

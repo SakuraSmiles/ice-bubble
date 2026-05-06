@@ -270,7 +270,7 @@ export function useChat(
       // 使用 HTTP 代理获取 Gateway 历史消息（不依赖 WS 连接）
       const requestLimit = Math.max(limit * 5, 500)
       const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(sessionKeyValue)}&limit=${requestLimit}`
-      const historyRes = await fetch(historyUrl, { credentials: 'include' })
+      const historyRes = await fetch(historyUrl)
       if (historyRes.ok) {
         const result = (await historyRes.json()) as any
         const msgs = result?.messages ?? result?.history ?? result ?? []

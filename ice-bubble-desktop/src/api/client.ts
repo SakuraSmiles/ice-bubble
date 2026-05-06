@@ -283,11 +283,9 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
     }
 
     // API_BASE = '/api'（相对路径），请求通过 Vite dev server 或生产环境同源代理转发
-    // credentials: 'include' 确保浏览器发送 cookie（用于会话认证）
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
       headers,
-      credentials: 'include'
     });
     const latency = Math.round(performance.now() - start);
     if (!response.ok) {

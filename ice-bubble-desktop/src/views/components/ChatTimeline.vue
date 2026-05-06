@@ -130,7 +130,7 @@ async function loadLatest() {
     if (props.sessionKey) {
       try {
         const historyUrl = `/api/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=10`;
-        const historyRes = await fetch(historyUrl, { credentials: 'include' });
+        const historyRes = await fetch(historyUrl);
         if (historyRes.ok) {
           const result = await historyRes.json() as any;
           const rawMsgs = result?.messages ?? result?.history ?? result ?? [];
@@ -154,7 +154,7 @@ async function loadLatest() {
       ? `/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(new Date(new Date(gatewayBoundary).getTime() - 1).toISOString())}&${filters.value}`
       : `/api/messages/timeline?limit=${PAGE_SIZE}&${filters.value}`;
 
-    const res = await fetch(adminUrl, { credentials: 'include' });
+    const res = await fetch(adminUrl);
     if (res.ok) {
       const data: TimelineResponse = await res.json();
       adminMsgs = (data.messages || []).map(m => ({
@@ -209,7 +209,7 @@ async function loadMore() {
       beforeTs = new Date(new Date(oldest).getTime() - 1).toISOString();
     }
     const url = `/api/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeTs)}&${filters.value}`;
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await fetch(url);
     if (!res.ok) { hasMore.value = false; return; }
     const data: TimelineResponse = await res.json();
     if (!Array.isArray(data.messages) || data.messages.length === 0) {
@@ -278,7 +278,7 @@ async function fillScrollable() {
 
     // 使用 -1ms 而非 +1ms：与 loadMore 对齐
     const beforeCursor = new Date(new Date(oldest).getTime() - 1).toISOString();
-    const res = await fetch(`${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`, { credentials: 'include' });
+    const res = await fetch(`${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`);
     if (!res.ok) break;
     const data: TimelineResponse = await res.json();
     if (!Array.isArray(data.messages) || data.messages.length === 0) {
@@ -870,7 +870,7 @@ async function fetchAgentAvatar() {
   try {
     const agentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
     if (!agentId) return;
-    const res = await fetch(`${API_BASE}/agents`, { credentials: 'include' });
+    const res = await fetch(`${API_BASE}/agents`);
     if (!res.ok) return;
     const data = await res.json() as any;
     const agents: any[] = data?.agents ?? [];

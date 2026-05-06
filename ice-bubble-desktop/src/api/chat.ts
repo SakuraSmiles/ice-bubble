@@ -66,7 +66,6 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
         'Content-Type': 'application/json',
         ...getAuthHeaders(),
       },
-      credentials: 'include',
       body: JSON.stringify(body),
     })
     const latency = Math.round(performance.now() - start)
