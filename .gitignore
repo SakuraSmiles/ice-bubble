@@ -29,6 +29,12 @@ yarn-debug.log*
 yarn-error.log*
 logs/
 
+# Drawio source files
+*.drawio.svg
+
+# Avatar images (generated at runtime)
+data/avatars/*.png
+
 # Test
 coverage/
 
