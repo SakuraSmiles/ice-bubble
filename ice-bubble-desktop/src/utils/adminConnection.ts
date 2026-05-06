@@ -43,7 +43,7 @@ async function fetchAdminApi<T>(path: string, options?: RequestInit): Promise<T>
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(`${adminUrl}${path}`, {
+  const response = await fetch(`${adminUrl}/api${path}`, {
     ...options,
     headers,
   });

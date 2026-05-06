@@ -87,6 +87,8 @@ async function testConnection() {
 }
 
 function handleSkip() {
+  // 标记已完成 Setup，避免守卫循环跳转
+  localStorage.setItem('ice-bubble-setup-done', 'true');
   router.replace('/');
 }
 </script>
