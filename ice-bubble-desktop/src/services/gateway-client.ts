@@ -44,7 +44,9 @@ interface PendingRequest {
 /** 事件回调类型 */
 type EventCallback = (...args: unknown[]) => void
 
-// ============ 常量 ============
+import { getAdminUrl } from '../config'
+
+// ============ 常量 ===========
 
 /** 请求超时时间（毫秒） */
 const REQUEST_TIMEOUT_MS = 30_000
@@ -104,8 +106,13 @@ export class GatewayClient {
     }
 
     this.intentionalClose = false
-    const wsHost = window.location.host;
-    const url = `ws://${wsHost}/ws`
+    let url: string;
+    if (import.meta.env?.DEV) {
+      url = `ws://${window.location.host}/ws`;
+    } else {
+      const adminUrl = getAdminUrl();
+      url = adminUrl.replace(/^http/, 'ws') + '/ws';
+    }
 
     return new Promise<void>((resolve, reject) => {
       try {
