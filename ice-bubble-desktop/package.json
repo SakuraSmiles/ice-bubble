@@ -5,14 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:server": "tsx src/server/index.ts",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
-    "build": "vue-tsc --noEmit && vite build && npm run build:server",
-    "start": "tsx src/server/index.ts",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:server": "esbuild src/server/index.ts --platform=node --format=cjs --bundle --outfile=dist-server/index.cjs --drop:console --external:fsevents --banner:js=\"const __importMetaUrl=require('url').pathToFileURL(__filename).href;\" --define:import.meta.url=__importMetaUrl",
-    "pkg:server": "node scripts/build-sidecar.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -29,32 +24,21 @@
     "@fontsource/montserrat": "^5.2.8",
     "@fontsource/noto-sans-sc": "^5.2.9",
     "@fontsource/orbitron": "^5.2.8",
-    "cors": "^2.8.6",
     "dompurify": "^3.4.1",
-    "dotenv": "^17.4.1",
     "element-plus": "^2.13.6",
-    "express": "^5.2.1",
     "highlight.js": "^11.11.1",
-    "http-proxy-middleware": "^3.0.5",
     "lucide-vue-next": "^1.0.0",
     "marked": "^18.0.2",
     "pinia": "^3.0.4",
     "vue": "^3.5.0",
-    "vue-router": "^4.6.4",
-    "ws": "^8.20.0"
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/cli": "^2.0.0",
-    "@types/cors": "^2.8.19",
     "@types/dompurify": "^3.0.5",
-    "@types/express": "^5.0.6",
-    "@types/http-proxy-middleware": "^0.19.3",
-    "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^5.0.0",
     "@vitest/coverage-v8": "^4.1.5",
-    "@yao-pkg/pkg": "^6.19.0",
-    "concurrently": "^9.2.1",
     "happy-dom": "^20.9.0",
     "tsx": "^4.21.0",
     "typescript": "^5.5.0",
@@ -64,15 +48,5 @@
   },
   "vitest": {
     "config": "./vitest.config.ts"
-  },
-  "pkg": {
-    "assets": [
-      "dist-server/*",
-      "config/*"
-    ],
-    "targets": [
-      "node18-win-x64"
-    ],
-    "outputPath": "dist-server"
   }
 }
