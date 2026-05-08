@@ -376,7 +376,7 @@ onUnmounted(() => {
 .content-wrapper {
   flex: 1;
   min-height: 0;
-  padding: 8px 24px 0;
+  padding: 8px 24px 12px;
   overflow-y: auto;
 }
 

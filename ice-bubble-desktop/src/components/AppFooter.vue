@@ -13,9 +13,8 @@ import { APP_VERSION } from '../version';
   text-align: center;
   font-size: 11px;
   color: var(--color-text-secondary);
-  padding: 8px 0;
+  padding: 12px 0;
   margin-top: auto;
-  margin-bottom: 6px;
   line-height: 1;
   font-family: var(--font-eurostile), var(--font-fallback);
 }
