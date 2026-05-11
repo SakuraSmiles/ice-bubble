@@ -140,6 +140,7 @@ watch(() => props.workspacePath, () => {
 
 async function toggleExpand(node: TreeNode) {
   if (node.type !== 'directory') return
+  if (node.loading) return // 防重入：加载中不允许再次触发
 
   if (node.expanded) {
     node.expanded = false
@@ -372,12 +373,12 @@ const flatList = computed<FlatNode[]>(() => {
 .loading-text,
 .empty-text {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .error-text {
   font-size: 12px;
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 
 /* ====== 节点列表 ====== */
@@ -398,7 +399,7 @@ const flatList = computed<FlatNode[]>(() => {
 }
 
 .tree-node:hover {
-  background: #f0f3f6;
+  background: var(--el-fill-color-lighter);
 }
 
 /* ====== 缩进 + 树状连接线 ====== */
@@ -423,7 +424,7 @@ const flatList = computed<FlatNode[]>(() => {
   top: 0;
   bottom: 0;
   width: 1px;
-  background: #e4e7ed;
+  background: var(--el-border-color-light);
   pointer-events: none;
 }
 
@@ -445,7 +446,7 @@ const flatList = computed<FlatNode[]>(() => {
   top: 13px; /* 26px 行高的一半，与文本行中线对齐 */
   width: 8px;
   height: 1px;
-  background: #e4e7ed;
+  background: var(--el-border-color-light);
   pointer-events: none;
 }
 
@@ -466,7 +467,7 @@ const flatList = computed<FlatNode[]>(() => {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   transition: transform 0.1s, color 0.1s;
   cursor: pointer;
   width: 16px;
@@ -475,7 +476,7 @@ const flatList = computed<FlatNode[]>(() => {
 }
 
 .node-arrow:hover {
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 
 .node-arrow.expanded {
@@ -487,25 +488,25 @@ const flatList = computed<FlatNode[]>(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 /* ====== 文件图标 ====== */
 .node-icon {
   flex-shrink: 0;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-right: 4px;
   transition: color 0.1s;
 }
 
 .icon-folder-opened {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 /* ====== 文件名 ====== */
 .node-name {
   font-size: 13px;
-  color: #303133;
+  color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

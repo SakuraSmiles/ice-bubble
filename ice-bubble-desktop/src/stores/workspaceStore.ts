@@ -65,8 +65,22 @@ export const useWorkspaceStore = defineStore('workspace', {
   },
 
   actions: {
-    /** 添加一个新工作空间 */
-    addWorkspace(name: string, path: string): WorkspaceConfig {
+    /** 添加一个新工作空间（先校验路径有效性） */
+    async addWorkspace(name: string, path: string): Promise<WorkspaceConfig> {
+      // 调用后端 /api/workspace/tree 校验路径是否存在且为目录
+      try {
+        const url = `/api/workspace/tree?path=${encodeURIComponent(path.trim())}&depth=0`
+        const res = await fetch(url)
+        if (!res.ok) {
+          if (res.status === 400 || res.status === 404) {
+            throw new Error('路径无效或不存在')
+          }
+          throw new Error(`请求失败 (${res.status})`)
+        }
+      } catch (e: any) {
+        throw new Error(e.message || '路径校验失败')
+      }
+
       const ws: WorkspaceConfig = {
         id: generateId(),
         name: name.trim(),
@@ -108,3 +122,22 @@ export const useWorkspaceStore = defineStore('workspace', {
     },
   },
 })
+
+// 监听其他标签页的 storage 变化，实现多标签页同步
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY) {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        try {
+          const data = JSON.parse(stored)
+          const store = useWorkspaceStore()
+          store.$patch({
+            workspaces: Array.isArray(data.workspaces) ? data.workspaces : [],
+            currentWorkspaceId: data.currentWorkspaceId ?? null,
+          })
+        } catch { /* ignore */ }
+      }
+    }
+  })
+}

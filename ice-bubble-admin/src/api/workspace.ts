@@ -15,6 +15,37 @@ import {
   scanDirectories,
 } from '../services/workspace-service.js';
 
+/**
+ * 公共路径解析与校验
+ * @returns 校验通过返回 safePath，失败时已发送响应并返回 null
+ */
+function resolveAndValidatePath(
+  req: Request,
+  res: Response,
+  param: 'path' | 'base' = 'path',
+): string | null {
+  const rawPath = req.query[param] ? String(req.query[param]) : '';
+  if (!rawPath) {
+    res.status(400).json({ error: `缺少 ${param} 参数` });
+    return null;
+  }
+  const safePath = resolveSafePath(rawPath);
+  if (!safePath) {
+    res.status(400).json({ error: '路径不合法，不允许目录穿越' });
+    return null;
+  }
+  const validation = validateDirectory(safePath);
+  if (validation === 'not_found') {
+    res.status(404).json({ error: '路径不存在', path: safePath });
+    return null;
+  }
+  if (validation === 'not_directory') {
+    res.status(400).json({ error: '路径不是目录', path: safePath });
+    return null;
+  }
+  return safePath;
+}
+
 export function createWorkspaceRouter(): Router {
   const router = Router();
 
@@ -22,29 +53,9 @@ export function createWorkspaceRouter(): Router {
    * GET /api/workspace/tree?path=xxx
    * 获取目录树（含 git 状态）
    */
-  router.get('/workspace/tree', (req: Request, res: Response) => {
-    const rawPath = req.query.path ? String(req.query.path) : '';
-
-    if (!rawPath) {
-      res.status(400).json({ error: '缺少 path 参数' });
-      return;
-    }
-
-    const safePath = resolveSafePath(rawPath);
-    if (!safePath) {
-      res.status(400).json({ error: '路径不合法，不允许目录穿越' });
-      return;
-    }
-
-    const validation = validateDirectory(safePath);
-    if (validation === 'not_found') {
-      res.status(404).json({ error: '路径不存在', path: safePath });
-      return;
-    }
-    if (validation === 'not_directory') {
-      res.status(400).json({ error: '路径不是目录', path: safePath });
-      return;
-    }
+  router.get('/workspace/tree', async (req: Request, res: Response) => {
+    const safePath = resolveAndValidatePath(req, res, 'path');
+    if (!safePath) return;
 
     const maxDepth = req.query.depth ? Math.min(Number(req.query.depth), 10) : 1;
 
@@ -61,29 +72,9 @@ export function createWorkspaceRouter(): Router {
    * GET /api/workspace/git-status?path=xxx
    * 获取 git 状态统计
    */
-  router.get('/workspace/git-status', (req: Request, res: Response) => {
-    const rawPath = req.query.path ? String(req.query.path) : '';
-
-    if (!rawPath) {
-      res.status(400).json({ error: '缺少 path 参数' });
-      return;
-    }
-
-    const safePath = resolveSafePath(rawPath);
-    if (!safePath) {
-      res.status(400).json({ error: '路径不合法，不允许目录穿越' });
-      return;
-    }
-
-    const validation = validateDirectory(safePath);
-    if (validation === 'not_found') {
-      res.status(404).json({ error: '路径不存在', path: safePath });
-      return;
-    }
-    if (validation === 'not_directory') {
-      res.status(400).json({ error: '路径不是目录', path: safePath });
-      return;
-    }
+  router.get('/workspace/git-status', async (req: Request, res: Response) => {
+    const safePath = resolveAndValidatePath(req, res, 'path');
+    if (!safePath) return;
 
     try {
       const summary = getGitStatusSummary(safePath);
@@ -99,28 +90,8 @@ export function createWorkspaceRouter(): Router {
    * 扫描一级子目录
    */
   router.get('/workspace/scan', (req: Request, res: Response) => {
-    const rawBase = req.query.base ? String(req.query.base) : '';
-
-    if (!rawBase) {
-      res.status(400).json({ error: '缺少 base 参数' });
-      return;
-    }
-
-    const safePath = resolveSafePath(rawBase);
-    if (!safePath) {
-      res.status(400).json({ error: '路径不合法，不允许目录穿越' });
-      return;
-    }
-
-    const validation = validateDirectory(safePath);
-    if (validation === 'not_found') {
-      res.status(404).json({ error: '路径不存在', path: safePath });
-      return;
-    }
-    if (validation === 'not_directory') {
-      res.status(400).json({ error: '路径不是目录', path: safePath });
-      return;
-    }
+    const safePath = resolveAndValidatePath(req, res, 'base');
+    if (!safePath) return;
 
     try {
       const result = scanDirectories(safePath);
