@@ -2,6 +2,7 @@
 import { provide, ref, onMounted, onUnmounted } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { gatewayClient } from '@/services/gateway-client';
+import WorkspacePanel from '@/components/WorkspacePanel.vue';
 
 const route = useRoute();
 
@@ -40,6 +41,36 @@ onUnmounted(() => {
   gatewayClient.disconnect();
 });
 
+// ====== 左侧边栏展开/收起 + 拖拽 ======
+const sidebarWidth = ref(200)
+const sidebarCollapsed = ref(false)
+const SIDEBAR_MIN = 120
+const SIDEBAR_MAX = 320
+const isDraggingSidebar = ref(false)
+
+function startDragSidebar(e: MouseEvent) {
+  e.preventDefault()
+  isDraggingSidebar.value = true
+  const startX = e.clientX
+  const startWidth = sidebarWidth.value
+
+  const onMove = (ev: MouseEvent) => {
+    const delta = ev.clientX - startX
+    sidebarWidth.value = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startWidth + delta))
+  }
+  const onUp = () => {
+    isDraggingSidebar.value = false
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+  }
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
 const menuItems = [
   { path: '/', label: '工作台', match: (p: string) => p === '/' },
   { path: '/chat', label: '聊天', match: (p: string) => p === '/chat' || p.startsWith('/workspace/') },
@@ -51,7 +82,12 @@ const menuItems = [
 
 <template>
   <div class="layout">
-    <aside class="sidebar">
+    <aside
+      class="sidebar"
+      :class="{ 'no-transition': isDraggingSidebar }"
+      v-show="!sidebarCollapsed"
+      :style="{ width: sidebarWidth + 'px', '--sidebar-width': sidebarWidth + 'px' }"
+    >
       <div class="sidebar-header">
         <div class="logo">IceBubble</div>
         <div class="subtitle">DESKTOP</div>
@@ -87,11 +123,33 @@ const menuItems = [
           <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
       </nav>
+      <!-- 右边缘拖拽手柄 -->
+      <div
+        class="resize-handle resize-handle-right"
+        :class="{ active: isDraggingSidebar }"
+        @mousedown="startDragSidebar"
+      />
     </aside>
+
+    <!-- 左侧：居中切换按钮（标签页风格） -->
+    <div
+      class="sidebar-toggle toggle-left"
+      :class="[
+        sidebarCollapsed ? 'toggle-expand' : 'toggle-collapse',
+        { 'no-transition': isDraggingSidebar }
+      ]"
+      :style="!sidebarCollapsed ? { '--sidebar-width': sidebarWidth + 'px' } : {}"
+      @click="sidebarCollapsed = !sidebarCollapsed"
+      :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+    >
+      <span class="toggle-arrow">{{ sidebarCollapsed ? '▸' : '◂' }}</span>
+    </div>
 
     <main class="main-content">
       <RouterView />
     </main>
+
+    <WorkspacePanel />
   </div>
 </template>
 
@@ -107,13 +165,103 @@ const menuItems = [
 .sidebar {
   width: 200px;
   background: var(--color-bg-canvas);
-  border-right: none;
+  border-right: 1px solid var(--color-border-subtle);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   height: 100vh;
   overflow: hidden;
-  box-shadow: 1px 0 0 var(--color-border-subtle);
+  box-shadow: none;
+  position: relative;
+  transition: width 0.2s ease;
+}
+
+/* 拖拽手柄 */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  z-index: 10;
+  cursor: col-resize;
+  transition: background 0.15s;
+}
+
+.resize-handle:hover {
+  background: transparent;
+}
+
+.resize-handle-right:hover {
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
+}
+
+.resize-handle-left:hover {
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.1);
+}
+
+.resize-handle-right {
+  right: -2px;
+}
+
+.resize-handle-left {
+  left: -2px;
+}
+
+/* ====== 侧栏切换按钮（标签页风格） ====== */
+.sidebar-toggle {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 20;
+  background: var(--color-bg-canvas);
+  transition: all 0.15s ease;
+}
+
+.sidebar-toggle:hover {
+  background: var(--el-fill-color-light);
+}
+
+/* 左侧方向 */
+.toggle-left {
+  border: 1px solid var(--color-border-subtle);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  box-shadow: 1px 0 3px rgba(0, 0, 0, 0.05);
+}
+
+.toggle-left:hover {
+  box-shadow: 1px 0 6px rgba(0, 0, 0, 0.1);
+}
+
+/* 展开（侧栏隐藏，按钮贴左边缘） */
+.toggle-left.toggle-expand {
+  left: 0;
+}
+
+/* 收起（侧栏显示，按钮在侧栏右边缘） */
+.toggle-left.toggle-collapse {
+  left: calc(var(--sidebar-width, 200px) - 1px);
+  transition: left 0.2s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.toggle-arrow {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s;
+}
+
+.sidebar-toggle:hover .toggle-arrow {
+  color: var(--color-text);
+}
+
+.no-transition {
+  transition: none !important;
 }
 
 .sidebar-header {
@@ -203,5 +351,7 @@ const menuItems = [
   flex-direction: column;
   background: var(--color-bg);
   overflow: hidden;
+  padding-left: 4px;
+  padding-right: 4px;
 }
 </style>
