@@ -6,6 +6,8 @@
  * @module ModuleScheduler
  */
 
+import { VERSION as _ADMIN_VERSION } from '../index.js';
+
 export interface ModuleEndpointConfig {
   moduleKey: string;
   name: string;
@@ -158,9 +160,12 @@ export class ModuleScheduler {
     });
 
     // admin 也获取 version
-    let adminVersion: string | null = '1.0.0';
+    let adminVersion: string | null = null;
     if (this.repository) {
-      adminVersion = this.repository.getModuleVersion('admin') || '1.0.0';
+      adminVersion = this.repository.getModuleVersion('admin');
+    }
+    if (!adminVersion) {
+      adminVersion = _ADMIN_VERSION;
     }
     adminConfig.version = adminVersion ?? undefined;
 
@@ -259,7 +264,7 @@ export class ModuleScheduler {
     return {
       moduleKey: 'admin',
       moduleType: 'admin',
-      version: '1.0.0',
+      version: _ADMIN_VERSION,
       status: 'running',
       runtime: {
         startTime: this.adminStartTime.toISOString(),

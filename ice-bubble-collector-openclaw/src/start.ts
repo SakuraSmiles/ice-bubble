@@ -8,13 +8,18 @@
  */
 
 import 'dotenv/config';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { loadConfig } from './utils/config-loader.js';
 import { FileCollector } from './collectors/FileCollector.js';
 import { Logger } from './utils/logger.js';
 
 const startLogger = new Logger('Start');
 
-export const VERSION = '1.0.0';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const _rootPkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf-8'));
+export const VERSION: string = _rootPkg.version;
 
 export const startCollector = start;
 

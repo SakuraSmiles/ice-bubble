@@ -38,9 +38,12 @@ import { createWorkspaceRouter } from './api/workspace.js';
 config();
 
 /**
- * 模块版本信息
+ * 模块版本信息 - 从根 package.json 动态读取
  */
-export const VERSION = '1.0.0';
+import { readFileSync as _readFileSync } from 'fs';
+import { join as _join } from 'path';
+const _rootPkg = JSON.parse(_readFileSync(_join(__dirname, '..', '..', 'package.json'), 'utf-8'));
+export const VERSION: string = _rootPkg.version;
 
 // 读取配置 - 使用相对路径
 const configPath = './config/config.json';

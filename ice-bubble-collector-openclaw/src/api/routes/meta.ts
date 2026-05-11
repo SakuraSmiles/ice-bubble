@@ -12,6 +12,8 @@
 
 import { Router, type Request, type Response } from 'express';
 import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { Logger } from '../../utils/logger.js';
 import { getConfig } from '../../utils/config-loader.js';
 import type { FileCollector } from '../../collectors/FileCollector.js';
@@ -22,6 +24,8 @@ import type {
 } from '../types.js';
 
 const metaLogger = new Logger('MetaRoute');
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** 模块固定标识 */
 const MODULE_KEY = 'collector-openclaw';
@@ -42,8 +46,8 @@ export function markStartTime(): void {
  */
 function getModuleVersion(): string {
     try {
-        const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'));
-        return packageJson.version || '1.0.0';
+        const packageJson = JSON.parse(readFileSync(join(__dirname, '../../../../package.json'), 'utf-8'));
+        return packageJson.version || 'unknown';
     } catch {
         return 'unknown';
     }

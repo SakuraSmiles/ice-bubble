@@ -60,7 +60,7 @@ export function createWorkspaceRouter(): Router {
     const maxDepth = req.query.depth ? Math.min(Number(req.query.depth), 10) : 1;
 
     try {
-      const tree = getDirectoryTree(safePath, maxDepth);
+      const tree = await getDirectoryTree(safePath, maxDepth);
       res.json(tree);
     } catch (err: any) {
       logger.error('[WorkspaceAPI] /tree error:', err);
@@ -77,7 +77,7 @@ export function createWorkspaceRouter(): Router {
     if (!safePath) return;
 
     try {
-      const summary = getGitStatusSummary(safePath);
+      const summary = await getGitStatusSummary(safePath);
       res.json(summary);
     } catch (err: any) {
       logger.error('[WorkspaceAPI] /git-status error:', err);

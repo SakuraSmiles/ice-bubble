@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import pkg from './package.json' assert { type: 'json' };
 
 const projectRoot = process.cwd();
 
@@ -73,6 +74,9 @@ const apiProxy = {
 
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version)
+  },
   server: {
     port: VITE_PORT,
     proxy: apiProxy
