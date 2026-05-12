@@ -5,6 +5,7 @@ import AppFooter from '../components/AppFooter.vue';
 import EmptyState from '../components/EmptyState.vue';
 import { formatTime } from '../utils/format';
 import { API_BASE } from '../config';
+import { authFetch } from '../api/client';
 
 interface SubagentTask {
   session_key: string;
@@ -29,7 +30,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 async function fetchTasks() {
   loading.value = true;
   try {
-    const res = await fetch(`${API_BASE}/subagent-tasks?limit=100`);
+    const res = await authFetch(`${API_BASE}/subagent-tasks?limit=100`);
     if (!res.ok) return;
     const data = await res.json();
     tasks.value = data.tasks ?? [];

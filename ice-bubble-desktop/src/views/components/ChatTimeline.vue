@@ -4,6 +4,7 @@ import { Loading } from '@element-plus/icons-vue';
 import MarkdownContent from '../../components/MarkdownContent.vue';
 import { gatewayClient } from '@/services/gateway-client';
 import { API_BASE } from '../../config';
+import { authFetch } from '../../api/client';
 
 // =========== Props ===========
 const props = withDefaults(defineProps<{
@@ -131,7 +132,7 @@ async function loadLatest() {
     if (props.sessionKey) {
       try {
         const historyUrl = `${API_BASE}/chat/history?sessionKey=${encodeURIComponent(props.sessionKey)}&limit=10`;
-        const historyRes = await fetch(historyUrl);
+        const historyRes = await authFetch(historyUrl);
         if (historyRes.ok) {
           const result = await historyRes.json() as any;
           const rawMsgs = result?.messages ?? result?.history ?? result ?? [];
@@ -155,7 +156,7 @@ async function loadLatest() {
       ? `${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(new Date(new Date(gatewayBoundary).getTime() - 1).toISOString())}&${filters.value}`
       : `${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&${filters.value}`;
 
-    const res = await fetch(adminUrl);
+    const res = await authFetch(adminUrl);
     if (res.ok) {
       const data: TimelineResponse = await res.json();
       adminMsgs = (data.messages || []).map(m => ({
@@ -210,7 +211,7 @@ async function loadMore() {
       beforeTs = new Date(new Date(oldest).getTime() - 1).toISOString();
     }
     const url = `${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeTs)}&${filters.value}`;
-    const res = await fetch(url);
+    const res = await authFetch(url);
     if (!res.ok) { hasMore.value = false; return; }
     const data: TimelineResponse = await res.json();
     if (!Array.isArray(data.messages) || data.messages.length === 0) {
@@ -279,7 +280,7 @@ async function fillScrollable() {
 
     // 使用 -1ms 而非 +1ms：与 loadMore 对齐
     const beforeCursor = new Date(new Date(oldest).getTime() - 1).toISOString();
-    const res = await fetch(`${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`);
+    const res = await authFetch(`${API_BASE}/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`);
     if (!res.ok) break;
     const data: TimelineResponse = await res.json();
     if (!Array.isArray(data.messages) || data.messages.length === 0) {
@@ -871,7 +872,7 @@ async function fetchAgentAvatar() {
   try {
     const agentId = props.sessionKey?.match(/^agent:([^:]+)/)?.[1];
     if (!agentId) return;
-    const res = await fetch(`${API_BASE}/agents`);
+    const res = await authFetch(`${API_BASE}/agents`);
     if (!res.ok) return;
     const data = await res.json() as any;
     const agents: any[] = data?.agents ?? [];

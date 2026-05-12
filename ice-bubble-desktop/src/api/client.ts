@@ -283,6 +283,21 @@ export interface SettingsDTO {
 
 // ============ 内部工具 ============
 
+/**
+ * 带 Authorization header 的 fetch 封装
+ * 用于替换 view 层中直接调用原生 fetch 的场景
+ */
+export function authFetch(url: string, options?: RequestInit): Promise<Response> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+}
+
 export async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const start = performance.now();
   const method = options?.method || 'GET';

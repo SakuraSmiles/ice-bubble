@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useNow } from '@/composables/useNow';
 import { API_BASE } from '../../config';
+import { authFetch } from '../../api/client';
 
 interface SessionItem {
   session_key: string;
@@ -99,7 +100,7 @@ async function fetchSessions() {
   loading.value = true;
   error.value = '';
   try {
-    const res = await fetch(`${API_BASE}/sessions/unified?agentId=${encodeURIComponent(props.agentId)}&limit=100`);
+    const res = await authFetch(`${API_BASE}/sessions/unified?agentId=${encodeURIComponent(props.agentId)}&limit=100`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     sessions.value = (data.sessions || []).map((s: any) => ({

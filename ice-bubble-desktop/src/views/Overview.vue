@@ -7,7 +7,7 @@ import {
 } from '@element-plus/icons-vue';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
-import { api } from '../api/client';
+import { api, authFetch } from '../api/client';
 import { gatewayClient } from '@/services/gateway-client';
 import type { ModuleDTO, TimelineResponseDTO, AgentDTO } from '../api/client';
 // 子组件
@@ -55,7 +55,7 @@ const statsData = ref<StatsData | null>(null);
 
 async function fetchStats(): Promise<void> {
   try {
-    const res = await fetch(`${API_BASE}/stats`);
+    const res = await authFetch(`${API_BASE}/stats`);
     if (!res.ok) return;
     statsData.value = await res.json();
   } catch {
@@ -90,7 +90,7 @@ function extractDataStatus(data: TimelineResponseDTO): void {
 /** 定时拉取 timeline meta 以更新数据状态 */
 async function fetchDataStatus(): Promise<void> {
   try {
-    const res = await fetch(`${API_BASE}/messages/timeline?limit=1`);
+    const res = await authFetch(`${API_BASE}/messages/timeline?limit=1`);
     if (!res.ok) return;
     const data: TimelineResponseDTO = await res.json();
     extractDataStatus(data);
