@@ -5,6 +5,7 @@ import { getAdminUrl, setAdminUrl, getAdminAuthToken, setAdminAuthToken } from '
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { ElMessage } from 'element-plus';
+import { View, Hide } from '@element-plus/icons-vue';
 
 // Desktop 版本（硬编码，从 package.json 构建时注入）
 const DESKTOP_VERSION = '1.1.1';
@@ -211,9 +212,10 @@ onMounted(() => {
               placeholder="Bearer Token"
             >
               <template #suffix>
-                <span class="token-toggle" @click="clientForm.showToken = !clientForm.showToken">
-                  {{ clientForm.showToken ? '🙈' : '👁' }}
-                </span>
+                <el-icon class="token-toggle" @click="clientForm.showToken = !clientForm.showToken">
+                  <View v-if="clientForm.showToken" />
+                  <Hide v-else />
+                </el-icon>
               </template>
             </el-input>
           </el-form-item>
@@ -357,7 +359,6 @@ onMounted(() => {
 }
 
 .settings-card {
-  max-width: 680px;
   margin-bottom: 16px;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius);
@@ -407,7 +408,13 @@ onMounted(() => {
 .token-toggle {
   cursor: pointer;
   user-select: none;
-  font-size: 14px;
+  font-size: 16px;
+  color: var(--color-text-tertiary);
+  transition: color 0.2s;
+}
+
+.token-toggle:hover {
+  color: var(--color-text-primary);
 }
 
 .save-row {
