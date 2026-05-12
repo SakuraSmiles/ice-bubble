@@ -13,10 +13,28 @@ const testing = ref(false);
 const errorMsg = ref('');
 const needsToken = ref(false);
 
+// 自动探测 localhost:13000
+async function autoDetect() {
+  if (adminUrl.value.trim()) return;
+  const defaultUrl = 'http://localhost:13000';
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${defaultUrl}/health`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (res.ok) {
+      adminUrl.value = defaultUrl;
+    }
+  } catch {
+    // 静默失败
+  }
+}
+
 // 检测当前配置
-onMounted(() => {
+onMounted(async () => {
   adminUrl.value = getAdminUrl();
   authToken.value = getAdminAuthToken();
+  autoDetect();
 });
 
 async function testConnection() {

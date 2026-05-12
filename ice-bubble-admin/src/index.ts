@@ -197,9 +197,7 @@ export async function startAdmin(): Promise<void> {
 
     // Bearer token auth middleware for all /api/* routes
     // Auth is always enforced for every request to /api/* regardless of source IP.
-    app.use('/api', createBearerAuthMiddleware({
-        token: authToken,
-    }));
+    app.use('/api', createBearerAuthMiddleware(authToken));
 
     const PORT = configData.server?.port || 13000;
     const HOST = configData.server?.host || '0.0.0.0';
