@@ -56,11 +56,6 @@ async function testConnection() {
 
   try {
     const baseUrl = url.replace(/\/+$/, '');
-    const headers: Record<string, string> = {};
-    if (authToken.value.trim()) {
-      headers['Authorization'] = `Bearer ${authToken.value.trim()}`;
-    }
-
     // Step 1: check auth status
     let statusRes: Response;
     try {
@@ -77,7 +72,7 @@ async function testConnection() {
 
     // Step 2: if token provided, verify it before accessing protected endpoints
     if (authToken.value.trim()) {
-      const verifyRes = await request(`${baseUrl}/api/auth/verify`, { method: 'POST', headers });
+      const verifyRes = await request(`${baseUrl}/api/auth/verify`, { method: 'POST' });
       if (!verifyRes.ok) {
         needsToken.value = true;
         errorMsg.value = 'Token 不正确，请检查';
@@ -86,7 +81,7 @@ async function testConnection() {
     }
 
     // Step 3: test with a protected endpoint
-    const res = await request(`${baseUrl}/api/stats`, { headers });
+    const res = await request(`${baseUrl}/api/stats`);
 
     if (res.status === 401) {
       needsToken.value = true;
