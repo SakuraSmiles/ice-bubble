@@ -45,5 +45,6 @@ onMounted(async () => {
 
 .versions {
   opacity: 0.5;
+  font-size: 9px;
 }
 </style>
