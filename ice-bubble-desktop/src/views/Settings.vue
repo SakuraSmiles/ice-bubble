@@ -53,6 +53,17 @@ async function testConnection(): Promise<boolean> {
 
     // dev 环境走 Vite proxy（/api/settings），prod 环境直连用户填的地址
     const baseUrl = import.meta.env?.DEV ? '/api' : `${url}/api`;
+
+    // Step 1: verify token if provided
+    if (token) {
+      const verifyRes = await fetch(`${baseUrl}/auth/verify`, { headers, signal: AbortSignal.timeout(8000) });
+      if (!verifyRes.ok) {
+        ElMessage.error('连接失败：Token 不正确');
+        return false;
+      }
+    }
+
+    // Step 2: test a protected endpoint
     const res = await fetch(`${baseUrl}/settings`, { headers, signal: AbortSignal.timeout(8000) });
     if (res.ok) {
       const data = await res.json();
@@ -60,7 +71,7 @@ async function testConnection(): Promise<boolean> {
       ElMessage.success('连接成功');
       return true;
     } else if (res.status === 401) {
-      ElMessage.error('连接失败：Token 不正确');
+      ElMessage.error('连接失败：需要认证，请填写 Token');
       return false;
     } else {
       ElMessage.error(`连接失败：HTTP ${res.status}`);
@@ -90,9 +101,7 @@ async function saveConfig() {
 
   // 连接成功，保存到 localStorage
   setAdminUrl(url);
-  if (token) {
-    setAdminAuthToken(token);
-  }
+  setAdminAuthToken(token);
 
   ElMessage.success('配置已保存');
 }

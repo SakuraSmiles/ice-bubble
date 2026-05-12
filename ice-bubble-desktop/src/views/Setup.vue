@@ -59,6 +59,32 @@ async function testConnection() {
     if (authToken.value.trim()) {
       headers['Authorization'] = `Bearer ${authToken.value.trim()}`;
     }
+
+    // Step 1: check auth status
+    let statusRes: Response;
+    try {
+      statusRes = await fetch(`${baseUrl}/api/auth/status`);
+    } catch {
+      errorMsg.value = '无法连接到 Admin 服务';
+      return;
+    }
+
+    if (!statusRes.ok) {
+      errorMsg.value = `连接失败: HTTP ${statusRes.status}`;
+      return;
+    }
+
+    // Step 2: if token provided, verify it before accessing protected endpoints
+    if (authToken.value.trim()) {
+      const verifyRes = await fetch(`${baseUrl}/api/auth/verify`, { headers });
+      if (!verifyRes.ok) {
+        needsToken.value = true;
+        errorMsg.value = 'Token 不正确，请检查';
+        return;
+      }
+    }
+
+    // Step 3: test with a protected endpoint
     const res = await fetch(`${baseUrl}/api/stats`, { headers });
 
     if (res.status === 401) {
@@ -74,9 +100,7 @@ async function testConnection() {
 
     // 连接成功，保存配置
     setAdminUrl(url);
-    if (authToken.value.trim()) {
-      setAdminAuthToken(authToken.value.trim());
-    }
+    setAdminAuthToken(authToken.value.trim());
     ElMessage.success('连接成功！');
     router.replace('/');
   } catch (e: any) {

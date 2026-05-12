@@ -78,7 +78,7 @@ interface AppConfig {
   server?: ServerConfig;
   modules?: ModuleConfig[];
   dataSync?: DataSyncConfig;
-  auth?: { token?: string };
+  auth?: { token?: string; skipLocalhost?: boolean };
   gateway?: GatewayConfig;
 }
 
@@ -176,9 +176,31 @@ export async function startAdmin(): Promise<void> {
         });
     });
 
+    // Token verification endpoint — no auth required (before auth middleware)
+    // Desktop uses this to validate a token without accessing protected resources.
+    app.post('/api/auth/verify', (req, res) => {
+        const token = getAuthToken(configData.auth?.token);
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            res.status(401).json({ valid: false, error: '未提供认证令牌' });
+            return;
+        }
+        const provided = authHeader.slice(7);
+        if (provided !== token) {
+            res.status(401).json({ valid: false, error: '认证令牌无效' });
+            return;
+        }
+        res.json({ valid: true });
+    });
+
     // Bearer token auth middleware (always enforced; auto-generates token if none configured)
+    // Localhost exemption is OFF by default — FRP TCP forwarding makes all requests appear as localhost.
+    // Set auth.skipLocalhost: true in config.json ONLY for local development.
     const authToken = getAuthToken(configData.auth?.token);
-    app.use('/api', createBearerAuthMiddleware({ token: authToken }));
+    app.use('/api', createBearerAuthMiddleware({
+        token: authToken,
+        skipLocalhost: configData.auth?.skipLocalhost === true,
+    }));
 
     const PORT = configData.server?.port || 13000;
     const HOST = configData.server?.host || '0.0.0.0';
