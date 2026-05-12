@@ -44,7 +44,7 @@ interface PendingRequest {
 /** 事件回调类型 */
 type EventCallback = (...args: unknown[]) => void
 
-import { getAdminUrl } from '../config'
+import { getAdminUrl, getAdminAuthToken } from '../config'
 
 // ============ 常量 ===========
 
@@ -112,6 +112,14 @@ export class GatewayClient {
     } else {
       const adminUrl = getAdminUrl();
       url = adminUrl.replace(/^http/, 'ws') + '/ws';
+    }
+
+    // Append auth token as query parameter for WebSocket authentication
+    // (WebSocket API in browsers doesn't support custom headers)
+    const authToken = getAdminAuthToken();
+    if (authToken) {
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}token=${encodeURIComponent(authToken)}`;
     }
 
     return new Promise<void>((resolve, reject) => {

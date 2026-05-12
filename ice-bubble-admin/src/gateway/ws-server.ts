@@ -8,6 +8,7 @@ import { WebSocketServer } from "ws";
 import type { Server as HttpServer } from "http";
 import type { IncomingMessage } from "http";
 import type { GatewayProxy } from "./gateway-proxy.js";
+import { validateToken } from "../utils/auth-middleware.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -42,32 +43,70 @@ function clientReply(id: number | string, ok: boolean, payload?: unknown, error?
   return JSON.stringify(msg);
 }
 
+/**
+ * Extract Bearer token from WebSocket upgrade request.
+ * Supports two mechanisms:
+ * 1. Authorization header: `Bearer <token>`
+ * 2. Query parameter: `?token=<token>` (for browsers where custom WS headers are limited)
+ */
+function extractTokenFromRequest(req: IncomingMessage): string | null {
+  // Try Authorization header first
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.slice(7);
+  }
+
+  // Fallback: query parameter (for Desktop gateway-client.ts which can't set WS headers)
+  try {
+    const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+    const tokenParam = url.searchParams.get("token");
+    if (tokenParam) return tokenParam;
+  } catch {
+    // Ignore URL parse errors
+  }
+
+  return null;
+}
+
 // ─── GatewayWsServer ────────────────────────────────────────────────────────
 
 export class GatewayWsServer {
   private proxy: GatewayProxy;
+  private authToken: string;
   private wss: WsServer | null = null;
   private clients = new Set<WsSocket>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private cleanupFns: Array<() => void> = [];
 
-  constructor(proxy: GatewayProxy) {
+  constructor(proxy: GatewayProxy, authToken: string) {
     this.proxy = proxy;
+    this.authToken = authToken;
   }
 
   /** 挂载 WebSocket 服务器到 HTTP server，路径 /ws */
   start(server: HttpServer): void {
     this.wss = new WebSocketServer({ noServer: true });
 
-    // Handle upgrade manually so we can filter by path
+    // Handle upgrade manually so we can filter by path and authenticate
     server.on("upgrade", (req: IncomingMessage, socket, head) => {
       const url = new URL(req.url || "/", `http://${req.headers.host}`);
-      if (url.pathname === "/ws") {
-        this.wss!.handleUpgrade(req, socket, head, (ws) => {
-          this.wss!.emit("connection", ws, req);
-        });
+      if (url.pathname !== "/ws") {
+        // Non-/ws upgrade requests are intentionally ignored
+        return;
       }
-      // Non-/ws upgrade requests are intentionally ignored
+
+      // Authenticate: extract Bearer token from Authorization header or query param
+      const providedToken = extractTokenFromRequest(req);
+      if (!validateToken(providedToken, this.authToken)) {
+        console.log("[WsServer] Rejected unauthenticated WebSocket connection");
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      this.wss!.handleUpgrade(req, socket, head, (ws) => {
+        this.wss!.emit("connection", ws, req);
+      });
     });
 
     this.wss.on("connection", (ws: WsSocket) => this.onClientConnect(ws));

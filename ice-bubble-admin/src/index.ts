@@ -78,7 +78,7 @@ interface AppConfig {
   server?: ServerConfig;
   modules?: ModuleConfig[];
   dataSync?: DataSyncConfig;
-  auth?: { token?: string; skipLocalhost?: boolean };
+  auth?: { token?: string };
   gateway?: GatewayConfig;
 }
 
@@ -162,6 +162,9 @@ export async function startAdmin(): Promise<void> {
       next();
     });
 
+    // Resolve auth token ONCE — avoid multiple getAuthToken() calls generating different tokens
+    const authToken = getAuthToken(configData.auth?.token);
+
     // Auth status endpoint — no auth required (must be registered before auth middleware)
     // Desktop uses this to discover the auth requirements of this Admin instance.
     app.get('/api/auth/status', (_req, res) => {
@@ -179,27 +182,23 @@ export async function startAdmin(): Promise<void> {
     // Token verification endpoint — no auth required (before auth middleware)
     // Desktop uses this to validate a token without accessing protected resources.
     app.post('/api/auth/verify', (req, res) => {
-        const token = getAuthToken(configData.auth?.token);
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             res.status(401).json({ valid: false, error: '未提供认证令牌' });
             return;
         }
         const provided = authHeader.slice(7);
-        if (provided !== token) {
+        if (provided !== authToken) {
             res.status(401).json({ valid: false, error: '认证令牌无效' });
             return;
         }
         res.json({ valid: true });
     });
 
-    // Bearer token auth middleware (always enforced; auto-generates token if none configured)
-    // Localhost exemption is OFF by default — FRP TCP forwarding makes all requests appear as localhost.
-    // Set auth.skipLocalhost: true in config.json ONLY for local development.
-    const authToken = getAuthToken(configData.auth?.token);
+    // Bearer token auth middleware for all /api/* routes
+    // Auth is always enforced for every request to /api/* regardless of source IP.
     app.use('/api', createBearerAuthMiddleware({
         token: authToken,
-        skipLocalhost: configData.auth?.skipLocalhost === true,
     }));
 
     const PORT = configData.server?.port || 13000;
@@ -390,7 +389,7 @@ export async function startAdmin(): Promise<void> {
     // 挂载 WebSocket 服务器到 /ws（通过 GatewayProxy）
     if (gatewayProxy) {
         try {
-            const wsServer = new GatewayWsServer(gatewayProxy);
+            const wsServer = new GatewayWsServer(gatewayProxy, authToken);
             wsServer.start(httpServer);
             logger.info('[Admin] WebSocket server started on /ws');
         } catch (err) {
