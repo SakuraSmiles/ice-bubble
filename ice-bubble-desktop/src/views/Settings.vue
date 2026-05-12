@@ -36,8 +36,8 @@ async function loadSettings() {
 
 // ====== 测试连接 ======
 async function testConnection(): Promise<boolean> {
-  const url = adminUrl.value.trim().replace(/\/+$/, '');
   const token = authToken.value.trim();
+  const url = adminUrl.value.trim().replace(/\/+$/, '');
 
   if (!url) {
     ElMessage.warning('请填写 Admin 地址');
@@ -50,7 +50,10 @@ async function testConnection(): Promise<boolean> {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(`${url}/api/settings`, { headers, signal: AbortSignal.timeout(8000) });
+
+    // dev 环境走 Vite proxy（/api/settings），prod 环境直连用户填的地址
+    const baseUrl = import.meta.env?.DEV ? '/api' : `${url}/api`;
+    const res = await fetch(`${baseUrl}/settings`, { headers, signal: AbortSignal.timeout(8000) });
     if (res.ok) {
       const data = await res.json();
       adminVersion.value = data.version || '';
