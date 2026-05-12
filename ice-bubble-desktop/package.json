@@ -24,6 +24,7 @@
     "@fontsource/montserrat": "^5.2.8",
     "@fontsource/noto-sans-sc": "^5.2.9",
     "@fontsource/orbitron": "^5.2.8",
+    "@tauri-apps/plugin-store": "^2.4.3",
     "dompurify": "^3.4.1",
     "element-plus": "^2.13.6",
     "highlight.js": "^11.11.1",

@@ -100,7 +100,7 @@ async function saveConfig() {
   const ok = await testConnection();
   if (!ok) return;
 
-  // 连接成功，保存到 localStorage
+  // 连接成功，保存配置
   setAdminUrl(url);
   setAdminAuthToken(token);
 

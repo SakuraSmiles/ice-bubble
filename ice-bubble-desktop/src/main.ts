@@ -9,27 +9,11 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue';
 
 import App from './App.vue';
 import Layout from './views/Layout.vue';
+import { initConfig, isSetupDone } from './config';
 
-// 检查是否需要进入配置引导
-// 纯前端检查：用户已完成过 Setup（保存或跳过），或已有有效的 admin URL 配置
+// 检查是否需要进入配置引导（在 initConfig 之后调用）
 function needsSetup(): boolean {
-  try {
-    // 用户已明确完成过 Setup 流程（保存连接或跳过）
-    if (localStorage.getItem('ice-bubble-setup-done') === 'true') {
-      return false;
-    }
-    // 兼容：已有 lastConnected 记录也视为已完成
-    const raw = localStorage.getItem('ice-bubble-admin-config');
-    if (raw) {
-      const data = JSON.parse(raw);
-      if (data.lastConnected) {
-        return false;
-      }
-    }
-  } catch {
-    // ignore parse errors
-  }
-  return true;
+  return !isSetupDone();
 }
 
 const router = createRouter({
@@ -79,4 +63,8 @@ const pinia = createPinia();
 app.use(pinia);
 app.use(router);
 app.use(ElementPlus);
-app.mount('#app');
+
+// 初始化配置（Tauri Store 或 localStorage），然后挂载应用
+initConfig().then(() => {
+  app.mount('#app');
+});

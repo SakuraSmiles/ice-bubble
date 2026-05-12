@@ -6,7 +6,7 @@
 import { API_BASE, getAdminAuthToken } from '../config';
 import { apiMonitor } from '../utils/monitor';
 
-// Auth token: read from localStorage (set during Setup)
+// Auth token: read from config module (set during Setup)
 function getAuthToken(): string {
   return getAdminAuthToken();
 }

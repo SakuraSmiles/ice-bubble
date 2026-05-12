@@ -4,7 +4,7 @@
  */
 
 import { isValidUrl } from './validators';
-import { setAdminUrl } from '../config';
+import { setAdminUrl, setAdminAuthToken, getRawConfig } from '../config';
 import { request } from '../api/client';
 
 // ============ 类型定义 ============
@@ -27,7 +27,6 @@ type StateChangeCallback = (state: ConnectionState) => void;
 
 // ============ 常量 ============
 
-const STORAGE_KEY = 'ice-bubble-admin-config';
 const HEALTH_CHECK_INTERVAL = 30000; // 30秒心跳检测
 const DEFAULT_ADMIN_URL = 'http://localhost:13000';
 
@@ -59,19 +58,15 @@ class AdminConnection {
   // ============ 配置管理 ============
 
   private loadConfig(): void {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        this.config = JSON.parse(raw) as AdminConfig;
-        this.currentUrl = this.config!.url;
-        this.detectConnection();
-        return;
-      }
-    } catch {
-      this.config = null;
+    const raw = getRawConfig();
+    if (raw.url) {
+      this.config = { url: raw.url, authToken: raw.authToken };
+      this.currentUrl = raw.url;
+      this.detectConnection();
+      return;
     }
 
-    // 无配置：尝试默认地址自动检测（不保存到 localStorage，直到用户确认）
+    // 无配置：尝试默认地址自动检测（不保存到 Store，直到用户确认）
     this.currentUrl = DEFAULT_ADMIN_URL;
     this.autoDetectDefault();
   }
@@ -96,7 +91,7 @@ class AdminConnection {
     }
   }
 
-  /** 直接 fetch 指定 URL（不依赖 localStorage 配置） */
+  /** 直接 fetch 指定 URL（不依赖配置存储） */
   private async fetchDirect<T>(url: string, options?: RequestInit): Promise<T> {
     const response = await fetch(url, options);
     if (!response.ok) {
@@ -112,8 +107,6 @@ class AdminConnection {
       authToken: this.config?.authToken,
     };
     this.currentUrl = url;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.config));
-    // 同步更新 config/index.ts 的 API_BASE
     setAdminUrl(url);
   }
 
@@ -211,13 +204,7 @@ class AdminConnection {
       await this.fetchDirect<any>(`${url.replace(/\/+$/, '')}/api/stats`, { headers });
       this.saveConfig(url);
       if (authToken) {
-        // 保存 token 到 localStorage
-        const raw = localStorage.getItem(STORAGE_KEY);
-        const existing = raw ? JSON.parse(raw) : {};
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          ...existing,
-          authToken,
-        }));
+        setAdminAuthToken(authToken);
       }
       this.setState('CONNECTED');
       this.startHealthCheck();

@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { setAdminUrl, setAdminAuthToken } from '../config';
+import { setAdminUrl, setAdminAuthToken, getAdminUrl, getAdminAuthToken, setSetupComplete } from '../config';
 import { request } from '../api/client';
 
 const router = useRouter();
@@ -15,20 +15,8 @@ const needsToken = ref(false);
 
 // 检测当前配置
 onMounted(() => {
-  try {
-    const raw = localStorage.getItem('ice-bubble-admin-config');
-    if (raw) {
-      const data = JSON.parse(raw);
-      if (data.url) {
-        adminUrl.value = data.url;
-      }
-      if (data.authToken) {
-        authToken.value = data.authToken;
-      }
-    }
-  } catch {
-    // ignore
-  }
+  adminUrl.value = getAdminUrl();
+  authToken.value = getAdminAuthToken();
 });
 
 async function testConnection() {
@@ -108,7 +96,7 @@ async function testConnection() {
 
 function handleSkip() {
   // 标记已完成 Setup，避免守卫循环跳转
-  localStorage.setItem('ice-bubble-setup-done', 'true');
+  setSetupComplete();
   router.replace('/');
 }
 </script>
