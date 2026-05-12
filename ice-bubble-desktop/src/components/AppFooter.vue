@@ -35,8 +35,8 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  line-height: 1;
+  gap: 4px;
+  line-height: 1.3;
 }
 
 .brand {
