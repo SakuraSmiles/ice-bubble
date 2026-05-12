@@ -105,7 +105,7 @@ function handleSkip() {
   <div class="setup-container">
     <div class="setup-card">
       <div class="setup-header">
-        <h1>🫧 IceBubble Desktop</h1>
+        <h1>IceBubble Desktop</h1>
         <p class="subtitle">首次配置向导</p>
       </div>
 
@@ -119,34 +119,38 @@ function handleSkip() {
             <el-input
               v-model="adminUrl"
               placeholder="例如: http://192.168.1.100:13000"
-              size="large"
               clearable
               @keydown.enter="testConnection"
-            >
-              <template #prefix>
-                <span style="color: var(--el-text-color-placeholder);">🔗</span>
-              </template>
-            </el-input>
+            />
           </el-form-item>
 
-          <el-form-item label="Auth Token">
+          <el-form-item>
+            <template #label>
+              <span class="form-label">
+                Auth Token
+                <el-tooltip content="用于连接 Admin 认证" placement="top">
+                  <el-icon class="label-tooltip-icon"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896zm0 192a58.432 58.432 0 0 0-58.24 63.744l23.36 256.384a35.072 35.072 0 0 0 69.76 0l23.296-256.384A58.432 58.432 0 0 0 512 256zm0 512a51.2 51.2 0 1 0 0-102.4 51.2 51.2 0 0 0 0 102.4z"/></svg></el-icon>
+                </el-tooltip>
+              </span>
+            </template>
             <el-input
               v-model="authToken"
               placeholder="输入 Admin 认证 Token（可选）"
-              size="large"
               type="password"
               show-password
               clearable
               @keydown.enter="testConnection"
-            >
-              <template #prefix>
-                <span style="color: var(--el-text-color-placeholder);">🔑</span>
-              </template>
-            </el-input>
-            <div v-if="needsToken" style="color: var(--el-color-danger); font-size: 12px; margin-top: 4px;">
-              ⚠️ 此服务端需要认证，请输入 Token
-            </div>
+            />
           </el-form-item>
+
+          <el-alert
+            v-if="needsToken && !errorMsg"
+            title="此服务端需要认证，请输入 Token"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="setup-alert"
+          />
 
           <el-alert
             v-if="errorMsg"
@@ -154,13 +158,12 @@ function handleSkip() {
             type="error"
             show-icon
             :closable="false"
-            style="margin-bottom: 16px;"
+            class="setup-alert"
           />
 
           <div class="setup-actions">
             <el-button
               type="primary"
-              size="large"
               :loading="testing"
               @click="testConnection"
               style="width: 100%;"
@@ -168,10 +171,9 @@ function handleSkip() {
               {{ testing ? '正在测试连接...' : '测试连接并保存' }}
             </el-button>
             <el-button
-              size="small"
+              class="skip-btn"
               text
               @click="handleSkip"
-              style="margin-top: 8px;"
             >
               跳过，稍后配置
             </el-button>
@@ -180,7 +182,7 @@ function handleSkip() {
       </div>
 
       <div class="setup-footer">
-        <p>配置保存在浏览器本地，可随时通过连接状态组件重新配置</p>
+        <p>配置保存在本地应用数据目录，可随时在设置中修改</p>
       </div>
     </div>
   </div>
@@ -192,60 +194,114 @@ function handleSkip() {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #f6f8fa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
 }
 
 .setup-card {
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-  padding: 48px;
-  width: 460px;
+  background: #ffffff;
+  border-radius: 6px;
+  border: 1px solid #e1e4e8;
+  box-shadow: 0 1px 3px rgba(31, 35, 40, 0.04), 0 1px 2px rgba(31, 35, 40, 0.06);
+  padding: 32px;
+  width: 440px;
   max-width: 90vw;
 }
 
 .setup-header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .setup-header h1 {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 600;
-  color: var(--color-text);
-  margin-bottom: 8px;
+  color: #1f2328;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.01em;
 }
 
 .subtitle {
-  color: var(--el-text-color-secondary);
+  color: #656d76;
   font-size: 14px;
+  margin: 0;
 }
 
 .setup-body {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .description {
-  color: var(--el-text-color-regular);
-  font-size: 14px;
+  color: #656d76;
+  font-size: 13px;
   line-height: 1.6;
-  margin-bottom: 24px;
+  margin: 0 0 24px 0;
+}
+
+.form-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #656d76;
+}
+
+.label-tooltip-icon {
+  font-size: 14px;
+  color: #8c959f;
+  cursor: help;
+}
+
+:deep(.el-form-item__label) {
+  font-size: 13px;
+  color: #656d76;
+  padding-bottom: 4px !important;
+}
+
+:deep(.el-input__wrapper) {
+  border-radius: 6px;
+}
+
+.setup-alert {
+  margin-bottom: 16px;
+}
+
+:deep(.setup-alert .el-alert) {
+  border-radius: 6px;
 }
 
 .setup-actions {
   display: flex;
   flex-direction: column;
   align-items: center;
+  margin-top: 20px;
+}
+
+.setup-actions .el-button--primary {
+  height: 36px;
+  font-size: 14px;
+  border-radius: 6px;
+}
+
+.skip-btn {
+  margin-top: 12px !important;
+  color: #8c959f !important;
+  font-size: 13px;
+}
+
+.skip-btn:hover {
+  color: #656d76 !important;
 }
 
 .setup-footer {
   text-align: center;
-  border-top: 1px solid var(--el-border-color-lighter);
+  border-top: 1px solid #e1e4e8;
   padding-top: 16px;
 }
 
 .setup-footer p {
-  color: var(--el-text-color-placeholder);
-  font-size: 12px;
+  color: #8c959f;
+  font-size: 11px;
+  margin: 0;
 }
 </style>
