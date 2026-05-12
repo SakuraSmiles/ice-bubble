@@ -76,7 +76,7 @@ async function testConnection() {
 
     // Step 2: if token provided, verify it before accessing protected endpoints
     if (authToken.value.trim()) {
-      const verifyRes = await fetch(`${baseUrl}/api/auth/verify`, { headers });
+      const verifyRes = await fetch(`${baseUrl}/api/auth/verify`, { method: 'POST', headers });
       if (!verifyRes.ok) {
         needsToken.value = true;
         errorMsg.value = 'Token 不正确，请检查';

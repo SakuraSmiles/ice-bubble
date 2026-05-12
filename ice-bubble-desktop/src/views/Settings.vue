@@ -56,7 +56,7 @@ async function testConnection(): Promise<boolean> {
 
     // Step 1: verify token if provided
     if (token) {
-      const verifyRes = await fetch(`${baseUrl}/auth/verify`, { headers, signal: AbortSignal.timeout(8000) });
+      const verifyRes = await fetch(`${baseUrl}/auth/verify`, { method: 'POST', headers, signal: AbortSignal.timeout(8000) });
       if (!verifyRes.ok) {
         ElMessage.error('连接失败：Token 不正确');
         return false;
