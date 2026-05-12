@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { DArrowLeft, Folder, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { fetchJson } from '@/api/client'
 
 const store = useWorkspaceStore()
 
@@ -136,10 +137,7 @@ async function scanDirectories() {
   workspaceName.value = ''
 
   try {
-    const url = `/api/workspace/scan?base=${encodeURIComponent(scanBasePath.value)}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
+    const data = await fetchJson<{ directories: { name: string; path: string }[] }>(`/workspace/scan?base=${encodeURIComponent(scanBasePath.value)}`)
     if (version !== scanVersion) return // 已过期，丢弃乱序响应
     // 过滤隐藏目录（以.开头）
     directoryList.value = (data.directories || []).filter((d: { name: string }) => !d.name.startsWith('.'))

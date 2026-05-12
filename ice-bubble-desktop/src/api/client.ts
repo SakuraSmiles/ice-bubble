@@ -269,7 +269,7 @@ export interface SubagentTasksResponseDTO {
 
 // ============ 内部工具 ============
 
-async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
+export async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const start = performance.now();
   const method = options?.method || 'GET';
   try {
