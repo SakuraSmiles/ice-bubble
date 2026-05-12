@@ -360,8 +360,9 @@ onMounted(() => {
 
 .settings-card {
   display: block;
-  width: 100%;
-  box-sizing: border-box;
+  max-width: 680px;
+  margin-left: auto;
+  margin-right: auto;
   margin-bottom: 16px;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius);
@@ -391,8 +392,8 @@ onMounted(() => {
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin: 20px -20px 8px;
-  padding: 0 20px 8px;
+  margin: 20px 0 8px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
