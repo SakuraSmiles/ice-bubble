@@ -38,6 +38,7 @@ const serverForm = reactive({
 });
 
 const adminVersion = ref('');
+const serverTokenPreview = ref('');
 const loading = ref(false);
 const saving = ref(false);
 
@@ -91,6 +92,7 @@ async function loadSettings() {
     // 服务端配置从 API 读取
     const data: SettingsDTO = await api.getSettings();
     adminVersion.value = data.version;
+    serverTokenPreview.value = data.auth?.tokenPreview || '';
 
     serverForm.port = data.server?.port ?? 13000;
     serverForm.host = data.server?.host ?? 'localhost';
@@ -231,6 +233,12 @@ onMounted(() => {
           <span class="card-title">服务端配置</span>
         </template>
         <el-form ref="formRef" :model="serverForm" :rules="rules" label-width="120px" label-position="right" class="settings-form">
+          <div class="form-section-title">认证</div>
+          <el-form-item label="Auth Token">
+            <el-input :model-value="serverTokenPreview" disabled />
+            <span class="form-hint">仅展示，不可修改</span>
+          </el-form-item>
+
           <div class="form-section-title">网络</div>
           <el-form-item label="Admin 端口" prop="port">
             <el-input-number v-model="serverForm.port" :min="1" :max="65535" controls-position="right" />
