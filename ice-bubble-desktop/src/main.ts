@@ -10,6 +10,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue';
 import App from './App.vue';
 import Layout from './views/Layout.vue';
 import { initConfig, isSetupDone } from './config';
+import { initWorkspaceStore, useWorkspaceStore } from './stores/workspaceStore';
 
 // 检查是否需要进入配置引导（在 initConfig 之后调用）
 function needsSetup(): boolean {
@@ -65,6 +66,11 @@ app.use(router);
 app.use(ElementPlus);
 
 // 初始化配置（Tauri Store 或 localStorage），然后挂载应用
-initConfig().then(() => {
+initConfig().then(async () => {
+  // 初始化 workspace store（必须在 initConfig 之后，确保 Tauri Store 可用）
+  const wsState = await initWorkspaceStore();
+  const wsStore = useWorkspaceStore();
+  wsStore.$patch(wsState);
+
   app.mount('#app');
 });

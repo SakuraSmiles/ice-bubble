@@ -1,6 +1,10 @@
 /**
  * Workspace Store — 管理工作空间配置的 Pinia store
- * 数据持久化到 localStorage，key 为 workspace-configs
+ *
+ * 存储策略（与 config/index.ts 一致）：
+ * - Tauri 环境 → @tauri-apps/plugin-store（workspace.json，重装不丢失）
+ * - Dev 环境   → localStorage fallback（key: workspace-configs）
+ * - 首次 Tauri 启动时自动从 localStorage 迁移旧数据
  */
 
 import { defineStore } from 'pinia'
@@ -22,15 +26,19 @@ export interface WorkspaceStoreState {
   currentWorkspaceId: string | null
 }
 
-const STORAGE_KEY = 'workspace-configs'
+const LS_KEY = 'workspace-configs'
+const STORE_FILE = 'workspace.json'
 
-function generateId(): string {
-  return `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
+// ============ 内部状态 ============
 
-function loadFromStorage(): { workspaces: WorkspaceConfig[]; currentWorkspaceId: string | null } {
+let isTauri = false
+let store: any = null // Tauri Store 实例
+
+// ============ localStorage fallback（dev 模式） ============
+
+function lsGet(): { workspaces: WorkspaceConfig[]; currentWorkspaceId: string | null } | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(LS_KEY)
     if (raw) {
       const data = JSON.parse(raw)
       return {
@@ -41,17 +49,90 @@ function loadFromStorage(): { workspaces: WorkspaceConfig[]; currentWorkspaceId:
   } catch {
     // ignore parse errors
   }
+  return null
+}
+
+function lsSet(workspaces: WorkspaceConfig[], currentWorkspaceId: string | null): void {
+  localStorage.setItem(LS_KEY, JSON.stringify({ workspaces, currentWorkspaceId }))
+}
+
+function lsRemove(): void {
+  localStorage.removeItem(LS_KEY)
+}
+
+// ============ 工具函数 ============
+
+function generateId(): string {
+  return `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function defaultState(): WorkspaceStoreState {
   return { workspaces: [], currentWorkspaceId: null }
 }
 
-function saveToStorage(workspaces: WorkspaceConfig[], currentWorkspaceId: string | null): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ workspaces, currentWorkspaceId }))
+// ============ 初始化 ============
+
+/**
+ * 初始化 workspace 存储，必须在 initConfig() 之后调用。
+ * Tauri 环境：打开 workspace.json Store，迁移 localStorage 旧数据（如有）。
+ * Dev 环境：从 localStorage 加载。
+ */
+export async function initWorkspaceStore(): Promise<WorkspaceStoreState> {
+  isTauri = !!(window as any).__TAURI_INTERNALS__
+
+  if (isTauri) {
+    try {
+      const { load } = await import('@tauri-apps/plugin-store')
+      store = await load(STORE_FILE)
+
+      // 从 Store 加载
+      const saved = (await store.get('data' as string)) as WorkspaceStoreState | null
+      const state = saved ?? defaultState()
+
+      // 一次性迁移：如果 Store 为空但 localStorage 有旧数据
+      if (state.workspaces.length === 0 && !state.currentWorkspaceId) {
+        const lsData = lsGet()
+        if (lsData && (lsData.workspaces.length > 0 || lsData.currentWorkspaceId)) {
+          await store.set('data', lsData)
+          await store.save()
+          lsRemove()
+          return lsData
+        }
+      }
+
+      return state
+    } catch (e) {
+      console.warn('[workspaceStore] Tauri Store 初始化失败，fallback 到 localStorage:', e)
+      isTauri = false
+    }
+  }
+
+  // Dev 模式 或 Store fallback：从 localStorage 加载
+  return lsGet() ?? defaultState()
 }
+
+// ============ 持久化 ============
+
+async function persist(workspaces: WorkspaceConfig[], currentWorkspaceId: string | null): Promise<void> {
+  if (isTauri && store) {
+    await store.set('data', { workspaces, currentWorkspaceId })
+    await store.save()
+  } else {
+    lsSet(workspaces, currentWorkspaceId)
+  }
+}
+
+// ============ Pinia Store ============
+
+let initialized = false
 
 export const useWorkspaceStore = defineStore('workspace', {
   state: (): WorkspaceStoreState => {
-    const { workspaces, currentWorkspaceId } = loadFromStorage()
-    return { workspaces, currentWorkspaceId }
+    if (initialized) {
+      return defaultState()
+    }
+    // 首次创建时返回空状态，initWorkspaceStore 会通过 $patch 填充真实数据
+    return defaultState()
   },
 
   getters: {
@@ -92,12 +173,12 @@ export const useWorkspaceStore = defineStore('workspace', {
       if (this.workspaces.length === 1) {
         this.currentWorkspaceId = ws.id
       }
-      this.persist()
+      await persist(this.workspaces, this.currentWorkspaceId)
       return ws
     },
 
     /** 删除指定 ID 的工作空间 */
-    removeWorkspace(id: string): void {
+    async removeWorkspace(id: string): Promise<void> {
       const idx = this.workspaces.findIndex((ws) => ws.id === id)
       if (idx === -1) return
 
@@ -107,37 +188,31 @@ export const useWorkspaceStore = defineStore('workspace', {
       if (this.currentWorkspaceId === id) {
         this.currentWorkspaceId = this.workspaces[0]?.id ?? null
       }
-      this.persist()
+      await persist(this.workspaces, this.currentWorkspaceId)
     },
 
     /** 切换当前工作空间 */
-    selectWorkspace(id: string): void {
+    async selectWorkspace(id: string): Promise<void> {
       if (!this.workspaces.find((ws) => ws.id === id)) return
       this.currentWorkspaceId = id
-      this.persist()
+      await persist(this.workspaces, this.currentWorkspaceId)
     },
 
-    /** 持久化到 localStorage */
-    persist(): void {
-      saveToStorage(this.workspaces, this.currentWorkspaceId)
+    /** 持久化（供外部手动调用） */
+    async save(): Promise<void> {
+      await persist(this.workspaces, this.currentWorkspaceId)
     },
   },
 })
 
-// 监听其他标签页的 storage 变化，实现多标签页同步
+// 监听其他标签页的 storage 变化，实现多标签页同步（仅 dev 模式）
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key === STORAGE_KEY) {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        try {
-          const data = JSON.parse(stored)
-          const store = useWorkspaceStore()
-          store.$patch({
-            workspaces: Array.isArray(data.workspaces) ? data.workspaces : [],
-            currentWorkspaceId: data.currentWorkspaceId ?? null,
-          })
-        } catch { /* ignore */ }
+    if (e.key === LS_KEY && !isTauri) {
+      const lsData = lsGet()
+      if (lsData) {
+        const store = useWorkspaceStore()
+        store.$patch(lsData)
       }
     }
   })
