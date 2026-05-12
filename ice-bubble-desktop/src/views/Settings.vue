@@ -360,9 +360,8 @@ onMounted(() => {
 
 .settings-card {
   display: block;
-  max-width: 680px;
-  margin-left: auto;
-  margin-right: auto;
+  width: 100%;
+  box-sizing: border-box;
   margin-bottom: 16px;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius);
@@ -383,7 +382,8 @@ onMounted(() => {
 }
 
 .settings-form {
-  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
 }
 
 .form-section-title {
@@ -428,6 +428,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-width: 560px;
+  margin: 0 auto;
 }
 
 .about-row {
