@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useLogger } from '@/composables/useLogger';
+useLogger();
 </script>
 
 <template>

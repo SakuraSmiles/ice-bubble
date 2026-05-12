@@ -78,7 +78,13 @@ async function testConnection(): Promise<boolean> {
       return false;
     }
   } catch (e: any) {
-    ElMessage.error('连接失败：无法访问 Admin 服务');
+    const msg = e.message || String(e);
+    // 常见原因提示
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ERR_CONNECTION')) {
+      ElMessage.error('连接失败：无法访问 Admin 服务（可能是 mixed content 限制或网络不通）');
+    } else {
+      ElMessage.error('连接失败：' + msg);
+    }
     return false;
   } finally {
     testing.value = false;

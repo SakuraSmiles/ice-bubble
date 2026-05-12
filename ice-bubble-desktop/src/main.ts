@@ -62,6 +62,7 @@ const router = createRouter({
         { path: 'sessions', component: () => import('./views/AllSessions.vue') },
         { path: 'tasks', component: () => import('./views/Tasks.vue') },
         { path: 'settings', component: () => import('./views/Settings.vue') },
+        { path: 'logs', component: () => import('./views/Logs.vue') },
       ],
     },
   ],
