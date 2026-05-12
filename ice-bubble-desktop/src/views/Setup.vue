@@ -121,10 +121,10 @@ function handleSkip() {
             </el-input>
           </el-form-item>
 
-          <el-form-item v-if="needsToken" label="Auth Token">
+          <el-form-item label="Auth Token">
             <el-input
               v-model="authToken"
-              placeholder="输入 Admin 认证 Token"
+              placeholder="输入 Admin 认证 Token（可选）"
               size="large"
               type="password"
               show-password
@@ -135,6 +135,9 @@ function handleSkip() {
                 <span style="color: var(--el-text-color-placeholder);">🔑</span>
               </template>
             </el-input>
+            <div v-if="needsToken" style="color: var(--el-color-danger); font-size: 12px; margin-top: 4px;">
+              ⚠️ 此服务端需要认证，请输入 Token
+            </div>
           </el-form-item>
 
           <el-alert
