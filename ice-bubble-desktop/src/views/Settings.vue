@@ -175,7 +175,7 @@ async function saveServerConfig() {
 
     if (result.success) {
       ElMessage.success({
-        message: '服务端配置已保存。部分配置需要重启 Admin 服务才生效（端口、监听地址、数据库、日志级别）',
+        message: '服务端配置已保存。部分配置需要重启 Admin 服务才生效（端口、监听地址、数据库、日志、Gateway、数据同步）',
         duration: 5000,
       });
     } else {
@@ -246,10 +246,11 @@ onMounted(() => {
           </el-form-item>
           <el-form-item label="监听地址" prop="host">
             <el-input v-model="serverForm.host" placeholder="0.0.0.0" />
-            <span class="form-hint">修改后需重启服务</span>
+            <span class="form-hint">服务端本地监听地址，非外网访问地址；修改后需重启服务</span>
           </el-form-item>
           <el-form-item label="Gateway 地址" prop="gatewayUrl">
             <el-input v-model="serverForm.gatewayUrl" placeholder="ws://127.0.0.1:18789" />
+            <span class="form-hint">修改后需重启服务</span>
           </el-form-item>
 
           <div class="form-section-title">日志</div>
@@ -260,7 +261,7 @@ onMounted(() => {
               <el-option label="warn" value="warn" />
               <el-option label="error" value="error" />
             </el-select>
-            <span class="form-hint">修改后需重启服务</span>
+            <span class="form-hint">日志级别和格式修改后需重启服务</span>
           </el-form-item>
 
           <div class="form-section-title">数据同步</div>
@@ -269,7 +270,7 @@ onMounted(() => {
           </el-form-item>
           <el-form-item label="同步间隔" prop="pollInterval">
             <el-input-number v-model="serverForm.pollInterval" :min="1" :step="10" controls-position="right" />
-            <span class="form-hint">秒</span>
+            <span class="form-hint">秒，修改后需重启服务</span>
           </el-form-item>
           <el-form-item label="同步批量" prop="batchSize">
             <el-input-number v-model="serverForm.batchSize" :min="1" :step="100" controls-position="right" />
