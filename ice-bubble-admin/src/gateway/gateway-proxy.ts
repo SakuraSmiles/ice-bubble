@@ -93,7 +93,6 @@ export class GatewayProxy {
   private listeners = new Map<string, Set<Listener>>();
 
   private closed = false;
-  private authenticated = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   constructor(opts: GatewayProxyOptions = {}) {
@@ -137,11 +136,12 @@ export class GatewayProxy {
 
       socket.on("close", () => {
         this.ws = null;
-        this.authenticated = false;
         if (!settled && !this.closed) {
           settled = true;
           reject(new Error("Connection closed before authentication"));
-        } else if (this.authenticated || this.reconnectAttempts > 0) {
+        }
+        // Always schedule reconnect if we're not intentionally closed
+        if (!this.closed) {
           this.onConnectionLost();
         }
       });
@@ -175,8 +175,6 @@ export class GatewayProxy {
 
   disconnect(): void {
     this.closed = true;
-    this.authenticated = false;
-
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -294,7 +292,6 @@ export class GatewayProxy {
 
     try {
       const result = await this.sendConnect();
-      this.authenticated = true;
       this.reconnectAttempts = 0;
       this.emit("_authenticated", null);
       this.emit("connected", result);
