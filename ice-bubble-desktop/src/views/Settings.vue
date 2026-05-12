@@ -16,6 +16,7 @@ const showToken = ref(false);
 // ====== 关于 ======
 const adminVersion = ref('');
 const loading = ref(false);
+const testing = ref(false);
 
 // ====== 加载 ======
 async function loadSettings() {
@@ -33,15 +34,64 @@ async function loadSettings() {
   }
 }
 
+// ====== 测试连接 ======
+async function testConnection(): Promise<boolean> {
+  const url = adminUrl.value.trim().replace(/\/+$/, '');
+  const token = authToken.value.trim();
+
+  if (!url) {
+    ElMessage.warning('请填写 Admin 地址');
+    return false;
+  }
+
+  testing.value = true;
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${url}/api/settings`, { headers, signal: AbortSignal.timeout(8000) });
+    if (res.ok) {
+      const data = await res.json();
+      adminVersion.value = data.version || '';
+      ElMessage.success('连接成功');
+      return true;
+    } else if (res.status === 401) {
+      ElMessage.error('连接失败：Token 不正确');
+      return false;
+    } else {
+      ElMessage.error(`连接失败：HTTP ${res.status}`);
+      return false;
+    }
+  } catch (e: any) {
+    ElMessage.error('连接失败：无法访问 Admin 服务');
+    return false;
+  } finally {
+    testing.value = false;
+  }
+}
+
 // ====== 保存 ======
-function saveConfig() {
-  if (adminUrl.value.trim()) {
-    setAdminUrl(adminUrl.value.trim());
+async function saveConfig() {
+  const url = adminUrl.value.trim();
+  const token = authToken.value.trim();
+
+  if (!url) {
+    ElMessage.warning('请填写 Admin 地址');
+    return;
   }
-  if (authToken.value.trim()) {
-    setAdminAuthToken(authToken.value.trim());
+
+  // 先测试连接
+  const ok = await testConnection();
+  if (!ok) return;
+
+  // 连接成功，保存到 localStorage
+  setAdminUrl(url);
+  if (token) {
+    setAdminAuthToken(token);
   }
-  ElMessage.success('配置已保存，部分设置需要刷新页面后生效');
+
+  ElMessage.success('配置已保存');
 }
 
 onMounted(() => {
@@ -80,7 +130,8 @@ onMounted(() => {
             <div class="form-hint">Admin 后端认证令牌</div>
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" @click="saveConfig">保存</el-button>
+            <el-button type="primary" :loading="testing" @click="saveConfig">保存</el-button>
+            <el-button :loading="testing" @click="testConnection">测试连接</el-button>
           </el-form-item>
         </el-form>
       </el-card>
