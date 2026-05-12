@@ -8,7 +8,7 @@ import { ElMessage } from 'element-plus';
 import { View, Hide } from '@element-plus/icons-vue';
 
 // Desktop 版本（硬编码，从 package.json 构建时注入）
-const DESKTOP_VERSION = '1.1.1';
+const DESKTOP_VERSION = '1.1.2';
 
 // ====== 客户端配置 ======
 const clientForm = reactive({
