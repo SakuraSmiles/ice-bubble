@@ -6,7 +6,7 @@
  */
 
 import { ref, shallowRef, onUnmounted, type Ref } from 'vue'
-import { API_BASE } from '../../config'
+import { request } from '../../api/client'
 import {
   sendChat,
   abortChat,
@@ -270,8 +270,8 @@ export function useChat(
       // 优先使用 Gateway 的 chat.history（有完整数据）
       // 使用 HTTP 代理获取 Gateway 历史消息（不依赖 WS 连接）
       const requestLimit = Math.max(limit * 5, 500)
-      const historyUrl = `${API_BASE}/chat/history?sessionKey=${encodeURIComponent(sessionKeyValue)}&limit=${requestLimit}`
-      const historyRes = await fetch(historyUrl)
+      const historyUrl = `/chat/history?sessionKey=${encodeURIComponent(sessionKeyValue)}&limit=${requestLimit}`
+      const historyRes = await request(historyUrl)
       if (historyRes.ok) {
         const result = (await historyRes.json()) as any
         const msgs = result?.messages ?? result?.history ?? result ?? []

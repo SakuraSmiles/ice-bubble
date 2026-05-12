@@ -14,7 +14,7 @@
 
 import { ref, watch, computed } from 'vue'
 import { Refresh, Folder, FolderOpened, Document } from '@element-plus/icons-vue'
-import { API_BASE, getAdminAuthToken } from '@/config'
+import { request } from '@/api/client'
 
 // ============ Props ============
 
@@ -45,13 +45,6 @@ const error = ref<string | null>(null)
 
 // ============ Helpers ============
 
-function getAuthHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {}
-  const token = getAdminAuthToken()
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  return headers
-}
-
 /** 递归排序：每层目录内 D 状态排最后 */
 function sortTree(nodes: TreeNode[]): TreeNode[] {
   const sorted = [...nodes].sort((a, b) => {
@@ -71,9 +64,8 @@ function sortTree(nodes: TreeNode[]): TreeNode[] {
 
 /** 获取指定路径的一级子项 */
 async function fetchChildren(parentPath: string): Promise<TreeNode[]> {
-  const resp = await fetch(
-    `${API_BASE}/workspace/tree?path=${encodeURIComponent(parentPath)}`,
-    { headers: getAuthHeaders() },
+  const resp = await request(
+    `/workspace/tree?path=${encodeURIComponent(parentPath)}`,
   )
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   const data = await resp.json()

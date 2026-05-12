@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { setAdminUrl, setAdminAuthToken } from '../config';
+import { request } from '../api/client';
 
 const router = useRouter();
 
@@ -63,7 +64,7 @@ async function testConnection() {
     // Step 1: check auth status
     let statusRes: Response;
     try {
-      statusRes = await fetch(`${baseUrl}/api/auth/status`);
+      statusRes = await request(`${baseUrl}/api/auth/status`);
     } catch {
       errorMsg.value = '无法连接到 Admin 服务';
       return;
@@ -76,7 +77,7 @@ async function testConnection() {
 
     // Step 2: if token provided, verify it before accessing protected endpoints
     if (authToken.value.trim()) {
-      const verifyRes = await fetch(`${baseUrl}/api/auth/verify`, { method: 'POST', headers });
+      const verifyRes = await request(`${baseUrl}/api/auth/verify`, { method: 'POST', headers });
       if (!verifyRes.ok) {
         needsToken.value = true;
         errorMsg.value = 'Token 不正确，请检查';
@@ -85,7 +86,7 @@ async function testConnection() {
     }
 
     // Step 3: test with a protected endpoint
-    const res = await fetch(`${baseUrl}/api/stats`, { headers });
+    const res = await request(`${baseUrl}/api/stats`, { headers });
 
     if (res.status === 401) {
       needsToken.value = true;

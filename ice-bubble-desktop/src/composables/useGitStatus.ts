@@ -1,5 +1,6 @@
 import { ref, watch } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { request } from '@/api/client'
 
 interface GitStatusInfo {
   branch: string
@@ -15,8 +16,8 @@ export function useGitStatus() {
 
   async function fetchWorkspaceGitStatus(wsPath: string, wsId: string) {
     try {
-      const resp = await fetch(
-        `/api/workspace/git-status?path=${encodeURIComponent(wsPath)}`,
+      const resp = await request(
+        `/workspace/git-status?path=${encodeURIComponent(wsPath)}`,
       )
       if (!resp.ok) return
       const data = await resp.json()

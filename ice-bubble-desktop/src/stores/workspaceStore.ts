@@ -4,6 +4,7 @@
  */
 
 import { defineStore } from 'pinia'
+import { request } from '@/api/client'
 
 export interface WorkspaceConfig {
   /** 唯一 ID */
@@ -69,8 +70,8 @@ export const useWorkspaceStore = defineStore('workspace', {
     async addWorkspace(name: string, path: string): Promise<WorkspaceConfig> {
       // 调用后端 /api/workspace/tree 校验路径是否存在且为目录
       try {
-        const url = `/api/workspace/tree?path=${encodeURIComponent(path.trim())}&depth=0`
-        const res = await fetch(url)
+        const url = `/workspace/tree?path=${encodeURIComponent(path.trim())}&depth=0`
+        const res = await request(url)
         if (!res.ok) {
           if (res.status === 400 || res.status === 404) {
             throw new Error('路径无效或不存在')

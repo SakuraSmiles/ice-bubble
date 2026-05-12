@@ -4,6 +4,7 @@
  */
 
 import { API_BASE, getAdminAuthToken } from '../config';
+import { request } from './client';
 import { apiMonitor } from '../utils/monitor';
 
 // ============ DTO ============
@@ -46,25 +47,13 @@ export interface SSEHandlers {
   onStatus?: (event: SSEStatusEvent) => void
 }
 
-// ============ 内部工具 ============
-
-function getAuthHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {}
-  const token = getAdminAuthToken()
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  return headers
-}
-
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const start = performance.now()
   try {
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await request(path, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...getAuthHeaders(),
       },
       body: JSON.stringify(body),
     })

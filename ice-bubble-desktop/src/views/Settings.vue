@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { APP_VERSION } from '../version';
-import { api } from '../api/client';
+import { api, request } from '../api/client';
 import { getAdminUrl, setAdminUrl, getAdminAuthToken, setAdminAuthToken } from '../config';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
@@ -56,7 +56,7 @@ async function testConnection(): Promise<boolean> {
 
     // Step 1: verify token if provided
     if (token) {
-      const verifyRes = await fetch(`${baseUrl}/auth/verify`, { method: 'POST', headers, signal: AbortSignal.timeout(8000) });
+      const verifyRes = await request(`${baseUrl}/auth/verify`, { method: 'POST', headers, signal: AbortSignal.timeout(8000) });
       if (!verifyRes.ok) {
         ElMessage.error('连接失败：Token 不正确');
         return false;
@@ -64,7 +64,7 @@ async function testConnection(): Promise<boolean> {
     }
 
     // Step 2: test a protected endpoint
-    const res = await fetch(`${baseUrl}/settings`, { headers, signal: AbortSignal.timeout(8000) });
+    const res = await request(`${baseUrl}/settings`, { headers, signal: AbortSignal.timeout(8000) });
     if (res.ok) {
       const data = await res.json();
       adminVersion.value = data.version || '';
