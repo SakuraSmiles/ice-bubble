@@ -99,8 +99,11 @@ async function fetchModules(showLoading = true) {
   try {
     const listData = await api.getModules();
 
+    // 过滤掉 admin 模块（配置页面已独立展示）
+    const filteredModules = listData.modules.filter(m => m.moduleKey !== 'admin');
+
     // API 已返回完整数据（包括状态），直接使用
-    modules.value = listData.modules.map((m: ModuleDTO) => {
+    modules.value = filteredModules.map((m: ModuleDTO) => {
       const modStatus: ModuleStatus = {
         state: (m.status?.state as ModuleStatus['state']) ?? null,
         lastPollTime: m.status?.lastPollTime,

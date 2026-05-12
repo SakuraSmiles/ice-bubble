@@ -267,6 +267,20 @@ export interface SubagentTasksResponseDTO {
   tasks: SubagentTaskDTO[];
 }
 
+// ============ Settings DTO ============
+
+export interface SettingsDTO {
+  server: { port: number; host: string };
+  auth: { tokenPreview: string | null };
+  logging: { level: string; format: string };
+  cleanup: { enabled: boolean; healthDaysToKeep: number; eventDaysToKeep: number; statsDaysToKeep: number } | null;
+  gateway: { url: string };
+  cors: { enabled: boolean; origins: string[] } | null;
+  database: { walMode: boolean; foreignKeys: boolean } | null;
+  dataSync: { collectorBaseUrl: string; pollInterval: number; batchSize: number } | null;
+  version: string;
+}
+
 // ============ 内部工具 ============
 
 export async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
@@ -469,6 +483,15 @@ export const api = {
 
   updateSessionPreferences: (data: { pinned: string[]; hidden: string[] }) =>
     fetchJson('/session-preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  // Settings
+  getSettings: () => fetchJson<SettingsDTO>('/settings'),
+  updateSettings: (data: Partial<SettingsDTO>) =>
+    fetchJson<{ success: boolean; changed: boolean }>('/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),

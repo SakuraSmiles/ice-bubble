@@ -33,6 +33,7 @@ import { createSessionsUnifiedRouter } from './api/sessions-unified.js';
 import { createSessionGroupsRouter } from './api/session-groups.js';
 import { createSessionPreferencesRouter } from './api/session-preferences.js';
 import { createWorkspaceRouter } from './api/workspace.js';
+import { createSettingsRouter } from './api/settings.js';
 
 // 加载环境变量
 config();
@@ -271,6 +272,7 @@ export async function startAdmin(): Promise<void> {
     app.use('/api', createSessionGroupsRouter({ db: dbManager.getConnection(), gatewayProxy }));
     app.use('/api', createSessionPreferencesRouter({ db: dbManager.getConnection() }));
     app.use('/api', createWorkspaceRouter());
+    app.use('/api', createSettingsRouter());
 
     // ── Chat Gateway Integration (B7) ──
     // NOTE: 这里创建的 GatewayConnection/GatewayRpc 用于 SSE 聊天推送（浏览器直连 Admin）。
