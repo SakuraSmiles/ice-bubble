@@ -389,8 +389,8 @@ onMounted(() => {
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin: 16px 0 8px;
-  padding-bottom: 4px;
+  margin: 16px -20px 8px;
+  padding: 0 20px 8px;
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
