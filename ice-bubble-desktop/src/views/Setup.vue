@@ -58,8 +58,9 @@ async function testConnection() {
       return;
     }
 
-    // Step 2: if token provided, verify it before accessing protected endpoints
+    // Step 2: if token provided, save to config first so request() can read it
     if (authToken.value.trim()) {
+      setAdminAuthToken(authToken.value.trim());
       const verifyRes = await request(`${baseUrl}/api/auth/verify`, { method: 'POST' });
       if (!verifyRes.ok) {
         needsToken.value = true;
@@ -82,9 +83,8 @@ async function testConnection() {
       return;
     }
 
-    // 连接成功，保存配置
+    // 连接成功，保存 URL（token 已在 verify 前保存）
     setAdminUrl(url);
-    setAdminAuthToken(authToken.value.trim());
     ElMessage.success('连接成功！');
     router.replace('/');
   } catch (e: any) {
