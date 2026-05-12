@@ -359,11 +359,13 @@ onMounted(() => {
 }
 
 .settings-card {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
   margin-bottom: 16px;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius);
 }
-
 .settings-card :deep(.el-card__header) {
   padding: 12px 20px;
   border-bottom: 1px solid var(--color-border-subtle);
@@ -380,7 +382,7 @@ onMounted(() => {
 }
 
 .settings-form {
-  max-width: 560px;
+  width: 100%;
 }
 
 .form-section-title {
@@ -389,7 +391,7 @@ onMounted(() => {
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin: 16px -20px 8px;
+  margin: 20px -20px 8px;
   padding: 0 20px 8px;
   border-bottom: 1px solid var(--color-border-subtle);
 }
