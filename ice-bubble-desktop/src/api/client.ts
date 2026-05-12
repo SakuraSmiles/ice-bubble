@@ -284,10 +284,12 @@ export interface SettingsDTO {
 // ============ 内部工具 ============
 
 /**
- * 带 Authorization header 的 fetch 封装
- * 用于替换 view 层中直接调用原生 fetch 的场景
+ * 统一请求方法
+ * @param pathOrUrl - 相对路径（如 '/stats'）或完整 URL（如 'http://159.75.104.9:13000/api/auth/verify'）
+ * @param options - fetch options
+ * @returns Response（不自动解析 JSON）
  */
-export function authFetch(url: string, options?: RequestInit): Promise<Response> {
+export async function request(pathOrUrl: string, options?: RequestInit): Promise<Response> {
   const token = getAuthToken();
   const headers: Record<string, string> = {
     ...(options?.headers as Record<string, string> || {}),
@@ -295,37 +297,30 @@ export function authFetch(url: string, options?: RequestInit): Promise<Response>
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+
+  // 判断是否是完整 URL（以 http:// 或 https:// 开头）
+  const url = pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')
+    ? pathOrUrl
+    : `${API_BASE}${pathOrUrl}`;
+
   return fetch(url, { ...options, headers });
 }
 
-export async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
+export async function fetchJson<T>(pathOrUrl: string, options?: RequestInit): Promise<T> {
   const start = performance.now();
   const method = options?.method || 'GET';
   try {
-    // Build headers with Bearer token if configured
-    const headers: Record<string, string> = {
-      ...(options?.headers as Record<string, string> || {}),
-    };
-    const authToken = getAuthToken();
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
-
-    // API_BASE = '/api'（相对路径），请求通过 Vite dev server 或生产环境同源代理转发
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers,
-    });
+    const response = await request(pathOrUrl, options);
     const latency = Math.round(performance.now() - start);
     if (!response.ok) {
-      apiMonitor.record(path, method, latency, false, `HTTP ${response.status}`);
+      apiMonitor.record(pathOrUrl, method, latency, false, `HTTP ${response.status}`);
       throw new Error(`API error: ${response.status}`);
     }
-    apiMonitor.record(path, method, latency, true);
+    apiMonitor.record(pathOrUrl, method, latency, true);
     return response.json();
   } catch (e: any) {
     const latency = Math.round(performance.now() - start);
-    apiMonitor.record(path, method, latency, false, e.message);
+    apiMonitor.record(pathOrUrl, method, latency, false, e.message);
     throw e;
   }
 }

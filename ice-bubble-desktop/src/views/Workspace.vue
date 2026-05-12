@@ -2,8 +2,7 @@
 import { ref, watch, computed, nextTick, inject } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { gatewayClient } from '@/services/gateway-client';
-import { API_BASE } from '../config';
-import { authFetch } from '../api/client';
+import { request } from '../api/client';
 import ConnectionAlert from '../components/ConnectionAlert.vue';
 import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
@@ -52,7 +51,7 @@ watch(sessionKey, async (key) => {
 async function autoRedirectChat() {
   try {
     // 通过 Gateway sessions API 轻量查找 main agent 的 direct session
-    const res = await authFetch(`${API_BASE}/gateway/sessions`);
+    const res = await request('/gateway/sessions');
     if (!res.ok) return;
     const data = await res.json();
     const sessions = (data.sessions || []) as any[];
@@ -92,7 +91,7 @@ async function sendMessage() {
       await gatewayClient.sendMessage(sessionKey.value, text);
       timelineRef.value?.addOptimisticMessage(text, 'user');
     } else {
-      const res = await authFetch(`${API_BASE}/chat/send`, {
+      const res = await request('/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionKey: sessionKey.value, message: text }),
