@@ -5,7 +5,7 @@
  * 性能目标：去重速度 > 200,000 msg/s
  */
 
-import { UnifiedMessage } from '../types';
+import { UnifiedMessage } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
 
 const sqliteLogger = new Logger('Deduplicator');

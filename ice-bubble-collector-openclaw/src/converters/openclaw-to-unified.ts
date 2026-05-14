@@ -15,12 +15,12 @@ import {
   TextContent,
   ToolCallContent,
   isMessageEvent,
-} from '../types/openclaw';
+} from '../types/openclaw.js';
 
 import {
   UnifiedMessage,
   ToolCall,
-} from '../types/index';
+} from '../types/index.js';
 
 import { Logger } from '../utils/logger.js';
 

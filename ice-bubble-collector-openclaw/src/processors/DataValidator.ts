@@ -6,7 +6,7 @@
  * @module DataValidator
  */
 
-import { UnifiedMessage } from '../types';
+import { UnifiedMessage } from '../types/index.js';
 
 /**
  * 验证结果接口

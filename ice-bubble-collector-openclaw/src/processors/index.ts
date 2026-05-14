@@ -2,6 +2,6 @@
  * Processors Module
  */
 
-export * from './deduplicator';
-export * from './BatchWriter';
-export * from './DataValidator';
+export * from './deduplicator.js';
+export * from './BatchWriter.js';
+export * from './DataValidator.js';

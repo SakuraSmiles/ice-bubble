@@ -13,8 +13,8 @@
  */
 
 import { EventEmitter } from 'events';
-import type { SessionMessage, SessionEvent } from '../types';
-import { SQLiteManager } from '../storage/sqlite-manager';
+import type { SessionMessage, SessionEvent } from '../types/index.js';
+import { SQLiteManager } from '../storage/sqlite-manager.js';
 import { Logger } from '../utils/logger.js';
 
 /**

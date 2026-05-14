@@ -6,7 +6,7 @@
 
 import Database from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
-import type { Session, SessionMessage, SessionEvent, SQLiteManagerConfig } from '../types';
+import type { Session, SessionMessage, SessionEvent, SQLiteManagerConfig } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
 import { SessionMessageMapper, SessionMapper, UnifiedMessageRow, getDbColumns, getPlaceholders } from '../utils/type-mapper.js';
 

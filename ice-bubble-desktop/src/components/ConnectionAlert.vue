@@ -246,7 +246,6 @@ onUnmounted(() => {
               size="small"
               class="url-input"
               :class="{ 'has-error': inputError }"
-              :disabled="currentState === 'CONFIGURING'"
               @change="onInputChange"
               @keyup.enter="testConnection"
             />
@@ -259,7 +258,6 @@ onUnmounted(() => {
               placeholder="Bearer Token"
               size="small"
               class="token-input"
-              :disabled="currentState === 'CONFIGURING'"
               @change="onInputChange"
               @keyup.enter="testConnection"
             >
@@ -274,7 +272,6 @@ onUnmounted(() => {
           <el-button
             size="small"
             :loading="testing"
-            :disabled="currentState === 'CONFIGURING'"
             @click="testConnection"
           >
             测试连接
@@ -283,7 +280,7 @@ onUnmounted(() => {
             type="primary"
             size="small"
             :loading="saving"
-            :disabled="currentState === 'CONFIGURING' || !testPass"
+            :disabled="!testPass"
             @click="saveConnection"
           >
             保存

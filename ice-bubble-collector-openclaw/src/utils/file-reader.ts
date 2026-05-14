@@ -6,8 +6,8 @@
 
 import * as fs from 'fs';
 import * as readline from 'readline';
-import { OpenClawEvent } from '../types/openclaw';
-import { Logger } from './logger';
+import { OpenClawEvent } from '../types/openclaw.js';
+import { Logger } from './logger.js';
 
 const logger = new Logger('FileReader');
 

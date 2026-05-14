@@ -3,7 +3,7 @@
  */
 
 // ==================== OpenClaw 原始类型 ====================
-export * from './openclaw';
+export * from './openclaw.js';
 
 // ==================== 采集模式 ====================
 export enum CollectionMode {
@@ -264,7 +264,7 @@ export interface WSMessage {
 // ==================== 配置（实际定义在 utils/config-loader.ts）====================
 // 注意: 完整的 CollectorConfig 定义在 utils/config-loader.ts
 // 此处仅导出类型供外部使用
-export type { CollectorConfig } from '../utils/config-loader';
+export type { CollectorConfig } from '../utils/config-loader.js';
 
 // ==================== SQLite 配置 ====================
 export interface SQLiteManagerConfig {
