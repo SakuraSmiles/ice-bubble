@@ -1,6 +1,6 @@
 {
   "name": "@ice-bubble/admin",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "ice-bubble 管理后台 API 服务",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

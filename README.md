@@ -12,9 +12,9 @@
 
 > ice-bubble 多 Agent 团队协作管理系统 — 三层架构：数据采集 · 业务核心 · 桌面展示
 
-**当前版本：** `1.1.1` (统一发布版本)
+**模块版本**
 
-> 各子模块独立版本号：admin `1.2.0`、collector `1.1.1`、desktop `1.3.0`
+> admin `1.2.0` · collector `1.1.2` · desktop `1.3.1`
 
 </div>
 
@@ -30,9 +30,9 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 | 层级 | 模块 | 版本 | 说明 |
 |------|------|------|------|
-| **VIEW LAYER** | **ice-bubble-desktop** | `1.3.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus），面向最终用户 |
-| **BIZ LAYER** | **ice-bubble-admin** | `1.2.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
-| **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.1.1` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 |
+| **VIEW LAYER** | **ice-bubble-desktop** | `1.3.1` | 桌面端展示应用（Tauri + Vue3 + Element Plus），面向最终用户 |
+| **BIZ LAYER** | **ice-bubble-admin** | `1.2.1` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
+| **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.1.2` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 |
 
 > DATA LAYER 设计为可插拔：未来新增数据源（如 WorkBuddy）只需实现标准接口的 Collector 即可。
 

@@ -95,7 +95,7 @@ module_runtime_status: 运行时状态（含 lastPollTime）
 ### 3.1 模块管理 API
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+|------|------|
 | GET | /api/modules | 获取模块列表（含 registeredTime + version） |
 | GET | /api/modules/:key | 获取模块详情（含运行时 status） |
 | GET | /api/modules/:key/status | 手动触发轮询，获取模块最新状态 |
@@ -108,7 +108,7 @@ module_runtime_status: 运行时状态（含 lastPollTime）
 ### 3.2 会话管理 API
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+|------|------|
 | GET | /api/sessions | Sessions 列表（支持 agent_id/channel 过滤） |
 | GET | /api/sessions/unified | Gateway + Admin 合并会话（按最后消息时间排序） |
 | GET | /api/sessions/grouped | 按 agent 分组的 sessions |
@@ -119,7 +119,7 @@ module_runtime_status: 运行时状态（含 lastPollTime）
 ### 3.3 Agent API
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+|------|------|
 | GET | /api/agents | Agent 列表（含实时状态） |
 | GET | /api/agents/overview | Agent 概览聚合 |
 | GET | /api/agents/with-activity | Agent + 活动热力图 |
@@ -133,7 +133,7 @@ module_runtime_status: 运行时状态（含 lastPollTime）
 ### 3.4 会话分组 API
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+|------|------|
 | GET | /api/session-groups | 获取分组列表 |
 | POST | /api/session-groups | 创建分组 |
 | PATCH | /api/session-groups/:id | 更新分组 |
@@ -144,14 +144,14 @@ module_runtime_status: 运行时状态（含 lastPollTime）
 ### 3.5 会话偏好 API
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+|------|------|
 | GET | /api/session-preferences | 获取偏好（置顶/隐藏） |
 | PUT | /api/session-preferences | 更新偏好 |
 
 ### 3.6 工作区 API
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+|------|------|
 | GET | /api/workspace/tree | 目录树 + git 状态 |
 | GET | /api/workspace/git-status | Git 统计摘要 |
 | GET | /api/workspace/scan | 扫描一级子目录 |
@@ -159,14 +159,14 @@ module_runtime_status: 运行时状态（含 lastPollTime）
 ### 3.7 设置 API
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+|------|------|
 | GET | /api/settings | 读取配置（掩码敏感字段） |
 | PUT | /api/settings | 保存配置（白名单合并） |
 
 ### 3.8 聊天 API
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+|------|------|
 | POST | /api/chat/send | 发送聊天消息（SSE 推送通道） |
 | GET | /api/chat/stream | SSE 聊天流 |
 | POST | /api/chat/abort | 中止聊天流 |
@@ -204,7 +204,7 @@ Desktop 通过 WebSocket 与 Admin 通信，Admin 作为 Gateway 的代理。
 **协议类型：**
 
 | 类型 | 方向 | 说明 |
-|------|------|------|
+|------|------|
 | `req` | Desktop → Admin → Gateway | 请求响应模式（带 id） |
 | `event` | Gateway → Admin → Desktop | 服务端推送事件（无 id） |
 | `res` | Gateway → Admin → Desktop | 请求响应（带 id） |
@@ -235,7 +235,7 @@ Desktop 通过 WebSocket 与 Admin 通信，Admin 作为 Gateway 的代理。
 ### 4.1 配置 vs 状态分离
 
 | 类型 | 存储 | 说明 |
-|------|------|------|
+|------|------|
 | **配置** | config.json | 模块地址、轮询间隔、启用状态 |
 | **运行时** | SQLite | 实际运行状态、最后轮询时间、错误信息 |
 
@@ -351,8 +351,8 @@ Desktop ──WebSocket──► Admin ──WebSocket──► Gateway
 
 ## 八、版本历史
 
-| 日期 | 版本 | 变更 |
-|------|------|------|
-| 2026-04-10 | 1.0.0 | 初始版本，三层架构完成 |
-| 2026-05-06 | 1.0.0 | 移除 Express 代理，改为直连模式 |
-| 2026-05-14 | 1.1.1 | 补充完整 API 端点、Gateway 双连接合并、WebSocket 协议说明、头像路径穿越修复 |
+| 日期 | 说明 |
+|------|------|
+| 2026-04-10 | 初始版本，三层架构完成 |
+| 2026-05-06 | 移除 Express 代理，改为直连模式 |
+| 2026-05-14 | 补充完整 API 端点、Gateway 双连接合并、WebSocket 协议说明、头像路径穿越修复；安全审计通过；ESLint/TSC 零错误 |
