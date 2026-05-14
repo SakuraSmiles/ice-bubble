@@ -435,12 +435,24 @@ export class FileCollector extends BaseCollector implements Collector {
 
   // ==================== 文件扫描与监听 ====================
 
+  /**
+   * 构建 agent 过滤的 glob 模式，仅在已配置 agent 的目录下匹配。
+   * 无配置 agent 时降级为全量匹配。
+   */
+  private buildAgentGlobPattern(relativeGlob: string): string {
+    if (this.configuredAgentIds.size === 0) {
+      // 无配置 agent 时降级为全量匹配
+      return path.join(this.config.openclawDataDir, 'agents', '*', relativeGlob);
+    }
+    // 使用 brace expansion: agents/{main,dev,ops}/sessions/*.jsonl
+    const agentList = Array.from(this.configuredAgentIds).join(',');
+    return path.join(this.config.openclawDataDir, 'agents', `{${agentList}}`, relativeGlob);
+  }
+
   private async scanAllFiles(): Promise<void> {
     logger.debug('开始扫描所有 Session 文件...');
 
-    const sessionsPattern = path.join(
-      this.config.openclawDataDir, 'agents', '*', 'sessions', '*.jsonl'
-    );
+    const sessionsPattern = this.buildAgentGlobPattern(path.join('sessions', '*.jsonl'));
 
     const files = await findJsonlFiles(sessionsPattern);
     logger.info(`发现 ${files.length} 个 Session 文件`);
@@ -468,9 +480,7 @@ export class FileCollector extends BaseCollector implements Collector {
   }
 
   private async startWatcher(): Promise<void> {
-    const watchPattern = path.join(
-      this.config.openclawDataDir, 'agents', '*', 'sessions', '*.jsonl'
-    );
+    const watchPattern = this.buildAgentGlobPattern(path.join('sessions', '*.jsonl'));
 
     await this.fileWatcher.start(watchPattern, {
       watchPreset: this.config.watchPreset,
@@ -637,7 +647,7 @@ export class FileCollector extends BaseCollector implements Collector {
    * 将 label/status/model/spawnedBy/spawnDepth 写入 sessions 表。
    */
   private async syncSessionMetadata(): Promise<void> {
-    const pattern = path.join(this.config.openclawDataDir, 'agents', '*', 'sessions', 'sessions.json');
+    const pattern = this.buildAgentGlobPattern(path.join('sessions', 'sessions.json'));
     const files = await findJsonlFiles(pattern);
 
     let updated = 0;
