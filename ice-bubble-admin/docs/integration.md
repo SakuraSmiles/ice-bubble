@@ -282,11 +282,11 @@ admin 提供以下接口供前端调用：
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/data/stats | 获取统计汇总 |
-| GET | /api/data/sessions | 获取会话列表 |
-| GET | /api/data/sessions/:key | 获取会话详情 |
-| GET | /api/data/messages | 获取消息列表 |
-| GET | /api/data/agents | 获取 Agent 列表 |
+| GET | /api/stats | 获取统计汇总 |
+| GET | /api/sessions | 获取会话列表 |
+| GET | /api/sessions/:key | 获取会话详情 |
+| GET | /api/messages | 获取消息列表 |
+| GET | /api/agents | 获取 Agent 列表 |
 
 ### 3.3 错误响应格式
 

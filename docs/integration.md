@@ -50,20 +50,27 @@ ice-bubble 采用模块化架构，新增模块只需实现标准接口即可接
 | version | string | 是 | 当前版本号，语义化版本 |
 | description | string | 否 | 模块功能描述 |
 
-### 2.2 GET /api/meta/status
+### 2.2 GET /api/meta/config
 
-返回模块运行时状态。
+返回模块运行时配置。
 
 **响应格式：**
 
 ```json
 {
-  "state": "running",
-  "lastPollTime": "2026-04-26T10:30:00.000Z",
-  "lastError": null,
-  "runtime": {
-    "startTime": "2026-04-26T08:00:00.000Z",
-    "uptimeSeconds": 9000
+  "config": {
+    "watchPath": "/home/user/.openclaw/agents",
+    "dbPath": "/path/to/collector.db",
+    "batchSize": 50,
+    "batchTimeout": 3000,
+    "dedup": {
+      "enabled": true,
+      "cacheSize": 5000
+    },
+    "validation": {
+      "enabled": true,
+      "strictMode": false
+    }
   }
 }
 ```
@@ -72,11 +79,13 @@ ice-bubble 采用模块化架构，新增模块只需实现标准接口即可接
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| state | string | 是 | 状态：`running` / `stopped` / `error` |
-| lastPollTime | string | 是 | ISO 8601 时间戳，admin 最近一次轮询时间 |
-| lastError | string \| null | 否 | 最近一次错误信息，无错误时为 null |
-| runtime.startTime | string \| null | 否 | 进程启动时间 |
-| runtime.uptimeSeconds | number \| null | 否 | 运行时长（秒） |
+| config | object | 是 | 运行时配置对象 |
+| config.watchPath | string | 是 | 文件监听路径 |
+| config.dbPath | string | 是 | 数据库文件路径 |
+| config.batchSize | number | 否 | 批处理大小 |
+| config.batchTimeout | number | 否 | 批处理超时（毫秒） |
+| config.dedup | object | 否 | 去重配置 |
+| config.validation | object | 否 | 验证配置 |
 
 ---
 

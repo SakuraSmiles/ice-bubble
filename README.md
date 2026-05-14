@@ -12,7 +12,9 @@
 
 > ice-bubble 多 Agent 团队协作管理系统 — 三层架构：数据采集 · 业务核心 · 桌面展示
 
-**当前版本：** `1.1.1` (所有模块统一版本号)
+**当前版本：** `1.1.1` (统一发布版本)
+
+> 各子模块独立版本号：admin `1.2.0`、collector `1.1.1`、desktop `1.3.0`
 
 </div>
 
@@ -28,9 +30,9 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 | 层级 | 模块 | 版本 | 说明 |
 |------|------|------|------|
-| **VIEW LAYER** | **ice-bubble-desktop** | `1.0.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus），面向最终用户 |
-| **BIZ LAYER** | **ice-bubble-admin** | `1.0.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
-| **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.0.0` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 |
+| **VIEW LAYER** | **ice-bubble-desktop** | `1.3.0` | 桌面端展示应用（Tauri + Vue3 + Element Plus），面向最终用户 |
+| **BIZ LAYER** | **ice-bubble-admin** | `1.2.0` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
+| **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.1.1` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 |
 
 > DATA LAYER 设计为可插拔：未来新增数据源（如 WorkBuddy）只需实现标准接口的 Collector 即可。
 
@@ -96,7 +98,7 @@ ice-bubble/
 | desktop 前端 | 1420 | Vite Dev Server（开发）/ Tauri 窗口（生产） |
 | admin | 13000 | 业务 API |
 | collector | 13100 | 数据采集 API |
-| task | 13102 | 任务管理 API |
+| task | 13102 | 任务管理 API（已废弃，由 subagent sessions 替代） |
 
 ## 快速开始
 
@@ -105,9 +107,10 @@ ice-bubble/
 ```
 1. collector-openclaw  (13100)  — 数据源，最先启动
 2. admin              (13000)  — 依赖 collector，提供业务 API
-3. task               (13102)  — 依赖 admin，任务管理服务
-4. desktop            (1420)   — 前端展示，直连 admin + task
+3. desktop            (1420)   — 前端展示，直连 admin
 ```
+
+> 注：原 task 服务（13102）已废弃，功能由 subagent sessions 替代，相关配置保留但已禁用。
 
 ### 启动命令
 
