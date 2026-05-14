@@ -3,7 +3,6 @@ import { ref, watch, computed, nextTick, inject } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { gatewayClient } from '@/services/gateway-client';
 import { request } from '../api/client';
-import ConnectionAlert from '../components/ConnectionAlert.vue';
 import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
 import ChatTimeline from './components/ChatTimeline.vue';
@@ -131,13 +130,9 @@ function resetInputHeight() {
 
 <template>
   <div class="workspace-page">
-    <PageHeader v-if="view === 'chat'" title="聊天">
-      <ConnectionAlert />
-    </PageHeader>
+    <PageHeader v-if="view === 'chat'" title="聊天" />
 
-    <PageHeader v-else-if="view === 'list'" :title="(agentId || 'Agent') + ' — 会话列表'">
-      <ConnectionAlert />
-    </PageHeader>
+    <PageHeader v-else-if="view === 'list'" :title="(agentId || 'Agent') + ' — 会话列表'" />
 
     <!-- 加载中状态（无白色容器） -->
     <div v-if="view === 'loading'" class="loading-state">

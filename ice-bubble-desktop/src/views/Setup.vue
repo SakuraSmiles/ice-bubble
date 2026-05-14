@@ -78,7 +78,7 @@ async function testConnection() {
 
     // Step 2: if token provided, save to config first so request() can read it
     if (authToken.value.trim()) {
-      setAdminAuthToken(authToken.value.trim());
+      await setAdminAuthToken(authToken.value.trim());
       const verifyRes = await request(`${baseUrl}/api/auth/verify`, { method: 'POST' });
       if (!verifyRes.ok) {
         needsToken.value = true;

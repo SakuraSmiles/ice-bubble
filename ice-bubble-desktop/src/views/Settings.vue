@@ -44,10 +44,13 @@ async function testConnection(): Promise<boolean> {
     return false;
   }
 
+  // 先把新 token 写入配置缓存，后续 request() 才能拿到最新值
+  await setAdminAuthToken(token);
+
   testing.value = true;
   try {
-    // dev 环境走 Vite proxy（/api/settings），prod 环境直连用户填的地址
-    const baseUrl = import.meta.env?.DEV ? '/api' : `${url}/api`;
+    // dev 环境走 Vite proxy（相对路径，由 client.ts request() 拼接 API_BASE），prod 环境直连用户填的地址
+    const baseUrl = import.meta.env?.DEV ? '' : `${url}/api`;
 
     // Step 1: verify token if provided
     if (token) {

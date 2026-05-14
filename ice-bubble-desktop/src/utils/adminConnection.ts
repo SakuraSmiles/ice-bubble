@@ -13,9 +13,16 @@ export type ConnectionState =
   | 'UNCONFIGURED'   // 未配置
   | 'CONFIGURING'    // 正在测试连接
   | 'CONFIG_ERROR'   // 地址格式错误
-  | 'CONN_FAILED'    // 连接失败
+  | 'AUTH_REQUIRED'  // 需要认证（401 + 无 token）
+  | 'AUTH_FAILED'    // Token 错误
+  | 'CONN_FAILED'    // 连接失败（网络/服务不可达）
   | 'CONNECTED'      // 已连接
-  | 'DISCONNECTED';  // 断开
+  | 'DISCONNECTED';  // 断开（自动重连中）
+
+export interface ConfigureResult {
+  success: boolean;
+  error?: 'NETWORK' | 'AUTH_REQUIRED' | 'AUTH_FAILED' | 'INVALID_URL' | 'SERVER_ERROR';
+}
 
 export interface AdminConfig {
   url: string;
@@ -50,6 +57,7 @@ class AdminConnection {
   private subscribers: Set<StateChangeCallback> = new Set();
   private currentUrl: string = '';
   private autoDetecting = false;
+  private reconnectFailCount = 0;
 
   constructor() {
     this.loadConfig();
@@ -62,6 +70,7 @@ class AdminConnection {
     if (raw.url) {
       this.config = { url: raw.url, authToken: raw.authToken };
       this.currentUrl = raw.url;
+      this.setState('CONFIGURING');
       this.detectConnection();
       return;
     }
@@ -136,12 +145,26 @@ class AdminConnection {
       await fetchAdminApi<any>('/stats');
       this.saveConfig(this.config.url);
       this.setState('CONNECTED');
+      this.reconnectFailCount = 0;
       this.startHealthCheck();
       return true;
-    } catch {
-      this.setState('CONN_FAILED');
+    } catch (err: any) {
+      this.setState(this.classifyError(err));
       return false;
     }
+  }
+
+  /** 根据错误类型分类连接状态 */
+  private classifyError(err: any): 'AUTH_REQUIRED' | 'AUTH_FAILED' | 'CONN_FAILED' {
+    const msg = err?.message || '';
+    if (msg.includes('401')) {
+      return this.config?.authToken ? 'AUTH_FAILED' : 'AUTH_REQUIRED';
+    }
+    if (err instanceof TypeError) {
+      // fetch 本身失败（网络不通）
+      return 'CONN_FAILED';
+    }
+    return 'CONN_FAILED';
   }
 
   private startHealthCheck(): void {
@@ -150,12 +173,19 @@ class AdminConnection {
       if (!this.config?.url) return;
       try {
         await fetchAdminApi<any>('/stats');
+        this.reconnectFailCount = 0;
         if (this.state !== 'CONNECTED') {
           this.setState('CONNECTED');
         }
-      } catch {
+      } catch (err: any) {
         if (this.state === 'CONNECTED') {
+          this.reconnectFailCount = 0;
           this.setState('DISCONNECTED');
+        } else if (this.state === 'DISCONNECTED') {
+          this.reconnectFailCount++;
+          if (this.reconnectFailCount >= 5) {
+            this.setState('CONN_FAILED');
+          }
         }
       }
     }, HEALTH_CHECK_INTERVAL);
@@ -182,17 +212,25 @@ class AdminConnection {
     return this.config;
   }
 
+  getCurrentToken(): string {
+    return this.config?.authToken || '';
+  }
+
+  getReconnectFailCount(): number {
+    return this.reconnectFailCount;
+  }
+
   /**
    * 配置并测试连接
    * @param url Admin 服务地址
    * @param authToken 可选的鉴权 token
-   * @returns 是否连接成功
+   * @returns ConfigureResult 包含成功/失败及错误分类
    */
-  async configure(url: string, authToken?: string): Promise<boolean> {
+  async configure(url: string, authToken?: string): Promise<ConfigureResult> {
     if (!isValidUrl(url)) {
       this.currentUrl = url;
       this.setState('CONFIG_ERROR');
-      return false;
+      return { success: false, error: 'INVALID_URL' };
     }
 
     this.setState('CONFIGURING');
@@ -207,12 +245,29 @@ class AdminConnection {
         setAdminAuthToken(authToken);
       }
       this.setState('CONNECTED');
+      this.reconnectFailCount = 0;
       this.startHealthCheck();
-      return true;
-    } catch {
+      return { success: true };
+    } catch (err: any) {
+      const msg = err?.message || '';
+      let error: ConfigureResult['error'] = 'NETWORK';
+      if (msg.includes('401')) {
+        error = authToken ? 'AUTH_FAILED' : 'AUTH_REQUIRED';
+        this.saveConfig(url);
+        if (authToken) {
+          setAdminAuthToken(authToken);
+        }
+        this.setState(error === 'AUTH_FAILED' ? 'AUTH_FAILED' : 'AUTH_REQUIRED');
+        return { success: false, error };
+      }
+      if (msg.includes('5')) {
+        error = 'SERVER_ERROR';
+      } else if (err instanceof TypeError) {
+        error = 'NETWORK';
+      }
       this.saveConfig(url);
       this.setState('CONN_FAILED');
-      return false;
+      return { success: false, error };
     }
   }
 
