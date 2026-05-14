@@ -47,7 +47,7 @@ curl http://localhost:13100/api/meta/status
 {
   "moduleKey": "collector-openclaw",
   "moduleType": "collector",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "status": "running",
   "runtime": {
     "startTime": "2026-04-09T12:32:00Z",
@@ -93,19 +93,17 @@ curl http://localhost:13100/api/meta/config
 **响应**
 ```json
 {
-  "config": {
-    "watchPath": "/home/user/.openclaw/agents",
-    "dbPath": "/path/to/collector.db",
-    "batchSize": 50,
-    "batchTimeout": 3000,
-    "dedup": {
-      "enabled": true,
-      "cacheSize": 5000
-    },
-    "validation": {
-      "enabled": true,
-      "strictMode": false
-    }
+  "watchPath": "/home/user/.openclaw/agents",
+  "dbPath": "/path/to/collector.db",
+  "batchSize": 50,
+  "batchTimeout": 3000,
+  "dedup": {
+    "enabled": true,
+    "cacheSize": 5000
+  },
+  "validation": {
+    "enabled": true,
+    "strictMode": false
   }
 }
 ```
@@ -183,7 +181,13 @@ curl "http://localhost:13100/api/data/sessions?since=2026-04-09T00:00:00Z"
       "created_at": "2026-04-08T14:09:43.882Z",
       "updated_at": "2026-04-09T13:49:11.244Z",
       "message_count": 392,
-      "last_message_at": "2026-04-09T13:49:11.244Z"
+      "last_message_at": "2026-04-09T13:49:11.244Z",
+      "label": null,
+      "status": null,
+      "model": null,
+      "model_provider": null,
+      "spawned_by": null,
+      "spawn_depth": 0
     }
   ]
 }
@@ -203,6 +207,12 @@ curl "http://localhost:13100/api/data/sessions?since=2026-04-09T00:00:00Z"
 | updated_at | string | 最后更新时间 ISO8601 |
 | message_count | number | 消息数量 |
 | last_message_at | string | 最后消息时间 ISO8601 |
+| label | string | 会话标签 |
+| status | string | 会话状态 |
+| model | string | 使用的 AI 模型名称 |
+| model_provider | string | AI 模型提供商 |
+| spawned_by | string | 派生来源父会话 key |
+| spawn_depth | number | 派生深度（0 表示非派生会话） |
 
 ---
 
@@ -244,6 +254,9 @@ curl "http://localhost:13100/api/data/messages?since=2026-04-09T00:00:00Z&limit=
       "model": null,
       "tokens_input": null,
       "tokens_output": null,
+      "cost_total": null,
+      "cost_input": null,
+      "cost_output": null,
       "tools_json": "[{\"name\":\"exec\",\"input\":{},\"result\":{\"status\":\"completed\"}}]",
       "timestamp": "2026-04-09T15:16:58.089Z",
       "created_at": null
@@ -263,6 +276,9 @@ curl "http://localhost:13100/api/data/messages?since=2026-04-09T00:00:00Z&limit=
 | model | string | AI 模型名称（仅 agent 消息） |
 | tokens_input | number | 输入 Token 数（仅 agent 消息） |
 | tokens_output | number | 输出 Token 数（仅 agent 消息） |
+| cost_total | number | 总消耗（仅 agent 消息） |
+| cost_input | number | 输入消耗（仅 agent 消息） |
+| cost_output | number | 输出消耗（仅 agent 消息） |
 | tools_json | string | 工具调用 JSON（仅 tool 消息） |
 | timestamp | string | 消息原始时间 ISO8601 |
 | created_at | string | 入库时间 ISO8601 |
@@ -307,5 +323,5 @@ curl "http://localhost:13100/api/data/messages?since=2026-04-09T00:00:00Z&limit=
 
 ---
 
-**版本**: 1.0.0
-**最后更新**: 2026-04-09
+**版本**: 1.1.1
+**最后更新**: 2026-05-14

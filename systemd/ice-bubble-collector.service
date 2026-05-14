@@ -1,0 +1,19 @@
+[Unit]
+Description=Ice Bubble Collector (OpenClaw data collector)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/mnt/d/workspace/ice-bubble/ice-bubble-collector-openclaw
+ExecStart=/usr/bin/node /mnt/d/workspace/ice-bubble/ice-bubble-collector-openclaw/dist/start.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+TimeoutStartSec=30
+SuccessExitStatus=0 143
+KillMode=control-group
+Environment=HOME=/home/dabai
+Environment=PATH=/home/dabai/.local/bin:/home/dabai/.npm-global/bin:/home/dabai/.volta/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

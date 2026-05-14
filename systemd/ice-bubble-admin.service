@@ -1,0 +1,21 @@
+[Unit]
+Description=Ice Bubble Admin (data management backend)
+After=network-online.target ice-bubble-collector.service
+Wants=network-online.target ice-bubble-collector.service
+
+[Service]
+WorkingDirectory=/mnt/d/workspace/ice-bubble/ice-bubble-admin
+ExecStart=/usr/bin/node /mnt/d/workspace/ice-bubble/ice-bubble-admin/dist/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+TimeoutStartSec=30
+SuccessExitStatus=0 143
+KillMode=control-group
+Environment=HOME=/home/dabai
+Environment=PATH=/home/dabai/.local/bin:/home/dabai/.npm-global/bin:/home/dabai/.volta/bin:/usr/local/bin:/usr/bin:/bin
+Environment=ADMIN_DB_PATH=/home/dabai/.local/share/ice-bubble/data/admin.db
+Environment=ADMIN_AVATARS_DIR=/home/dabai/.local/share/ice-bubble/data/avatars
+
+[Install]
+WantedBy=default.target

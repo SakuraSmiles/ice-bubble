@@ -379,7 +379,7 @@ pm2 save
 ### 2. 配置生产环境
 
 ```bash
-# 复制生产环境配置
+# 复制生产环境配置示例
 cp config/config.production.json.example config/config.production.json
 
 # 编辑生产环境配置
@@ -495,7 +495,7 @@ pm2 monit
 
 ## 🔗 相关文档
 
-- [快速开始指南](./快速开始.md)
+- [快速开始指南](../README.md)
 - [配置说明](./配置说明.md)
 - [架构设计](./dev/架构设计.md)
 - [FileCollector 使用指南](./FileCollector使用指南.md)

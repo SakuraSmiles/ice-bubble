@@ -152,6 +152,63 @@ export ICE_AUTH_TOKEN="your-secret-token"
 
 ---
 
+## systemd 服务配置（生产环境）
+
+项目在 `systemd/` 目录下提供了 user 级 systemd service 模板，适用于 Linux/macOS/WSL 生产环境长期运行。
+
+### 安装步骤
+
+```bash
+# 1. 复制 service 文件到用户 systemd 目录
+mkdir -p ~/.config/systemd/user
+cp ice-bubble/systemd/ice-bubble-collector.service ~/.config/systemd/user/
+cp ice-bubble/systemd/ice-bubble-admin.service ~/.config/systemd/user/
+
+# 2. 重新加载 systemd
+systemctl --user daemon-reload
+
+# 3. 启用并启动服务（按依赖顺序）
+systemctl --user enable ice-bubble-collector.service
+systemctl --user start ice-bubble-collector.service
+
+systemctl --user enable ice-bubble-admin.service
+systemctl --user start ice-bubble-admin.service
+
+# 4. 检查服务状态
+systemctl --user status ice-bubble-collector.service
+systemctl --user status ice-bubble-admin.service
+```
+
+### 服务说明
+
+| 服务文件 | 说明 | 端口 |
+|---------|------|------|
+| `ice-bubble-collector.service` | OpenClaw 数据采集器 | 13100 |
+| `ice-bubble-admin.service` | 核心业务逻辑（依赖 collector） | 13000 |
+
+### 常见操作
+
+```bash
+# 重启服务
+systemctl --user restart ice-bubble-collector.service
+systemctl --user restart ice-bubble-admin.service
+
+# 查看日志
+journalctl --user -u ice-bubble-collector.service -f
+journalctl --user -u ice-bubble-admin.service -f
+
+# 停止服务
+systemctl --user stop ice-bubble-collector.service
+systemctl --user stop ice-bubble-admin.service
+```
+
+### 注意事项
+
+- service 文件使用 `Environment=` 硬编码了 dabai 的数据目录路径，部署到其他机器需相应修改
+- macOS 上可用 `launchctl` 替代 systemd，或使用 PM2
+
+---
+
 ## License
 
 MIT © SakuraSmiles

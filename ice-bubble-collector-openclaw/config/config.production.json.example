@@ -1,0 +1,96 @@
+{
+  "openclaw": {
+    "dataDir": "/var/lib/openclaw",
+    "gateway": {
+      "enabled": true,
+      "url": "wss://gateway:18789",
+      "token": "",
+      "reconnect": {
+        "enabled": true,
+        "interval": 5000,
+        "maxAttempts": 100
+      }
+    },
+    "api": {
+      "enabled": true,
+      "baseUrl": "http://api:18789",
+      "token": ""
+    }
+  },
+  "storage": {
+    "sqlite": {
+      "dbPath": "/var/lib/collector/collector.db",
+      "walMode": true,
+      "busyTimeout": 10000
+    },
+    "redis": {
+      "enabled": true,
+      "url": "redis://redis:6379",
+      "keyPrefix": "openclaw:"
+    }
+  },
+  "collection": {
+    "mode": "HYBRID_PRIORITY",
+    "file": {
+      "watchPath": "/var/lib/openclaw/agents",
+      "enableWatch": true,
+      "incremental": true,
+      "batchSize": 100,
+      "batchTimeout": 5000
+    }
+  },
+  "processing": {
+    "validator": {
+      "enabled": true,
+      "strictMode": true
+    },
+    "deduplicator": {
+      "enabled": true,
+      "cacheSize": 10000,
+      "ttl": 7200000
+    },
+    "batchWriter": {
+      "batchSize": 100,
+      "batchTimeout": 5000,
+      "maxRetries": 5
+    }
+  },
+  "api": {
+    "enabled": true,
+    "port": 13100,
+    "host": "0.0.0.0",
+    "cors": {
+      "enabled": true,
+      "origins": ["*"]
+    }
+  },
+  "logging": {
+    "level": "warn",
+    "format": "json",
+    "outputs": [
+      {
+        "type": "file",
+        "path": "/var/log/collector/collector.log",
+        "maxSize": 52428800,
+        "maxFiles": 10
+      }
+    ]
+  },
+  "monitoring": {
+    "enabled": true,
+    "metrics": {
+      "enabled": true,
+      "interval": 30000
+    },
+    "healthCheck": {
+      "enabled": true,
+      "interval": 10000
+    }
+  },
+  "backup": {
+    "enabled": true,
+    "interval": "0 2 * * *",
+    "retention": 30,
+    "path": "/var/backups/collector"
+  }
+}

@@ -35,7 +35,7 @@ ice-bubble 采用模块化架构，新增模块只需实现标准接口即可接
   "moduleKey": "collector-openclaw",
   "name": "OpenClaw 数据采集器",
   "moduleType": "collector",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "OpenClaw 消息采集模块"
 }
 ```
@@ -58,19 +58,17 @@ ice-bubble 采用模块化架构，新增模块只需实现标准接口即可接
 
 ```json
 {
-  "config": {
-    "watchPath": "/home/user/.openclaw/agents",
-    "dbPath": "/path/to/collector.db",
-    "batchSize": 50,
-    "batchTimeout": 3000,
-    "dedup": {
-      "enabled": true,
-      "cacheSize": 5000
-    },
-    "validation": {
-      "enabled": true,
-      "strictMode": false
-    }
+  "watchPath": "/home/user/.openclaw/agents",
+  "dbPath": "/path/to/collector.db",
+  "batchSize": 50,
+  "batchTimeout": 3000,
+  "dedup": {
+    "enabled": true,
+    "cacheSize": 5000
+  },
+  "validation": {
+    "enabled": true,
+    "strictMode": false
   }
 }
 ```
