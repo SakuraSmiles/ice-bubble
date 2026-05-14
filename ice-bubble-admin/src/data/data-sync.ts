@@ -123,7 +123,7 @@ export class DataSync {
             let offset = 0;
             const limit = this.config.batchSize;
 
-            while (true) {
+            while (true) { // eslint-disable-line no-constant-condition
                 const data = await this.client.getSessions({ limit, offset, since });
 
                 if (data.sessions.length === 0) break;
@@ -188,7 +188,7 @@ export class DataSync {
             // 收集所有批次的 session keys（用于一次性查询 session-agent 映射）
             const allSessionKeys = new Set<string>();
 
-            while (true) {
+            while (true) { // eslint-disable-line no-constant-condition
                 const data = await this.client.getMessages({ limit, offset, since });
 
                 if (data.messages.length === 0) break;
@@ -267,7 +267,7 @@ export class DataSync {
             let offset = 0;
             const limit = this.config.batchSize;
 
-            while (true) {
+            while (true) { // eslint-disable-line no-constant-condition
                 const data = await this.client.getEvents({ limit, offset, since });
 
                 if (data.events.length === 0) break;

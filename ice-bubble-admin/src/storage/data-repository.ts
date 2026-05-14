@@ -1912,7 +1912,7 @@ export class DataRepository {
       const memoryPath = path.join(os.homedir(), '.openclaw/workspace/MEMORY.md');
       const stat = fs.statSync(memoryPath);
       lastMemoryFlush = stat.mtime.toISOString();
-    } catch {}
+    } catch (_e) { void _e; }
 
     // 今日 Retry 消息数
     const retryCount = db.prepare(`

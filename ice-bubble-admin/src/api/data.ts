@@ -60,7 +60,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
 
     // Enrich sessions with agent_name, avatar and last_message
     const sessionKeys = result.sessions.map(s => s.session_key);
-    let lastMessageMap = new Map<string, string>();
+    const lastMessageMap = new Map<string, string>();
     if (sessionKeys.length > 0) {
       // Direct DB access for batch last_message query
       try {

@@ -699,7 +699,7 @@ export class DBManager {
         `);
         logger.info('Migration v10: token_summary migrated to daily aggregation schema');
         break;
-      case 11:
+      case 11: {
         // 迁移：给 admin_messages 表添加 is_system_context 字段
         // 安全检查：仅当列不存在时才执行（适用于 admin_messages 在 createTables 中已创建的情况）
         const colInfo = this.db.prepare('PRAGMA table_info(admin_messages)').all() as Array<{ name: string }>;
@@ -713,6 +713,7 @@ export class DBManager {
           logger.info('Migration v11: is_system_context column already exists, skipping');
         }
         break;
+      }
       case 12:
         // 迁移 v12:
         // 1. 创建 admin_messages_archive 表

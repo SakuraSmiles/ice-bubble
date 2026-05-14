@@ -125,7 +125,7 @@ export class ModuleScheduler {
    */
   getModules(): ModuleEndpointConfig[] {
     // admin 自己：从数据库读取注册时间（首次启动时已注册）
-    let adminConfig: ModuleEndpointConfig = {
+    const adminConfig: ModuleEndpointConfig = {
       moduleKey: 'admin',
       name: 'Admin 管理后台',
       baseUrl: `http://localhost:${process.env.PORT || 13000}`,

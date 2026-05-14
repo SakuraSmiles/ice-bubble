@@ -222,7 +222,7 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       return;
     }
 
-    const INVALID_KEY_CHARS = /[\/\\.\0\n\r]/;
+    const INVALID_KEY_CHARS = /[/.\\\0\n\r]/;
     if (INVALID_KEY_CHARS.test(moduleKey)) {
       res.status(400).json({ error: 'Invalid moduleKey' });
       return;
