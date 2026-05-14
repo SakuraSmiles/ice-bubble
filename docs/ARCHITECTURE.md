@@ -1,6 +1,6 @@
 # ice-bubble 架构设计文档
 
-> 最近更新：2026-05-06
+> 最近更新：2026-05-14
 
 ---
 
@@ -89,18 +89,90 @@ module_runtime_status: 运行时状态（含 lastPollTime）
 
 ## 三、API 设计
 
+> 所有 `/api/*` 端点（除特殊标注）均需 Bearer Token 认证。
+> 无需认证的端点：`GET /health`、`GET /api/auth/status`、`POST /api/auth/verify`、`GET /api/resources/avatars/:filename`
+
 ### 3.1 模块管理 API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | /api/modules | 获取模块列表（含 registeredTime + version） |
 | GET | /api/modules/:key | 获取模块详情（含运行时 status） |
+| GET | /api/modules/:key/status | 手动触发轮询，获取模块最新状态 |
+| GET | /api/modules/:key/config | 获取模块运行时配置 |
 | POST | /api/modules | 新增模块 |
 | PUT | /api/modules/:key | 更新模块配置 |
 | DELETE | /api/modules/:key | 删除模块 |
 | POST | /api/modules/test-connection | 测试连接 |
 
-### 3.2 模块状态响应结构
+### 3.2 会话管理 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/sessions | Sessions 列表（支持 agent_id/channel 过滤） |
+| GET | /api/sessions/unified | Gateway + Admin 合并会话（按最后消息时间排序） |
+| GET | /api/sessions/grouped | 按 agent 分组的 sessions |
+| GET | /api/sessions/:key | 单个 session 详情 |
+| GET | /api/sessions/:key/messages | 会话消息列表 |
+| POST | /api/sessions | 创建新会话（通过 Gateway RPC） |
+
+### 3.3 Agent API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/agents | Agent 列表（含实时状态） |
+| GET | /api/agents/overview | Agent 概览聚合 |
+| GET | /api/agents/with-activity | Agent + 活动热力图 |
+| GET | /api/agents/token-summary | Token 统计 |
+| POST | /api/agents/token-summary/rebuild | 重建 Token 统计表 |
+| POST | /api/agents/activity/rebuild | 重建活动统计表 |
+| GET | /api/agents/:id/avatar | Agent 头像 |
+| PUT | /api/agents/:id/avatar | 更新 Agent 头像 |
+| GET | /api/agents/:id/activity | Agent 活动热力图 |
+
+### 3.4 会话分组 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/session-groups | 获取分组列表 |
+| POST | /api/session-groups | 创建分组 |
+| PATCH | /api/session-groups/:id | 更新分组 |
+| DELETE | /api/session-groups/:id | 删除分组 |
+| POST | /api/session-groups/:id/members | 添加成员 |
+| DELETE | /api/session-groups/:id/members/:sessionKey | 移除成员 |
+
+### 3.5 会话偏好 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/session-preferences | 获取偏好（置顶/隐藏） |
+| PUT | /api/session-preferences | 更新偏好 |
+
+### 3.6 工作区 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/workspace/tree | 目录树 + git 状态 |
+| GET | /api/workspace/git-status | Git 统计摘要 |
+| GET | /api/workspace/scan | 扫描一级子目录 |
+
+### 3.7 设置 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/settings | 读取配置（掩码敏感字段） |
+| PUT | /api/settings | 保存配置（白名单合并） |
+
+### 3.8 聊天 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /api/chat/send | 发送聊天消息（SSE 推送通道） |
+| GET | /api/chat/stream | SSE 聊天流 |
+| POST | /api/chat/abort | 中止聊天流 |
+| GET | /api/chat/history | 聊天历史（HTTP 代理 → Gateway） |
+
+### 3.9 模块状态响应结构
 
 ```typescript
 interface ModuleDetailResponse {
@@ -122,6 +194,39 @@ interface ModuleDetailResponse {
   };
 }
 ```
+
+### 3.10 WebSocket 协议
+
+**端点：** `WS /ws`
+
+Desktop 通过 WebSocket 与 Admin 通信，Admin 作为 Gateway 的代理。
+
+**协议类型：**
+
+| 类型 | 方向 | 说明 |
+|------|------|------|
+| `req` | Desktop → Admin → Gateway | 请求响应模式（带 id） |
+| `event` | Gateway → Admin → Desktop | 服务端推送事件（无 id） |
+| `res` | Gateway → Admin → Desktop | 请求响应（带 id） |
+
+**认证：** Token 通过 query 参数 `?token=...` 或 header 传递
+
+**核心事件：**
+
+| 事件名 | 来源 | 说明 |
+|--------|------|------|
+| `chat.message` | Gateway | 新聊天消息 |
+| `chat.response` | Gateway | 聊天响应片段 |
+| `chat.done` | Gateway | 聊天完成 |
+| `agent.status.changed` | Gateway | Agent 状态变更 |
+| `sessions.changed` | Gateway | 会话列表变更 |
+
+**心跳：** 30s ping/pong 超时检测
+
+**注意事项：**
+- Desktop WebSocket 连接时，Admin 会先与 Gateway 建立内部连接
+- 连接失败时 Admin 仍可独立运行（Gateway 不可用不影响 Admin REST API）
+- Gateway 事件采用广播模式，所有 Desktop 客户端均收到所有事件
 
 ---
 
@@ -227,9 +332,20 @@ interface TaskEnhancement {
 
 ### 数据流
 
-1. collector 采集 OpenClaw 消息 → admin
-2. admin API 标准化状态
-3. 前端获取 agents → 增强展示
+```
+Desktop ──WebSocket──► Admin ──WebSocket──► Gateway
+ (Vue3)                (WsServer)            (OpenClaw)
+   │                     │
+   │                     └── REST /api/* ──► Admin SQLite
+   │
+   └── 直连 REST（模块管理、数据查询）
+```
+
+**双通道架构：**
+- **REST 通道**：Desktop 直连 Admin（端口 13000），用于数据查询和模块管理
+- **WebSocket 通道**：Desktop ↔ Admin ↔ Gateway，用于实时聊天和事件推送
+- Admin 与 Gateway 之间通过单一 GatewayProxy 连接（请求转发 + 事件订阅）
+- 头像文件 `/api/resources/avatars/:filename` 无需认证（浏览器 `<img>` 无法携带 Authorization header），路径穿越已修复（`..` 和 `/` 校验）
 
 ---
 
@@ -239,3 +355,4 @@ interface TaskEnhancement {
 |------|------|------|
 | 2026-04-10 | 1.0.0 | 初始版本，三层架构完成 |
 | 2026-05-06 | 1.0.0 | 移除 Express 代理，改为直连模式 |
+| 2026-05-14 | 1.1.1 | 补充完整 API 端点、Gateway 双连接合并、WebSocket 协议说明、头像路径穿越修复 |
