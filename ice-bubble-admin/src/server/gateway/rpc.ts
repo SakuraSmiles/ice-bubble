@@ -1,103 +1,44 @@
-import type { GatewayConnection } from "./connection.js";
-
-const REQUEST_TIMEOUT = 30_000;
-
-/** Gateway request frame: { type: "req", id: string, method: string, params?: any } */
-interface GatewayRequest {
-  type: "req";
-  id: string;
-  method: string;
-  params?: Record<string, unknown>;
-}
-
-/** Gateway response frame: { type: "res", id: string, ok: boolean, payload?: any, error?: any } */
-interface GatewayResponse {
-  type: "res";
-  id: string;
-  ok: boolean;
-  payload?: unknown;
-  error?: { code?: number; message?: string; details?: unknown };
-}
-
-/** Gateway event frame: { type: "event", event: string, payload?: any } */
-interface GatewayEvent {
-  type: "event";
-  event: string;
-  payload?: unknown;
-}
-
-interface PendingRequest {
-  resolve: (result: unknown) => void;
-  reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
+import type { GatewayProxy } from "../../gateway/gateway-proxy.js";
 
 export class GatewayRpc {
-  private conn: GatewayConnection;
-  private nextId = 0;
-  private pending = new Map<string, PendingRequest>();
+  private proxy: GatewayProxy;
   private subscriptions = new Map<string, Set<(result: unknown) => void>>();
   private subMethodToId = new Map<string, string>();
 
   /** Check if the underlying Gateway connection is ready for requests. */
   isConnected(): boolean {
-    return this.conn.isConnected;
+    return this.proxy.isConnected;
   }
 
-  constructor(conn: GatewayConnection) {
-    this.conn = conn;
+  constructor(proxy: GatewayProxy) {
+    this.proxy = proxy;
 
-    this.conn.on("message", (data) => {
-      try {
-        const msg = JSON.parse(String(data));
-
-        // Response frame: { type: "res", id, ok, ... }
-        if (msg.type === "res" && msg.id != null) {
-          this.handleResponse(msg as GatewayResponse);
-          return;
-        }
-
-        // Event frame: { type: "event", event, payload }
-        if (msg.type === "event" || msg.event) {
-          this.handleNotification(msg as GatewayEvent);
-          return;
-        }
-      } catch {
-        // Non-JSON or malformed, ignore
-      }
+    // Listen for all events from GatewayProxy and route to subscription handlers.
+    this.proxy.on("session.message", (payload) => {
+      this.handleNotification("session.message", payload);
     });
 
-    this.conn.on("disconnect", () => {
-      this.rejectAllPending(new Error("Gateway disconnected"));
+    // Also catch any event that matches subscription prefixes via a generic listener.
+    // GatewayProxy forwards all non-internal events via on().
+    // We hook into specific known event names for robustness.
+    this.proxy.on("sessions.messages.subscribe", (payload) => {
+      this.handleNotification("sessions.messages.subscribe", payload);
     });
 
-    this.conn.on("error", (err) => {
-      this.rejectAllPending(err);
+    // Reject all pending on disconnect
+    this.proxy.on("disconnected", () => {
+      // No pending map to reject — proxy.request() handles its own timeouts.
+      // Notify SSE clients via subscriptions won't receive events.
     });
-  }
-
-  private nextReqId(): string {
-    return String(++this.nextId);
   }
 
   /** Send a Gateway request and wait for the matching response. */
   request(method: string, params?: Record<string, unknown>): Promise<unknown> {
-    if (!this.conn.isConnected) {
+    if (!this.proxy.isConnected) {
       return Promise.reject(new Error("Gateway not connected"));
     }
 
-    const id = this.nextReqId();
-    const req: GatewayRequest = { type: "req", id, method, params };
-
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`RPC request '${method}' timed out (${REQUEST_TIMEOUT}ms)`));
-      }, REQUEST_TIMEOUT);
-
-      this.pending.set(id, { resolve, reject, timer });
-      this.conn.send(JSON.stringify(req));
-    });
+    return this.proxy.request(method, params);
   }
 
   /**
@@ -114,6 +55,9 @@ export class GatewayRpc {
     if (!this.subscriptions.has(subId)) {
       this.subscriptions.set(subId, new Set());
       this.subMethodToId.set(method, subId);
+
+      // Listen for events from GatewayProxy and route to subscription handlers.
+      // GatewayProxy.on() for these event names will receive pushes.
     }
     this.subscriptions.get(subId)!.add(handler);
 
@@ -134,21 +78,6 @@ export class GatewayRpc {
     };
   }
 
-  private handleResponse(msg: GatewayResponse): void {
-    const entry = this.pending.get(msg.id);
-    if (!entry) return;
-
-    clearTimeout(entry.timer);
-    this.pending.delete(msg.id);
-
-    if (msg.ok) {
-      entry.resolve(msg.payload);
-    } else {
-      const errMsg = msg.error?.message ?? "unknown gateway error";
-      entry.reject(new Error(`RPC error: ${errMsg}`));
-    }
-  }
-
   /**
    * Map Gateway event names to subscription method prefixes.
    * The Gateway sends events like "session.message" but subscriptions
@@ -158,30 +87,19 @@ export class GatewayRpc {
     ["session.message", "sessions.messages.subscribe"],
   ]);
 
-  private handleNotification(msg: GatewayEvent): void {
-    // Route to any active subscription handler whose method matches.
-    // First try direct match (event name === subscription method prefix),
-    // then try the event-to-subscription mapping.
-    const methodKey = msg.event;
-    const mappedKey = GatewayRpc.EVENT_TO_SUB.get(methodKey) ?? methodKey;
+  private handleNotification(event: string, payload: unknown): void {
+    // Map event name to subscription method prefix
+    const mappedKey = GatewayRpc.EVENT_TO_SUB.get(event) ?? event;
     for (const [subId, handlers] of this.subscriptions) {
       if (subId.startsWith(mappedKey)) {
         for (const h of handlers) {
           try {
-            h(msg.payload);
+            h(payload);
           } catch {
             // Handler error, ignore
           }
         }
       }
-    }
-  }
-
-  private rejectAllPending(error: Error): void {
-    for (const [id, entry] of this.pending) {
-      clearTimeout(entry.timer);
-      entry.reject(error);
-      this.pending.delete(id);
     }
   }
 }

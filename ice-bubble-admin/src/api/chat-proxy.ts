@@ -34,21 +34,8 @@ export function createChatProxyRouter(proxy: GatewayProxy): Router {
     }
   });
 
-  // POST /abort  body: { sessionKey }
-  router.post("/abort", async (req, res) => {
-    try {
-      const { sessionKey } = req.body;
-      if (!sessionKey) {
-        res.status(400).json({ error: "sessionKey is required" });
-        return;
-      }
-      const result = await proxy.request("chat.abort", { sessionKey });
-      res.json(result);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      res.status(502).json({ error: "Gateway request failed", detail: msg });
-    }
-  });
+  // NOTE: POST /abort is handled by ChatController in index.ts (before this router is mounted).
+  // Do NOT register /abort here — it would be shadowed.
 
   return router;
 }

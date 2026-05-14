@@ -1,32 +1,16 @@
 /**
  * Resources API - 静态资源
  *
- * GET /api/resources/avatars/:filename
+ * NOTE: /avatars/:filename is registered in index.ts BEFORE auth middleware
+ * (browser <img> tags cannot send Authorization header).
+ * This router is mounted after auth, so no avatar route here.
  */
 
-import { Router, Request, Response } from 'express';
-import { DataRepository } from '../storage/data-repository.js';
+import { Router } from 'express';
+import type { DataRepository } from '../storage/data-repository.js';
 
-export function createResourcesRouter(repository: DataRepository): Router {
+export function createResourcesRouter(_repository: DataRepository): Router {
   const router = Router();
-
-  /**
-   * GET /api/resources/avatars/:filename
-   * 获取头像文件
-   */
-  router.get('/avatars/:filename', (req: Request, res: Response) => {
-    const { filename } = req.params;
-    
-    const result = repository.getAvatar(filename);
-    if (!result) {
-      res.status(404).json({ error: 'Avatar not found' });
-      return;
-    }
-    
-    res.setHeader('Content-Type', result.contentType);
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // 缓存 1 天
-    res.send(result.buffer);
-  });
-
+  // Placeholder for future protected resource routes.
   return router;
 }

@@ -102,6 +102,11 @@ export class GatewayProxy {
     this.instanceId = opts.instanceId || crypto.randomUUID();
   }
 
+  /** Whether the WebSocket is open and authenticated. */
+  get isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
   // ── Lifecycle ────────────────────────────────────────────────────────────
 
   async connect(): Promise<void> {
