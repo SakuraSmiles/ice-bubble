@@ -195,6 +195,24 @@ export async function startAdmin(): Promise<void> {
         res.json({ valid: true });
     });
 
+    // Avatar endpoint — no auth required (browser <img> tags cannot send Authorization header)
+    const avatarsDirEarly = process.env.ADMIN_AVATARS_DIR || join(__dirname, '..', '..', 'data', 'avatars');
+    if (!existsSync(avatarsDirEarly)) {
+ mkdirSync(avatarsDirEarly, { recursive: true });
+    }
+    app.get('/api/resources/avatars/:filename', (req, res) => {
+      const filePath = join(avatarsDirEarly, req.params.filename);
+      if (!existsSync(filePath)) {
+        res.status(404).json({ error: 'Avatar not found' });
+        return;
+      }
+      const ext = req.params.filename.split('.').pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
+      res.setHeader('Content-Type', mimeMap[ext || ''] || 'application/octet-stream');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.sendFile(filePath);
+    });
+
     // Bearer token auth middleware for all /api/* routes
     // Auth is always enforced for every request to /api/* regardless of source IP.
     app.use('/api', createBearerAuthMiddleware(authToken));
@@ -231,12 +249,7 @@ export async function startAdmin(): Promise<void> {
     logger.info(`[Admin] 已配置 ${moduleConfigs.length} 个模块`);
 
     // 初始化数据仓库和同步调度器
-    const avatarsDir = process.env.ADMIN_AVATARS_DIR || join(__dirname, '..', '..', 'data', 'avatars');
-    // 确保头像目录存在
-    if (!existsSync(avatarsDir)) {
-      mkdirSync(avatarsDir, { recursive: true });
-      logger.info('[Admin] Avatar directory created', { path: avatarsDir });
-    }
+    const avatarsDir = avatarsDirEarly; // already created above before auth middleware
     const dataRepository = new DataRepository(dbManager.getConnection(), avatarsDir);
     const dataSyncConfig = configData.dataSync || {};
     const dataSync = new DataSync(
