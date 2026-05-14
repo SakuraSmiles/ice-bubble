@@ -195,7 +195,7 @@ sqlite3 collector-dev.db "SELECT COUNT(*) FROM messages;"
 |------|------|
 | Collector 数据库 | `~/.local/share/ice-bubble/data/collector-dev.db` |
 | Admin 数据库 | `~/.local/share/ice-bubble/data/admin.db` |
-| FileCollector 状态 | `~/.local/share/ice-bubble/data/file-state.json` |
+| FileCollector 状态 | `~/.local/share/ice-bubble/data/file-state.json`（可选，首次运行前可能不存在） |
 | 用户头像目录 | `~/.local/share/ice-bubble/data/avatars/` |
 | OpenClaw 数据根目录 | `~/.openclaw/` |
 

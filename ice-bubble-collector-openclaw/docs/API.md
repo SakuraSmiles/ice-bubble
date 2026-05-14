@@ -47,7 +47,7 @@ curl http://localhost:13100/api/meta/status
 {
   "moduleKey": "collector-openclaw",
   "moduleType": "collector",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "status": "running",
   "runtime": {
     "startTime": "2026-04-09T12:32:00Z",
@@ -323,5 +323,5 @@ curl "http://localhost:13100/api/data/messages?since=2026-04-09T00:00:00Z&limit=
 
 ---
 
-**版本**: 1.1.1
+**版本**: 1.1.2
 **最后更新**: 2026-05-14

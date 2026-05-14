@@ -13,7 +13,7 @@ TimeoutStartSec=30
 SuccessExitStatus=0 143
 KillMode=control-group
 Environment=HOME=/home/dabai
-Environment=PATH=/home/dabai/.local/bin:/home/dabai/.npm-global/bin:/home/dabai/.volta/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/home/dabai/.local/bin:/home/dabai/.npm-global/bin:/home/dabai/bin:/home/dabai/.volta/bin:/usr/local/bin:/usr/bin:/bin
 Environment=ADMIN_DB_PATH=/home/dabai/.local/share/ice-bubble/data/admin.db
 Environment=ADMIN_AVATARS_DIR=/home/dabai/.local/share/ice-bubble/data/avatars
 

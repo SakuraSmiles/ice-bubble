@@ -14,7 +14,7 @@
 
 **模块版本**
 
-> admin `1.2.0` · collector `1.1.2` · desktop `1.3.1`
+> admin `1.2.1` · collector `1.1.2` · desktop `1.3.1`
 
 </div>
 

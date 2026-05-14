@@ -254,27 +254,23 @@ npm run start
 }
 ```
 
-**GET /api/data/sessions**
+**GET /api/sessions（Admin 自有端点）**
 ```json
 {
-  "count": 2,
-  "total": 248,
-  "limit": 50,
-  "offset": 0,
   "sessions": [
     {
-      "session_key": "agent:main:local:default:direct:c520c69e-9977-485b-92c3-010e01b30afb",
-      "source_module": "collector-openclaw",
+      "session_key": "agent:main:local:default:direct:c520c69e-...",
       "agent_id": "main",
       "channel": "local",
       "message_count": 2513,
-      "first_message_at": null,
-      "last_message_at": "2026-04-09T13:50:07.368Z",
-      "source_created_at": "2026-04-09T04:33:01.450Z"
+      "last_message_at": "2026-05-14T14:38:00.000Z",
+      "created_at": "2026-04-09T04:33:01.450Z"
     }
   ]
 }
 ```
+
+> 注：`/api/data/sessions` 为 Collector（13100）端点，Admin 通过数据同步从 Collector 获取。
 
 ---
 
