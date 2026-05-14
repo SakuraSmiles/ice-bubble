@@ -345,7 +345,7 @@ export async function safeExecute<T>(
 /**
  * 检查错误是否属于特定类型
  */
-export function isErrorOfType(error: Error, errorClass: any): boolean {
+export function isErrorOfType(error: Error, errorClass: new (...args: unknown[]) => Error): boolean {
   return error instanceof errorClass;
 }
 
@@ -381,9 +381,9 @@ export function extractErrorChain(error: Error): Array<{
 /**
  * 创建错误包装器
  */
-export function wrapError(innerError: Error, wrapperClass: any, message: string): Error {
+export function wrapError(innerError: Error, wrapperClass: new (...args: unknown[]) => Error, message: string): Error {
   if (wrapperClass.prototype instanceof AppError) {
-    return new (wrapperClass as any)(message, innerError);
+    return new (wrapperClass as new (...args: unknown[]) => Error)(message, innerError);
   }
   return new wrapperClass(message, innerError);
 }

@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { OpenClawEvent } from '../types/openclaw.js';
 import { Logger } from './logger.js';
+import { Transform } from 'stream';
 
 const logger = new Logger('FileReader');
 
@@ -77,8 +78,8 @@ export async function readJsonlFile(
     // 使用 Transform 流处理 BOM
     let isFirstChunk = true;
     const processedStream = fileStream.pipe(
-      new (require('stream').Transform)({
-        transform(chunk: Buffer, _encoding: string, callback: Function) {
+      new Transform({
+        transform(chunk: Buffer, _encoding: string, callback: (error: Error | null, data?: Buffer) => void) {
           // 仅在第一个数据块检查 BOM
           if (isFirstChunk) {
             const result = checkAndRemoveBom(chunk, bomChecked);
@@ -179,8 +180,8 @@ export async function readJsonlFileIncremental(
     // 使用 Transform 流处理 BOM（仅在 startLine=0 时需要检查）
     let isFirstChunk = startLine === 0;
     const processedStream = fileStream.pipe(
-      new (require('stream').Transform)({
-        transform(chunk: Buffer, _encoding: string, callback: Function) {
+      new Transform({
+        transform(chunk: Buffer, _encoding: string, callback: (error: Error | null, data?: Buffer) => void) {
           // 仅在第一个数据块检查 BOM（且从第 0 行开始读取）
           if (isFirstChunk && startLine === 0) {
             const result = checkAndRemoveBom(chunk, bomChecked);

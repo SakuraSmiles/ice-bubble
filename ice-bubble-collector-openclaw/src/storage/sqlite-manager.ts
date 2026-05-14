@@ -171,7 +171,7 @@ export class SQLiteManager {
 
         // 迁移：检查并添加 workspace 列
         try {
-            const columns = this.db.prepare("PRAGMA table_info(agents)").all() as any[];
+            const columns = this.db.prepare("PRAGMA table_info(agents)").all() as Record<string, unknown>[];
             const hasWorkspace = columns.some(col => col.name === 'workspace');
             if (!hasWorkspace) {
                 this.db.exec('ALTER TABLE agents ADD COLUMN workspace TEXT');
@@ -343,7 +343,7 @@ export class SQLiteManager {
 
         // Migration 3: sessions 表新增元数据列（label/status/model 等）
         try {
-            const sessionsColumns = this.db.prepare("PRAGMA table_info('sessions')").all() as any[];
+            const sessionsColumns = this.db.prepare("PRAGMA table_info('sessions')").all() as Record<string, unknown>[];
             const sessionColNames = new Set(sessionsColumns.map(col => col.name));
             const metaColumns = [
                 { name: 'label', sql: 'label TEXT' },
@@ -758,7 +758,7 @@ export class SQLiteManager {
      * 更新 Session 统计信息（已废弃，统计由 Admin 计算）
      * @deprecated 由 Admin 的 computeSessionStats() 计算
      */
-    // @ts-ignore -- 已废弃，保留方法签名由 Admin 计算
+    // @ts-expect-error -- 已废弃，保留方法签名由 Admin 计算
     private async _updateSessionStats(_messages: SessionMessage[]): Promise<void> {
         // 统计功能已移除，由 Admin 的 computeSessionStats() 计算
     }
@@ -835,6 +835,7 @@ export class SQLiteManager {
             const allIds: string[] = [];
             let lastId: string | null = null;
 
+            // eslint-disable-next-line no-constant-condition
             while (true) {
                 let sql: string;
                 let rows: SqlRow[];

@@ -231,7 +231,7 @@ export async function startApiServer(
         });
 
         // 将 server 引用挂到 app 上，方便后续关闭
-        (app as any)._httpServer = server;
+        (app as unknown as Record<string, unknown>)._httpServer = server;
     });
 
     return app;
