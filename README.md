@@ -115,10 +115,8 @@ ice-bubble/
 ### 启动命令
 
 ```bash
-# 一键启动所有服务
-npm run dev
+# 根目录没有统一的 dev 脚本，请分别启动各子模块：
 
-# 或分别启动
 # 1. 数据采集层
 cd ice-bubble-collector-openclaw && npm run dev
 

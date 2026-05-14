@@ -172,7 +172,7 @@ export const ADMIN_API_BASE = 'http://localhost:13000';
 
 ## API 调用
 
-desktop 通过 Vite proxy（开发）或 Tauri（生产）直连 admin/task 服务：
+desktop 通过 Vite proxy（开发）或 Tauri（生产）直连 admin 服务：
 
 | 方法 | 路径 | 目标服务 | 说明 |
 |------|------|---------|------|
@@ -192,8 +192,7 @@ desktop 通过 Vite proxy（开发）或 Tauri（生产）直连 admin/task 服�
 | GET | /api/agents | admin | 成员列表 |
 | GET | /api/agents/with-activity | admin | 带活跃数据的成员列表 |
 | GET | /api/agents/token-summary | admin | Token 统计汇总 |
-| GET | /api/tasks/* | task | 任务相关接口（见 task 模块文档） |
-| GET | /api/agents/:agent_id/tasks | task | 成员关联的任务列表 |
+| GET | /api/subagent-tasks | admin | 任务列表 |
 
 ---
 

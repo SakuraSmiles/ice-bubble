@@ -168,15 +168,83 @@ npm run start
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/data/stats | 获取统计汇总 |
-| GET | /api/data/sessions | 获取会话列表 |
-| GET | /api/data/sessions/:key | 获取会话详情 |
-| GET | /api/data/messages | 获取消息列表 |
-| GET | /api/data/agents | 获取 Agent 列表 |
+| GET | /api/stats | 获取统计汇总 |
+| GET | /api/sessions | 获取会话列表 |
+| GET | /api/sessions/:key | 获取会话详情 |
+| GET | /api/sessions/:key/messages | 获取会话消息列表 |
+| GET | /api/sessions/unified | 获取统一会话列表（结合 Gateway 实时状态） |
+| GET | /api/sessions/grouped | 获取分组会话列表 |
+| GET | /api/messages | 获取消息列表 |
+| GET | /api/messages/timeline | 获取时间线消息（群聊风格，支持过滤） |
+| POST | /api/messages/deduplicate | 消息去重 |
+| GET | /api/agents | 获取 Agent 列表 |
+| GET | /api/agents/overview | 获取 Agent 概览（聚合统计） |
+| GET | /api/agents/with-activity | 获取带活跃数据的 Agent 列表 |
+| GET | /api/agents/token-summary | 获取 Token 统计汇总 |
+| POST | /api/agents/token-summary/rebuild | 重建 Token 统计缓存 |
+| POST | /api/agents/activity/rebuild | 重建 Agent 活动数据缓存 |
+| GET | /api/agents/:id/avatar | 获取 Agent 头像 |
+| PUT | /api/agents/:id/avatar | 上传 Agent 头像 |
+| GET | /api/agents/:id/activity | 获取 Agent 活动详情 |
+
+### Session Groups API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/session-groups | 获取会话分组列表 |
+| POST | /api/session-groups | 创建会话分组 |
+| PATCH | /api/session-groups/:id | 更新会话分组 |
+| DELETE | /api/session-groups/:id | 删除会话分组 |
+| POST | /api/session-groups/:id/members | 添加成员到分组 |
+| DELETE | /api/session-groups/:id/members/:sessionKey | 从分组移除成员 |
+| POST | /api/sessions | 创建新会话 |
+
+### Session Preferences API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/session-preferences | 获取会话偏好设置 |
+| PUT | /api/session-preferences | 更新会话偏好设置 |
+
+### Workspace API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/workspace/tree | 获取工作区目录树 |
+| GET | /api/workspace/git-status | 获取工作区 Git 状态 |
+| GET | /api/workspace/scan | 扫描工作区 |
+
+### Settings API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/settings | 获取系统设置 |
+| PUT | /api/settings | 更新系统设置 |
+
+### Subagent Tasks API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/subagent-tasks | 获取子任务列表 |
+
+### Auth API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/auth/status | 获取认证状态 |
+| POST | /api/auth/verify | 验证认证令牌 |
+
+### Chat Gateway API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /api/chat/send | 发送聊天消息 |
+| POST | /api/chat/abort | 中止当前回复 |
+| GET | /api/chat/stream | SSE 聊天流 |
 
 ### API 响应示例
 
-**GET /api/data/stats**
+**GET /api/stats**
 ```json
 {
   "sessionCount": 248,

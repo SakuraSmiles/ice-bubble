@@ -5,7 +5,7 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/typescript-5.3-blue)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-298%2F298-brightgreen)](https://github.com/SakuraSmiles/ice-bubble)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/SakuraSmiles/ice-bubble)
 [![Coverage](https://img.shields.io/badge/coverage-85%25+-green)](https://github.com/SakuraSmiles/ice-bubble)
 
 
@@ -328,7 +328,7 @@ npm run format
 ### 运行测试
 
 ```bash
-# 全量测试（298 个用例）
+# 全量测试
 npm run test:all
 
 # 仅单元测试
@@ -341,7 +341,7 @@ npm run test:coverage
 npx vitest
 ```
 
-> **当前通过率**: **298 / 298 (100%)**
+> **当前通过率**: **100%**（运行 `npm run test:all` 查看最新数量）
 
 ---
 
@@ -608,7 +608,7 @@ config/
 | BatchWriter | ~12+2 | `processors/BatchWriter.test.ts` + `.simple.test.ts` | ✅ |
 | file-reader | ~21+14 | `utils/file-reader.test.ts` + `-bom.test.ts` | ✅ |
 | file-collector-integration | ~16 | `integration/file-collector-integration.test.ts` | ✅ |
-| **合计** | **~298** | | **100% 通过** |
+| **合计** | **~300** | | **100% 通过** |
 
 ### Windows 兼容性注意事项
 
@@ -713,4 +713,4 @@ config/
 ---
 
 **最后更新**: 2026-05-06
-**测试状态**: 298/298 全通过 (100%)
+**测试状态**: 全通过 (100%)
