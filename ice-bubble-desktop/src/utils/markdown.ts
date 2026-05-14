@@ -38,7 +38,7 @@ renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
     try {
       const highlighted = hljs.highlight(text, { language: lang }).value;
       return `<pre><code class="hljs language-${lang}">${highlighted}</code></pre>`;
-    } catch {}
+    } catch (_e) { void _e; }
   }
   // 尝试自动检测
   try {

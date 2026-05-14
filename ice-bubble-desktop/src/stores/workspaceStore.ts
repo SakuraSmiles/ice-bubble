@@ -124,7 +124,7 @@ async function persist(workspaces: WorkspaceConfig[], currentWorkspaceId: string
 
 // ============ Pinia Store ============
 
-let initialized = false
+const initialized = false
 
 export const useWorkspaceStore = defineStore('workspace', {
   state: (): WorkspaceStoreState => {

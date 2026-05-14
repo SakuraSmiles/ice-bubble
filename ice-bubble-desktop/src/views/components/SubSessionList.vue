@@ -96,7 +96,7 @@ function stripMarkdown(text: string): string {
   // 引用 > → 去掉
   s = s.replace(/^>\s?/gm, '');
   // 无序列表标记 - * + (仅行首)
-  s = s.replace(/^[\-\*+]\s+/gm, '');
+  s = s.replace(/^[-*+]\s+/gm, '');
   // 加粗 **text** / __text__
   s = s.replace(/\*\*(.+?)\*\*/g, '$1');
   s = s.replace(/__(.+?)__/g, '$1');
