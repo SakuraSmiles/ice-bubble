@@ -39,12 +39,12 @@ function typeColor(type: string) {
   }
 }
 
-function typeBg(type: string) {
+function typeClass(type: string) {
   switch (type) {
-    case 'warn': return 'var(--el-color-warning-light-9)'
-    case 'error': return 'var(--el-color-danger-light-9)'
-    case 'network': return '#ddf4ff'
-    default: return 'var(--el-fill-color-light)'
+    case 'error': return 'log-entry--error'
+    case 'warn': return 'log-entry--warn'
+    case 'network': return 'log-entry--network'
+    default: return ''
   }
 }
 
@@ -124,7 +124,7 @@ function autoScrollToBottom() {
             v-for="entry in visibleLogs.items"
             :key="entry.id"
             class="log-entry"
-            :style="{ background: typeBg(entry.type) }"
+            :class="typeClass(entry.type)"
           >
             <span class="log-time">{{ entry.timestamp }}</span>
             <span class="log-tag" :style="{ color: typeColor(entry.type) }">{{ typeLabel(entry.type) }}</span>
@@ -238,6 +238,24 @@ function autoScrollToBottom() {
   transition: background-color 100ms ease;
 }
 
+.log-entry--error {
+  background: #ffebe9;
+}
+.log-entry--error .log-tag {
+  color: #cf222e;
+}
+.log-entry--warn {
+  background: #fff8c5;
+}
+.log-entry--warn .log-tag {
+  color: #9a6700;
+}
+.log-entry--network {
+  background: #ddf4ff;
+}
+.log-entry--network .log-tag {
+  color: #0969da;
+}
 .log-entry:hover {
   background-color: var(--ib-hover-bg-light);
 }
