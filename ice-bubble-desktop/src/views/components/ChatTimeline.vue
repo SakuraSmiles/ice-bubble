@@ -92,18 +92,16 @@ async function regenerate() {
 
 // ── 生命周期 ──
 
-watch(() => props.sessionKey, (newKey) => {
+watch(() => props.sessionKey, async (newKey) => {
   if (newKey !== undefined) {
     chatData.reset();
-    chatData.loadLatest();
+    await chatData.loadLatest();
   }
 });
 
 onMounted(async () => {
   await chatData.loadLatest();
   gwStream.subscribe();
-  await nextTick();
-  chatData.scrollToBottom(false);
   chatData.checkBottom();
 });
 

@@ -321,6 +321,8 @@ export function useChatData(getSessionKey: () => string | undefined) {
       console.error('加载聊天记录失败', e);
     } finally {
       loading.value = false;
+      await nextTick();
+      scrollToBottom(false);
     }
   }
 
