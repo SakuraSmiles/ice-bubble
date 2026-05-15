@@ -9,6 +9,7 @@ import { Loading } from '@element-plus/icons-vue';
 import { useChatData } from './chat/useChatData';
 import { useGatewayStream } from './chat/useGatewayStream';
 import MessageBubble from './chat/MessageBubble.vue';
+import VirtualScroller from '@/components/VirtualScroller.vue';
 import { gatewayClient } from '@/services/gateway-client';
 
 const props = withDefaults(defineProps<{
@@ -143,7 +144,7 @@ defineExpose({
     </div>
 
     <!-- 消息列表 -->
-    <div :ref="(el: any) => { chatData.containerRef.value = el }" class="chat-scroll" @scroll="chatData.onScroll()">
+    <div :ref="(el: any) => { chatData.containerRef.value = el }" class="chat-scroll">
       <!-- 加载更多按钮 -->
       <div v-if="chatData.hasMore.value && !chatData.loading.value" class="load-more-bar">
         <button type="button" class="load-more-btn" @click="chatData.loadMore()" :disabled="chatData.loadingMore.value">
@@ -158,29 +159,41 @@ defineExpose({
       </div>
       <div v-else-if="chatData.messages.value.length === 0" class="empty-tip">暂无消息</div>
 
-      <!-- 消息组 -->
-      <template v-for="(grp, gi) in chatData.groupedMessages.value" :key="gi">
-        <!-- 日期分隔线 -->
-        <div v-if="grp.type === 'date-divider'" class="date-divider">
-          <span class="date-divider-line"></span>
-          <span class="date-divider-text">{{ grp.dateLabel }}</span>
-          <span class="date-divider-line"></span>
-        </div>
-        <MessageBubble
-          v-else
-          :group="grp"
-        :group-index="gi"
-        :is-last-agent-group="gi === lastAgentGroupIndex"
-        :should-show-time="shouldShowTime"
-        :format-time="chatData.formatTime"
-        :extract-tool-name="chatData.extractToolName"
-        :truncate-tool-content="chatData.truncateToolContent"
-        :tool-summary="chatData.toolSummary"
-        @regenerate="regenerate"
-      />
-      </template>
+      <!-- 虚拟滚动消息列表 -->
+      <VirtualScroller
+        v-else
+        :ref="(el: any) => { chatData.vsRef.value = el }"
+        :items="chatData.groupedMessages.value"
+        :item-height="120"
+        :dynamic-height="true"
+        container-height="100%"
+        :overscan="5"
+        class="vs-timeline"
+        @scroll="chatData.onScroll()"
+      >
+        <template #default="{ item: grp, index: gi }">
+          <!-- 日期分隔线 -->
+          <div v-if="grp.type === 'date-divider'" class="date-divider">
+            <span class="date-divider-line"></span>
+            <span class="date-divider-text">{{ grp.dateLabel }}</span>
+            <span class="date-divider-line"></span>
+          </div>
+          <MessageBubble
+            v-else
+            :group="grp"
+            :group-index="gi"
+            :is-last-agent-group="gi === lastAgentGroupIndex"
+            :should-show-time="shouldShowTime"
+            :format-time="chatData.formatTime"
+            :extract-tool-name="chatData.extractToolName"
+            :truncate-tool-content="chatData.truncateToolContent"
+            :tool-summary="chatData.toolSummary"
+            @regenerate="regenerate"
+          />
+        </template>
+      </VirtualScroller>
 
-      <!-- 打字指示器 -->
+      <!-- 打字指示器（放在 VirtualScroller 外部底部） -->
       <div v-if="chatData.showTypingIndicator.value" class="typing-indicator">
         <div class="agent-avatar-col">
           <div class="avatar-placeholder">?</div>

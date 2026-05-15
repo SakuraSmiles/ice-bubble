@@ -55,6 +55,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits<{
+  (e: 'scroll'): void;
   (e: 'scrollEnd'): void;
 }>();
 
@@ -212,6 +213,7 @@ function onScroll() {
   if (!containerRef.value) return;
   const st = containerRef.value.scrollTop;
   scrollTop.value = st;
+  emit('scroll');
 
   // 检测是否滚动到底部
   if (containerRef.value.scrollHeight - st - containerRef.value.clientHeight < 10) {
@@ -241,14 +243,39 @@ function scrollToIndex(index: number, behavior: ScrollBehavior = 'auto') {
   containerRef.value.scrollTo({ top: offset, behavior });
 }
 
-defineExpose({ scrollToBottom, scrollToTop, scrollToIndex });
+/** 获取容器引用（供外部读取 scrollHeight / scrollTop / clientHeight） */
+function getContainer(): HTMLElement | null {
+  return containerRef.value;
+}
+
+/** 获取滚动信息 */
+function getScrollInfo() {
+  const el = containerRef.value;
+  if (!el) return { scrollTop: 0, scrollHeight: 0, clientHeight: 0, atBottom: true };
+  return {
+    scrollTop: el.scrollTop,
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+    atBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 60,
+  };
+}
+
+/** 保持 scrollTop（用于 loadMore 插入顶部项后） */
+function preserveScrollTop(prevScrollTop: number, prevScrollHeight: number) {
+  const el = containerRef.value;
+  if (!el) return;
+  const delta = el.scrollHeight - prevScrollHeight;
+  el.scrollTop = prevScrollTop + delta;
+}
+
+defineExpose({ scrollToBottom, scrollToTop, scrollToIndex, getContainer, getScrollInfo, preserveScrollTop });
 </script>
 
 <template>
   <div
     ref="containerRef"
     class="virtual-scroller"
-    :style="{ height: containerHeight }"
+    :style="props.containerHeight ? { height: containerHeight } : { flex: '1', minHeight: '0' }"
     @scroll="onScroll"
   >
     <!-- 占位撑高 -->

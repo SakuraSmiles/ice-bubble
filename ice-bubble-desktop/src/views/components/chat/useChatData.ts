@@ -199,14 +199,27 @@ export function useChatData(getSessionKey: () => string | undefined) {
   });
 
   // ── 滚动 ──
+  // vsRef: VirtualScroller 组件引用（可选，启用虚拟滚动时设置）
+  const vsRef = ref<any>(null);
 
   function checkBottom() {
+    // 优先使用 VirtualScroller 的滚动信息
+    if (vsRef.value?.getScrollInfo) {
+      const info = vsRef.value.getScrollInfo();
+      atBottom.value = info.atBottom;
+      return;
+    }
     const el = containerRef.value;
     if (!el) return;
     atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
   }
 
   function scrollToBottom(smooth = true) {
+    // 优先使用 VirtualScroller 的 scrollToBottom
+    if (vsRef.value?.scrollToBottom) {
+      vsRef.value.scrollToBottom();
+      return;
+    }
     const el = containerRef.value;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
@@ -239,7 +252,13 @@ export function useChatData(getSessionKey: () => string | undefined) {
   }
 
   async function fillScrollable() {
-    const el = containerRef.value;
+    // VirtualScroller 模式：使用 getScrollInfo 获取高度信息
+    let el: HTMLElement | null = null;
+    if (vsRef.value?.getContainer) {
+      el = vsRef.value.getContainer();
+    } else {
+      el = containerRef.value;
+    }
     if (!el) return;
     let batches = 0;
     while (batches < 1 && hasMore.value) {
@@ -386,7 +405,10 @@ export function useChatData(getSessionKey: () => string | undefined) {
     } finally {
       loadingMore.value = false;
       await nextTick();
-      if (el) {
+      // VirtualScroller 模式：使用 preserveScrollTop
+      if (vsRef.value?.preserveScrollTop) {
+        vsRef.value.preserveScrollTop(prevScrollTop, prevScrollHeight);
+      } else if (el) {
         const delta = el.scrollHeight - prevScrollHeight;
         el.scrollTop = prevScrollTop + delta;
       }
@@ -451,11 +473,16 @@ export function useChatData(getSessionKey: () => string | undefined) {
       withDividers.push(grp);
     }
 
-    for (const grp of withDividers) {
+    for (const grp of groups) {
       if (grp.toolMsgs.length > 3) {
         grp.hiddenToolCount = grp.toolMsgs.length - 2;
         grp.toolMsgs = grp.toolMsgs.slice(0, 2);
       }
+    }
+    // 为每个 group 分配 id（供 VirtualScroller 使用）
+    for (let i = 0; i < withDividers.length; i++) {
+      const g = withDividers[i];
+      if (!g.id) g.id = `grp_${i}_${g.type}_${g.timestamp}`;
     }
     return withDividers;
   });
@@ -518,7 +545,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
 
   return {
     messages, loading, loadingMore, hasMore, newMsgCount, atBottom,
-    containerRef, showTypingIndicator, agentAvatar,
+    containerRef, vsRef, showTypingIndicator, agentAvatar,
     knownIds, isSystemNoise, normalizeTimestamp, simpleHash,
     scrollToBottom, onScroll, goToBottom, checkBottom,
     loadLatest, loadMore, reset, fetchAgentAvatar,

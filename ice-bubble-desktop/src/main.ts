@@ -49,6 +49,7 @@ const router = createRouter({
         { path: 'tasks', component: () => import('./views/Tasks.vue') },
         { path: 'settings', component: () => import('./views/Settings.vue') },
         { path: 'logs', component: () => import('./views/Logs.vue') },
+        { path: '/:pathMatch(.*)*', component: () => import('./views/NotFound.vue') },
       ],
     },
   ],
