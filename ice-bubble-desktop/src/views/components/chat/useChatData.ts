@@ -202,6 +202,21 @@ export function useChatData(getSessionKey: () => string | undefined) {
   // vsRef: VirtualScroller 组件引用（可选，启用虚拟滚动时设置）
   const vsRef = ref<any>(null);
 
+  // ── allItems: VS 内部的统一列表（load-more + messages + typing） ──
+  const allItems = computed(() => {
+    const items: any[] = [];
+    // 加载更多触发器（作为列表第一项）
+    if (hasMore.value && !loading.value && messages.value.length > 0) {
+      items.push({ id: '__load_more__', type: 'load-more-trigger' });
+    }
+    items.push(...groupedMessages.value);
+    // 打字指示器（作为列表最后一项）
+    if (showTypingIndicator.value) {
+      items.push({ id: '__typing__', type: 'typing-indicator' });
+    }
+    return items;
+  });
+
   function checkBottom() {
     // 优先使用 VirtualScroller 的滚动信息
     if (vsRef.value?.getScrollInfo) {
@@ -362,9 +377,8 @@ export function useChatData(getSessionKey: () => string | undefined) {
   async function loadMore() {
     if (loadingMore.value || !hasMore.value || messages.value.length === 0) return;
     loadingMore.value = true;
-    const el = containerRef.value;
-    const prevScrollTop = el?.scrollTop ?? 0;
-    const prevScrollHeight = el?.scrollHeight ?? 0;
+    // 始终使用 VirtualScroller 的滚动信息（现在是唯一滚动容器）
+    const prevScrollInfo = vsRef.value?.getScrollInfo?.() ?? { scrollTop: 0, scrollHeight: 0 };
 
     try {
       let beforeTs: string;
@@ -405,12 +419,8 @@ export function useChatData(getSessionKey: () => string | undefined) {
     } finally {
       loadingMore.value = false;
       await nextTick();
-      // VirtualScroller 模式：使用 preserveScrollTop
       if (vsRef.value?.preserveScrollTop) {
-        vsRef.value.preserveScrollTop(prevScrollTop, prevScrollHeight);
-      } else if (el) {
-        const delta = el.scrollHeight - prevScrollHeight;
-        el.scrollTop = prevScrollTop + delta;
+        vsRef.value.preserveScrollTop(prevScrollInfo.scrollTop, prevScrollInfo.scrollHeight);
       }
     }
   }
@@ -549,7 +559,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
     knownIds, isSystemNoise, normalizeTimestamp, simpleHash,
     scrollToBottom, onScroll, goToBottom, checkBottom,
     loadLatest, loadMore, reset, fetchAgentAvatar,
-    groupedMessages,
+    groupedMessages, allItems,
     extractToolName, truncateToolContent, formatTime, toolSummary,
   };
 }
