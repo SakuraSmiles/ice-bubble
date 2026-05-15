@@ -1,0 +1,473 @@
+/**
+ * useChatData — 消息列表数据管理
+ */
+import { ref, computed, nextTick } from 'vue';
+import { request } from '../../../api/client';
+import type { TimelineMessage, TimelineResponse } from './types';
+
+export function useChatData(getSessionKey: () => string | undefined) {
+  const messages = ref<TimelineMessage[]>([]);
+  const loading = ref(false);
+  const loadingMore = ref(false);
+  const hasMore = ref(true);
+  const newMsgCount = ref(0);
+  const atBottom = ref(true);
+  const containerRef = ref<HTMLElement | null>(null);
+  const showTypingIndicator = ref(false);
+  const agentAvatar = ref<string | null>(null);
+
+  let knownIds = new Set<string>();
+  let gatewayBoundary: string | null = null;
+  let adminPageCursor: string | null = null;
+  const PAGE_SIZE = 50;
+
+  // ── 工具函数 ──
+
+  function normalizeTimestamp(ts: string | number | undefined): string {
+    if (!ts) return new Date().toISOString();
+    if (typeof ts === 'number') return new Date(ts).toISOString();
+    if (ts.includes('T') || ts.includes('Z')) return ts;
+    const num = Number(ts);
+    if (!isNaN(num) && num > 1e12) return new Date(num).toISOString();
+    return ts;
+  }
+
+  function simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash);
+  }
+
+  function isSystemNoise(content: string | null | undefined): boolean {
+    if (!content) return true;
+    const trimmed = content.trim();
+    if (!trimmed || trimmed === 'NO_REPLY' || trimmed === 'HEARTBEAT_OK') return true;
+    if (trimmed.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) return true;
+    if (/^An async command completion event was triggered/.test(trimmed)) return true;
+    if (/^\[Inter-session message\]/.test(trimmed)) return true;
+    if (/^Sender \(untrusted metadata\)/.test(trimmed)) return true;
+    return false;
+  }
+
+  function isEmptyUserMsg(m: TimelineMessage): boolean {
+    return m.message_type === 'user' && !m.content && !m.clean_content;
+  }
+
+  function isTimelineSystemNoise(m: TimelineMessage): boolean {
+    const content = m.content || '';
+    const clean = m.clean_content || '';
+    if (m.message_type === 'agent' && !content.trim() && !clean.trim()) return true;
+    if (content.startsWith('Sender (untrusted metadata):') && !clean.trim()) return true;
+    if (clean.trim() === 'NO_REPLY') return true;
+    return false;
+  }
+
+  function stripOpenClawMetadata(text: string): string {
+    if (!text) return text;
+    let cleaned = text.replace(/Sender \(untrusted metadata\):\s*```json\s*[\s\S]*?```\s*\n*/g, '');
+    cleaned = cleaned.replace(/^\[[A-Z][a-z]{2}\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+GMT[+-]\d+\]\s*/gm, '');
+    return cleaned.trim() || text;
+  }
+
+  function contentKey(m: TimelineMessage): string {
+    return (m.clean_content || m.content || '').substring(0, 200).trim();
+  }
+
+  function dedupByContent(msgs: TimelineMessage[], existing: TimelineMessage[]): TimelineMessage[] {
+    const existingKeys = new Set(existing.map(m => contentKey(m)));
+    const seenInBatch = new Set<string>();
+    return msgs.filter(m => {
+      const ck = contentKey(m);
+      if (existingKeys.has(ck) || seenInBatch.has(ck)) return false;
+      seenInBatch.add(ck);
+      return true;
+    });
+  }
+
+  function setMessages(msgs: TimelineMessage[]) {
+    knownIds.clear();
+    const seen = new Set<string>();
+    const seenContent = new Set<string>();
+    const filtered = msgs.filter(m => {
+      if (isEmptyUserMsg(m) || seen.has(m.id)) return false;
+      const ck = contentKey(m);
+      if (seenContent.has(ck)) return false;
+      seenContent.add(ck);
+      seen.add(m.id);
+      return true;
+    });
+    filtered.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    messages.value = filtered;
+    filtered.forEach(m => knownIds.add(m.id));
+  }
+
+  function extractContentText(content: any): string {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content.filter((c: any) => c.type === 'text').map((c: any) => c.text ?? '').join('');
+    return String(content ?? '');
+  }
+
+  function makeMsg(
+    type: 'user' | 'agent' | 'tool',
+    agentId: string, agentName: string | null, model: string | null,
+    content: string, timestamp: string,
+    rawId: any, avatar: string | null, runId?: string,
+  ): TimelineMessage {
+    const stableId = typeof rawId === 'number' || typeof rawId === 'string'
+      ? `gw_${rawId}`
+      : `gw_${simpleHash(`${type}:${timestamp}:${content.substring(0, 80)}`)}`;
+    return {
+      id: stableId,
+      session_key: getSessionKey() || '',
+      agent_id: type === 'user' ? 'user' : agentId,
+      agent_name: type === 'user' ? 'You' : agentName,
+      avatar: avatar ?? agentAvatar.value ?? null,
+      message_type: type,
+      content: content || null,
+      clean_content: content || null,
+      content_summary: null,
+      is_cron: false,
+      is_system_noise: false,
+      is_system_context: 0,
+      source_channel: 'webchat',
+      model: model || null,
+      timestamp,
+      streamRunId: runId,
+    };
+  }
+
+  function gatewayMsgsToTimeline(rawMessages: any[]): TimelineMessage[] {
+    const result: TimelineMessage[] = [];
+    const sessionAgentId = getSessionKey()?.match(/^agent:([^:]+)/)?.[1];
+    for (const m of rawMessages) {
+      const role = m.role as string;
+      if (role !== 'user' && role !== 'assistant' && role !== 'tool' && role !== 'toolResult') continue;
+      const runId = m.runId as string | undefined;
+      const timestamp = normalizeTimestamp(m.timestamp);
+
+      if (role === 'user') {
+        let text = extractContentText(m.content);
+        if (!text.trim() || text.trim() === 'NO_REPLY' || text.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
+        result.push(makeMsg('user', 'user', 'You', null, text, timestamp, m.id, null, runId));
+        continue;
+      }
+
+      if (role === 'assistant') {
+        if (typeof m.content === 'string') {
+          if (isSystemNoise(m.content)) continue;
+          result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, m.content, timestamp, m.id, null, runId));
+          continue;
+        }
+        if (!Array.isArray(m.content)) continue;
+        let textParts: string[] = [];
+        let toolCallBlocks: any[] = [];
+        for (const block of m.content) {
+          switch (block.type) {
+            case 'text': textParts.push(block.text ?? ''); break;
+            case 'thinking': break;
+            case 'toolCall': case 'tool_call': toolCallBlocks.push(block); break;
+          }
+        }
+        const combinedText = textParts.join('');
+        if (!isSystemNoise(combinedText)) {
+          result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, combinedText, timestamp, m.id, null, runId));
+        }
+        for (const tc of toolCallBlocks) {
+          const toolName = tc.toolName || tc.name || 'unknown';
+          const toolContent = `Tool: ${toolName}\nArgs: ${JSON.stringify(tc.arguments ?? tc.args ?? {}, null, 2)}`;
+          result.push(makeMsg('tool', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, toolContent, timestamp, m.id, null, runId));
+        }
+        continue;
+      }
+
+      if (role === 'tool' || role === 'toolResult') {
+        let text = extractContentText(m.content);
+        if (!text.trim()) continue;
+        result.push(makeMsg('tool', sessionAgentId || 'assistant', null, null, text.substring(0, 500), timestamp, m.id, null, runId));
+      }
+    }
+    result.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    return result;
+  }
+
+  // ── 过滤 ──
+
+  const filters = computed(() => {
+    const agentId = getSessionKey()?.match(/^agent:([^:]+)/)?.[1];
+    return `exclude_system_noise=true&exclude_cron=true&message_types=user,agent${agentId ? `&agent_ids=${agentId}` : ''}`;
+  });
+
+  // ── 滚动 ──
+
+  function checkBottom() {
+    const el = containerRef.value;
+    if (!el) return;
+    atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  }
+
+  function scrollToBottom(smooth = true) {
+    const el = containerRef.value;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
+  }
+
+  function onScroll() { checkBottom(); }
+  function goToBottom() { scrollToBottom(); newMsgCount.value = 0; }
+
+  // ── 加载 ──
+
+  function resetAdminCursor() { adminPageCursor = null; }
+
+  async function fetchAgentAvatar() {
+    try {
+      const agentId = getSessionKey()?.match(/^agent:([^:]+)/)?.[1];
+      if (!agentId) return;
+      const res = await request('/agents');
+      if (!res.ok) return;
+      const data = await res.json() as any;
+      const agents: any[] = data?.agents ?? [];
+      const match = agents.find((a: any) => (a.id || a.agent_id) === agentId);
+      const avatar = match?.avatar ?? null;
+      agentAvatar.value = avatar;
+      if (avatar) {
+        messages.value = messages.value.map(m => m.message_type === 'agent' && !m.avatar ? { ...m, avatar } : m);
+      }
+    } catch (e) {
+      console.warn('[ChatTimeline] fetchAgentAvatar failed', e);
+    }
+  }
+
+  async function fillScrollable() {
+    const el = containerRef.value;
+    if (!el) return;
+    let batches = 0;
+    while (batches < 2 && hasMore.value) {
+      if (el.scrollHeight > el.clientHeight + 10) break;
+      const oldest = messages.value[0]?.timestamp;
+      if (!oldest) break;
+      const beforeCursor = new Date(new Date(oldest).getTime() - 1).toISOString();
+      const res = await request(`/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeCursor)}&${filters.value}`);
+      if (!res.ok) break;
+      const data: TimelineResponse = await res.json();
+      if (!Array.isArray(data.messages) || data.messages.length === 0) { hasMore.value = data.has_more; break; }
+      const newMsgs = data.messages.map(m => ({
+        ...m, id: `admin_${m.id}`,
+        clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+      })).filter(m => !knownIds.has(m.id)).filter(m => !isTimelineSystemNoise(m));
+      if (newMsgs.length === 0) { hasMore.value = data.has_more; break; }
+      newMsgs.forEach(m => knownIds.add(m.id));
+      messages.value = [...newMsgs, ...messages.value].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      hasMore.value = data.has_more;
+      await nextTick();
+      batches++;
+    }
+  }
+
+  async function loadLatest() {
+    loading.value = true;
+    knownIds.clear();
+    gatewayBoundary = null;
+    resetAdminCursor();
+
+    try {
+      let gatewayMsgs: TimelineMessage[] = [];
+      if (getSessionKey()) {
+        try {
+          const historyUrl = `/chat/history?sessionKey=${encodeURIComponent(getSessionKey()!)}&limit=10`;
+          const historyRes = await request(historyUrl);
+          if (historyRes.ok) {
+            const result = await historyRes.json() as any;
+            const rawMsgs = result?.messages ?? result?.history ?? result ?? [];
+            const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
+            gatewayMsgs = gatewayMsgsToTimeline(arr);
+            if (gatewayMsgs.length > 0) {
+              gatewayBoundary = gatewayMsgs[0].timestamp;
+              gatewayMsgs.forEach(m => knownIds.add(m.id));
+            }
+          }
+        } catch (e) {
+          console.warn('[ChatTimeline] Gateway loadLatest failed, falling back to Admin', e);
+        }
+      }
+
+      let adminMsgs: TimelineMessage[] = [];
+      const adminUrl = gatewayBoundary
+        ? `/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(new Date(new Date(gatewayBoundary).getTime() - 1).toISOString())}&${filters.value}`
+        : `/messages/timeline?limit=${PAGE_SIZE}&${filters.value}`;
+      const res = await request(adminUrl);
+      if (res.ok) {
+        const data: TimelineResponse = await res.json();
+        adminMsgs = (data.messages || []).map(m => ({
+          ...m,
+          id: `admin_${m.id}`,
+          clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+        }));
+        adminMsgs = adminMsgs.filter(m => !knownIds.has(m.id)).filter(m => !isTimelineSystemNoise(m));
+        adminMsgs.forEach(m => knownIds.add(m.id));
+        hasMore.value = adminMsgs.length === 0 && gatewayBoundary ? true : data.has_more;
+      }
+
+      const merged = [...adminMsgs, ...gatewayMsgs].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      setMessages(merged);
+      await fetchAgentAvatar();
+      await fillScrollable();
+    } catch (e) {
+      console.error('加载聊天记录失败', e);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function loadMore() {
+    if (loadingMore.value || !hasMore.value || messages.value.length === 0) return;
+    loadingMore.value = true;
+    const el = containerRef.value;
+    const prevScrollTop = el?.scrollTop ?? 0;
+    const prevScrollHeight = el?.scrollHeight ?? 0;
+
+    try {
+      let beforeTs: string;
+      if (adminPageCursor) {
+        beforeTs = adminPageCursor;
+      } else {
+        const oldest = messages.value[0].timestamp;
+        beforeTs = new Date(new Date(oldest).getTime() - 1).toISOString();
+      }
+      const url = `/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeTs)}&${filters.value}`;
+      const res = await request(url);
+      if (!res.ok) { hasMore.value = false; return; }
+      const data: TimelineResponse = await res.json();
+      if (!Array.isArray(data.messages) || data.messages.length === 0) { hasMore.value = data.has_more; return; }
+
+      const adminMsgs = data.messages.map(m => ({
+        ...m, id: `admin_${m.id}`,
+        clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+      })).filter(m => !isTimelineSystemNoise(m));
+
+      const idFiltered = adminMsgs.filter(m => !knownIds.has(m.id));
+      const newMsgs = dedupByContent(idFiltered, messages.value);
+
+      const earliestReturned = adminMsgs.reduce((min, m) => {
+        const t = new Date(m.timestamp).getTime();
+        return t < min ? t : min;
+      }, Infinity);
+      if (earliestReturned < Infinity) {
+        adminPageCursor = new Date(earliestReturned - 1).toISOString();
+      }
+
+      if (newMsgs.length === 0) { hasMore.value = data.has_more; return; }
+      newMsgs.forEach(m => knownIds.add(m.id));
+      messages.value = [...newMsgs, ...messages.value];
+      hasMore.value = data.has_more;
+    } catch (e) {
+      console.error('加载更多失败', e);
+    } finally {
+      loadingMore.value = false;
+      await nextTick();
+      if (el) {
+        const delta = el.scrollHeight - prevScrollHeight;
+        el.scrollTop = prevScrollTop + delta;
+      }
+    }
+  }
+
+  // ── 消息分组 ──
+
+  const visibleMessages = computed(() => messages.value.filter(m => !m.is_system_context));
+
+  const groupedMessages = computed(() => {
+    const groups: import('./types').MsgGroup[] = [];
+    let current: import('./types').MsgGroup | null = null;
+
+    for (const msg of visibleMessages.value) {
+      const role = msg.message_type === 'tool' ? 'agent' : msg.message_type;
+      if (role === 'user') {
+        if (current) { groups.push(current); current = null; }
+        groups.push({ type: 'user', agentId: '', agentName: '', avatar: null, timestamp: msg.timestamp, messages: [msg], toolMsgs: [], hiddenToolCount: 0 });
+      } else if (role === 'agent') {
+        if (current && current.type === 'agent' && current.agentId === msg.agent_id) {
+          if (msg.message_type === 'tool') { current.toolMsgs.push(msg); } else { current.messages.push(msg); }
+        } else if (msg.message_type === 'tool' && current && current.type === 'agent') {
+          current.toolMsgs.push(msg);
+        } else {
+          if (current) groups.push(current);
+          current = {
+            type: 'agent', agentId: msg.agent_id, agentName: msg.agent_name, avatar: msg.avatar,
+            timestamp: msg.timestamp,
+            messages: msg.message_type === 'tool' ? [] : [msg],
+            toolMsgs: msg.message_type === 'tool' ? [msg] : [],
+            hiddenToolCount: 0,
+          };
+          if (current && current.messages.length === 0) {
+            current.messages.push({ id: msg.id, content: '', clean_content: '', message_type: 'agent', agent_id: msg.agent_id, agent_name: msg.agent_name, timestamp: msg.timestamp } as any);
+          }
+        }
+      }
+    }
+    if (current) groups.push(current);
+
+    for (const grp of groups) {
+      if (grp.toolMsgs.length > 3) {
+        grp.hiddenToolCount = grp.toolMsgs.length - 2;
+        grp.toolMsgs = grp.toolMsgs.slice(0, 2);
+      }
+    }
+    return groups;
+  });
+
+  // ── 重置（session 切换时） ──
+
+  function reset() {
+    agentAvatar.value = null;
+    knownIds.clear();
+    gatewayBoundary = null;
+    resetAdminCursor();
+    messages.value = [];
+  }
+
+  // ── 工具辅助（给模板用） ──
+
+  function extractToolName(content: string | null): string {
+    if (!content) return 'tool';
+    const match = content.match(/Tool:\s*(\S+)/) || content.match(/"tool"\s*:\s*"([^"]+)"/);
+    if (match) return match[1];
+    const firstLine = content.split('\n')[0].trim();
+    return firstLine.length < 60 ? firstLine : 'tool';
+  }
+
+  function truncateToolContent(content: string | null, maxLen = 150): string {
+    if (!content) return '';
+    return content.length <= maxLen ? content : content.substring(0, maxLen) + '...';
+  }
+
+  function formatTime(ts: string) {
+    const d = new Date(ts);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    if (isToday) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    return `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  function toolSummary(grp: import('./types').MsgGroup): string {
+    const total = grp.toolMsgs.length + grp.hiddenToolCount;
+    const names = [...new Set(grp.toolMsgs.map(tm => extractToolName(tm.content)))];
+    const nameStr = names.length > 0 ? names.join(', ') : '';
+    return `🔧 ${total} tools${nameStr ? ` (${nameStr})` : ''}`;
+  }
+
+  return {
+    messages, loading, loadingMore, hasMore, newMsgCount, atBottom,
+    containerRef, showTypingIndicator, agentAvatar,
+    knownIds, isSystemNoise, normalizeTimestamp, simpleHash,
+    scrollToBottom, onScroll, goToBottom, checkBottom,
+    loadLatest, loadMore, reset, fetchAgentAvatar,
+    groupedMessages,
+    extractToolName, truncateToolContent, formatTime, toolSummary,
+  };
+}
