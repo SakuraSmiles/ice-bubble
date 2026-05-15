@@ -187,6 +187,32 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
     }
     opts.showTypingIndicator.value = false;
     if (opts.atBottom.value) nextTick(() => opts.scrollToBottom(false));
+
+    // 流式文本中 MEDIA: 已被 Gateway 剥离，通过 chat.history 获取完整内容以渲染图片
+    const sessionKey = opts.getSessionKey();
+    if (sessionKey && gatewayClient.isConnected) {
+      setTimeout(async () => {
+        try {
+          const res = await gatewayClient.getChatHistory(sessionKey, 1);
+          const history = res as any;
+          const messages = history?.messages || [];
+          if (messages.length === 0) return;
+          const latest = messages[messages.length - 1];
+          const fullText = extractText(latest);
+          if (!fullText || !fullText.includes('MEDIA:')) return;
+          // 找到对应的流式消息并更新内容
+          const curIdx = opts.messages.value.findIndex(
+            m => m.streamRunId === runId || m.id === finalId
+          );
+          if (curIdx < 0) return;
+          opts.messages.value[curIdx] = {
+            ...opts.messages.value[curIdx],
+            content: fullText,
+            clean_content: fullText,
+          };
+        } catch { /* ignore */ }
+      }, 800);
+    }
   }
 
   function handleChatError(data: Record<string, unknown>, runId: string) {
