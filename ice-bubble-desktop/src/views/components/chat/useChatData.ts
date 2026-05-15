@@ -118,28 +118,25 @@ export function useChatData(getSessionKey: () => string | undefined) {
       const data = await res.json() as { attachments: Array<{ id: string; session_key: string; created_at: string; file_path: string; mime_type: string; file_size: number }> };
       const attList = data.attachments || [];
       if (attList.length === 0) return;
-      // 策略：按顺序配对
-      // 找出“疑似图片消息”（空内容、纯占位符、或很短的内容）
-      const imageLikeMsgs = userMsgs.filter(m => {
-        const text = (m.clean_content || m.content || '').trim();
-        return !text || text === '(图片)' || text.length <= 20;
-      }).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-      // 附件按创建时间排序
-      const sortedAtts = [...attList].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      // 一一配对
+      // 按时间戳匹配：消息 timestamp 与附件 created_at ±30秒
       let changed = false;
-      const pairCount = Math.min(imageLikeMsgs.length, sortedAtts.length);
-      for (let i = 0; i < pairCount; i++) {
-        const m = imageLikeMsgs[i];
-        const a = sortedAtts[i];
-        m.attachments = [{
-          type: 'image',
-          mimeType: a.mime_type,
-          fileName: a.file_path,
-          content: '',
-          dataUrl: `${API_BASE}/attachments/${a.file_path}`,
-        }];
-        changed = true;
+      for (const m of userMsgs) {
+        if (!m.timestamp) continue;
+        const msgTime = new Date(m.timestamp).getTime();
+        const matched = attList.filter(a => {
+          const attTime = new Date(a.created_at).getTime();
+          return Math.abs(msgTime - attTime) < 30_000;
+        });
+        if (matched.length > 0) {
+          m.attachments = matched.map(a => ({
+            type: 'image',
+            mimeType: a.mime_type,
+            fileName: a.file_path,
+            content: '',
+            dataUrl: `${API_BASE}/attachments/${a.file_path}`,
+          }));
+          changed = true;
+        }
       }
       if (changed) messages.value = [...messages.value];
     } catch (e) {

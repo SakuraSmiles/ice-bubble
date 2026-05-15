@@ -219,15 +219,22 @@ export async function startAdmin(): Promise<void> {
       res.sendFile(filePath);
     });
 
-    // Attachment static files + query API — no auth required
-    // (browser <img> tags and Desktop API calls need unauthenticated access)
+    // Attachment query API — before auth middleware (Desktop uses request() but we register here to avoid :filename collision)
+    // Actual handler is registered below after attachmentStorage is initialized; for now use a placeholder
+    let attachmentQueryHandler: ((req: any, res: any) => void) | null = null;
+    app.get('/api/attachments/query', (req, res) => {
+      if (attachmentQueryHandler) { attachmentQueryHandler(req, res); return; }
+      res.status(503).json({ attachments: [] });
+    });
+
+    // Attachment static files — no auth required (browser <img> tags cannot send Authorization header)
     const attachmentsDirEarly = process.env.ATTACHMENTS_DIR || join(process.env.HOME || '/root', '.local', 'share', 'ice-bubble', 'data', 'attachments');
     if (!existsSync(attachmentsDirEarly)) {
       mkdirSync(attachmentsDirEarly, { recursive: true });
     }
     app.get('/api/attachments/:filename', (req, res) => {
       const { filename } = req.params;
-      if (!filename || filename.includes('..') || filename.includes('/')) {
+      if (!filename || filename.includes('..') || filename.includes('/') || filename === 'query') {
         res.status(404).json({ error: 'Attachment not found' });
         return;
       }
@@ -389,13 +396,14 @@ export async function startAdmin(): Promise<void> {
       res.json({ messages, total: result.total });
     });
 
-    // Attachment query API (after auth middleware, Desktop uses authenticated request())
-    app.get('/api/attachments/query', (req, res) => {
+    // Attachment query API — after auth middleware, Desktop uses authenticated request()
+    // (handler placeholder was registered earlier before :filename route)
+    attachmentQueryHandler = (req, res) => {
       const sessionKey = req.query.session_key as string;
       if (!sessionKey) { res.status(400).json({ attachments: [] }); return; }
       const attachments = attachmentStorage.getAttachments(sessionKey);
       res.json({ attachments });
-    });
+    };
 
     // Chat routes (only if GatewayProxy is available)
     if (chatController) {
