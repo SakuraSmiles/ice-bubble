@@ -245,19 +245,14 @@ function resetInputHeight() {
       <template v-else>
         <ChatTimeline ref="timelineRef" :key="sessionKey" :session-key="sessionKey" />
         <div class="chat-input-bar" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop" :class="{ 'drag-over': dragOver }">
+          <input ref="fileInputRef" type="file" accept="image/*" multiple class="file-input-hidden" @change="onFileChange" />
           <div v-if="attachments.length > 0" class="attachment-preview-bar">
             <div v-for="att in attachments" :key="att.id" class="attachment-preview-item">
               <img :src="att.preview" :alt="att.file.name" />
               <button class="attachment-remove" @click="removeAttachment(att.id)">&times;</button>
             </div>
           </div>
-          <div class="chat-input-wrapper">
-            <input ref="fileInputRef" type="file" accept="image/*" multiple class="file-input-hidden" @change="onFileChange" />
-            <button v-if="canSend" class="attach-btn" title="添加图片" @click="onFileSelect">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
-              </svg>
-            </button>
+          <div class="chat-input-card">
             <textarea
               ref="inputRef"
               v-model="inputText"
@@ -269,11 +264,18 @@ function resetInputHeight() {
               @input="autoResize"
               @paste="onPaste"
             />
-            <button v-if="canSend" class="send-btn" :disabled="sending || (!inputText.trim() && attachments.length === 0)" @click="sendMessage">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M1.5 1.5l13 5-13 5V8.5l8-1.5-8-1.5V1.5z"/>
-              </svg>
-            </button>
+            <div v-if="canSend" class="chat-input-actions">
+              <button class="attach-btn" title="添加图片" @click="onFileSelect">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                </svg>
+              </button>
+              <button class="send-btn" :disabled="sending || (!inputText.trim() && attachments.length === 0)" @click="sendMessage">
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M1.5 1.5l13 5-13 5V8.5l8-1.5-8-1.5V1.5z"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -317,34 +319,36 @@ function resetInputHeight() {
 /* ===== 输入框 ===== */
 .chat-input-bar {
   display: flex;
-  align-items: flex-end;
-  padding: 12px 20px;
-  border-top: 1px solid var(--color-border-subtle);
+  flex-direction: column;
+  padding: 12px 16px 16px;
   flex-shrink: 0;
   background: var(--color-bg-canvas);
+ border-radius: 0 0 8px 8px;
+  transition: all 0.2s ease;
 }
 
-.chat-input-wrapper {
-  flex: 1;
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-bg-inset);
-  transition: border-color 0.15s;
+.chat-input-card {
+ flex: 1;
+ display: flex;
+ align-items: center;
+ background: #fff;
+ border-radius: 12px;
+ border: 1px solid var(--color-border);
+ box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+ transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.chat-input-wrapper:focus-within {
+.chat-input-card:focus-within {
   border-color: var(--color-accent-blue);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 2px rgba(9, 105, 218, 0.1);
 }
 
 .chat-input {
   flex: 1;
   resize: none;
   border: none;
-  border-radius: 10px;
-  padding: 10px 48px 10px 14px;
+  border-radius: 12px;
+  padding: 10px 8px;
   font-size: 14px;
   font-family: inherit;
   color: var(--color-text);
@@ -363,15 +367,21 @@ function resetInputHeight() {
   opacity: 0.5;
 }
 
+/* ===== 按钮组 ===== */
+.chat-input-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+
 .send-btn {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border: none;
   border-radius: 8px;
   background: var(--color-accent-blue);
@@ -388,8 +398,9 @@ function resetInputHeight() {
 }
 
 .send-btn:disabled {
-  opacity: 0.2;
+  opacity: 0.3;
   cursor: not-allowed;
+  background: var(--color-text-quaternary, #d1d5db);
 }
 
 /* ===== 附件按钮 ===== */
@@ -397,8 +408,8 @@ function resetInputHeight() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border: none;
   border-radius: 8px;
   background: transparent;
@@ -406,11 +417,10 @@ function resetInputHeight() {
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.2s ease;
-  margin-left: 4px;
 }
 
 .attach-btn:hover {
-  color: var(--color-text);
+  color: var(--color-text-secondary);
   background: var(--color-bg-overlay);
 }
 
@@ -422,7 +432,7 @@ function resetInputHeight() {
 .attachment-preview-bar {
   display: flex;
   gap: 8px;
-  padding: 8px 0;
+  padding: 0 0 8px;
   flex-wrap: wrap;
 }
 
@@ -433,6 +443,12 @@ function resetInputHeight() {
   border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  transition: box-shadow 0.15s;
+}
+
+.attachment-preview-item:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
 .attachment-preview-item img {
@@ -467,7 +483,7 @@ function resetInputHeight() {
 
 /* ===== 拖拽高亮 ===== */
 .chat-input-bar.drag-over {
-  border-top-color: var(--color-accent-blue);
+  border: 2px dashed var(--color-accent-blue);
   background: rgba(9, 105, 218, 0.04);
 }
 </style>
