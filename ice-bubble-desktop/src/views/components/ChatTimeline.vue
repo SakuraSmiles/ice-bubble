@@ -143,7 +143,7 @@ defineExpose({
     </div>
 
     <!-- 消息列表 -->
-    <div ref="chatData.containerRef.value" class="chat-scroll" @scroll="chatData.onScroll()">
+    <div :ref="(el: any) => { chatData.containerRef.value = el }" class="chat-scroll" @scroll="chatData.onScroll()">
       <!-- 加载更多按钮 -->
       <div v-if="chatData.hasMore.value && !chatData.loading.value" class="load-more-bar">
         <button type="button" class="load-more-btn" @click="chatData.loadMore()" :disabled="chatData.loadingMore.value">
