@@ -144,7 +144,7 @@ defineExpose({
     </div>
 
     <!-- 消息列表 -->
-    <div :ref="(el: any) => { chatData.containerRef.value = el }" class="chat-scroll">
+    <div :ref="(el: any) => { chatData.containerRef.value = el }" :class="['chat-scroll', { 'no-virtual-scroll': chatData.loading.value || chatData.messages.value.length === 0 }]">
       <!-- 加载更多按钮 -->
       <div v-if="chatData.hasMore.value && !chatData.loading.value" class="load-more-bar">
         <button type="button" class="load-more-btn" @click="chatData.loadMore()" :disabled="chatData.loadingMore.value">
@@ -163,10 +163,10 @@ defineExpose({
       <VirtualScroller
         v-else
         :ref="(el: any) => { chatData.vsRef.value = el }"
-        :items="chatData.groupedMessages.value"
+        :items="(chatData.groupedMessages.value as any)"
         :item-height="120"
         :dynamic-height="true"
-        container-height="100%"
+        container-height=""
         :overscan="5"
         class="vs-timeline"
         @scroll="chatData.onScroll()"
@@ -180,7 +180,7 @@ defineExpose({
           </div>
           <MessageBubble
             v-else
-            :group="grp"
+            :group="(grp as any)"
             :group-index="gi"
             :is-last-agent-group="gi === lastAgentGroupIndex"
             :should-show-time="shouldShowTime"
@@ -238,12 +238,21 @@ defineExpose({
 .chat-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
   background: var(--color-bg-canvas);
+}
+
+.chat-scroll.no-virtual-scroll {
+  overflow-y: auto;
+  padding: 16px 20px;
+  gap: 8px;
+}
+
+.vs-timeline {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 20px;
 }
 
 .load-more-bar {
