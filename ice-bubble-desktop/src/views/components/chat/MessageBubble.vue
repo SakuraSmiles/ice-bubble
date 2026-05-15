@@ -60,6 +60,11 @@ function regenerate() {
   emit('regenerate');
 }
 
+function isImageOnlyPlaceholder(content: string | null | undefined): boolean {
+  if (!content) return false;
+  return /^\(图片\)$/i.test(content.trim());
+}
+
 function previewImage(src: string) {
   const win = window.open('', '_blank');
   if (win) {
@@ -74,7 +79,11 @@ function previewImage(src: string) {
   <div v-if="group.type === 'user' && group.messages.length > 0" class="msg-row msg-row--user" :data-msg-id="group.messages[0]?.id">
     <div class="bubble bubble--user">
       <span v-if="shouldShowTime(group.timestamp, groupIndex)" class="bubble-time">{{ formatTime(group.timestamp) }}</span>
-      <MarkdownContent v-if="group.messages[0]?.clean_content || group.messages[0]?.content" :content="group.messages[0]?.clean_content || group.messages[0]?.content || ''" />
+      <template v-if="isImageOnlyPlaceholder(group.messages[0]?.content) && group.messages[0]?.attachments?.length">
+        <!-- 纯图片消息：只显示图片，不显示占位文字 -->
+      </template>
+      <MarkdownContent v-else-if="isImageOnlyPlaceholder(group.messages[0]?.content)" :content="'🖼️ [图片已发送]'" class="image-placeholder-text" />
+      <MarkdownContent v-else-if="group.messages[0]?.clean_content || group.messages[0]?.content" :content="group.messages[0]?.clean_content || group.messages[0]?.content || ''" />
       <div v-if="group.messages[0]?.attachments?.length" class="bubble-images">
         <img
           v-for="(att, ai) in group.messages[0].attachments"
@@ -406,6 +415,12 @@ function previewImage(src: string) {
 .bubble-image--agent {
   max-width: 320px;
   max-height: 320px;
+}
+
+/* 图片占位文字 */
+.image-placeholder-text {
+  color: var(--color-text-tertiary, #999);
+  font-style: italic;
 }
 
 /* 流式光标 */

@@ -164,7 +164,9 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
       ? `gw_${rawFinalId}` : `gw_${Date.now()}`;
     const idx = findStreamMsgIndex(runId);
 
-    const attachments = msg ? extractAttachments(msg) : undefined;
+    const attachments = (msg ? extractAttachments(msg) : undefined)
+      || extractAttachments(data)
+      || undefined;
     if (idx >= 0) {
       if (opts.isSystemNoise(finalText)) {
         opts.messages.value.splice(idx, 1);

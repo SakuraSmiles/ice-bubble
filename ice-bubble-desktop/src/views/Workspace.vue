@@ -208,7 +208,7 @@ async function sendMessage() {
   try {
     if (gatewayConnected.value) {
       await gatewayClient.sendMessage(sessionKey.value, text || '(图片)', attachmentPayloads.length > 0 ? attachmentPayloads : undefined);
-      timelineRef.value?.addOptimisticMessage(text || '(图片)', 'user', attachmentDataUrls);
+      timelineRef.value?.addOptimisticMessage(hasAttachments && !text ? '' : text, 'user', attachmentDataUrls);
     } else {
       const res = await request('/chat/send', {
         method: 'POST',
@@ -217,7 +217,7 @@ async function sendMessage() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
-      timelineRef.value?.addOptimisticMessage(text || '(图片)', 'user', attachmentDataUrls);
+      timelineRef.value?.addOptimisticMessage(hasAttachments && !text ? '' : text, 'user', attachmentDataUrls);
     }
   } catch (e) {
     inputText.value = text;
