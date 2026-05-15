@@ -17,9 +17,8 @@ export function useChatData(getSessionKey: () => string | undefined) {
   const agentAvatar = ref<string | null>(null);
 
   let knownIds = new Set<string>();
-  let gatewayBoundary: string | null = null;
   let adminPageCursor: string | null = null;
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = 30;
 
   // ── 工具函数 ──
 
@@ -243,7 +242,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
     const el = containerRef.value;
     if (!el) return;
     let batches = 0;
-    while (batches < 2 && hasMore.value) {
+    while (batches < 1 && hasMore.value) {
       if (el.scrollHeight > el.clientHeight + 10) break;
       const oldest = messages.value[0]?.timestamp;
       if (!oldest) break;
@@ -270,52 +269,67 @@ export function useChatData(getSessionKey: () => string | undefined) {
   async function loadLatest() {
     loading.value = true;
     knownIds.clear();
-    gatewayBoundary = null;
     resetAdminCursor();
 
     try {
-      let gatewayMsgs: TimelineMessage[] = [];
-      if (getSessionKey()) {
+      // 并行请求 Gateway history 和 Admin timeline
+      const sessionKey = getSessionKey();
+
+      const gatewayPromise = (async (): Promise<TimelineMessage[]> => {
+        if (!sessionKey) return [];
         try {
-          const historyUrl = `/chat/history?sessionKey=${encodeURIComponent(getSessionKey()!)}&limit=10`;
+          const historyUrl = `/chat/history?sessionKey=${encodeURIComponent(sessionKey)}&limit=10`;
           const historyRes = await request(historyUrl);
           if (historyRes.ok) {
             const result = await historyRes.json() as any;
             const rawMsgs = result?.messages ?? result?.history ?? result ?? [];
             const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
-            gatewayMsgs = gatewayMsgsToTimeline(arr);
-            if (gatewayMsgs.length > 0) {
-              gatewayBoundary = gatewayMsgs[0].timestamp;
-              gatewayMsgs.forEach(m => knownIds.add(m.id));
-            }
+            return gatewayMsgsToTimeline(arr);
           }
         } catch (e) {
           console.warn('[ChatTimeline] Gateway loadLatest failed, falling back to Admin', e);
         }
-      }
+        return [];
+      })();
 
-      let adminMsgs: TimelineMessage[] = [];
-      const adminUrl = gatewayBoundary
-        ? `/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(new Date(new Date(gatewayBoundary).getTime() - 1).toISOString())}&${filters.value}`
-        : `/messages/timeline?limit=${PAGE_SIZE}&${filters.value}`;
-      const res = await request(adminUrl);
-      if (res.ok) {
-        const data: TimelineResponse = await res.json();
-        adminMsgs = (data.messages || []).map(m => ({
-          ...m,
-          id: `admin_${m.id}`,
-          clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
-        }));
-        adminMsgs = adminMsgs.filter(m => !knownIds.has(m.id)).filter(m => !isTimelineSystemNoise(m));
-        adminMsgs.forEach(m => knownIds.add(m.id));
-        hasMore.value = adminMsgs.length === 0 && gatewayBoundary ? true : data.has_more;
-      }
+      const adminPromise = (async (): Promise<{ msgs: TimelineMessage[]; has_more: boolean }> => {
+        try {
+          const adminUrl = `/messages/timeline?limit=${PAGE_SIZE}&${filters.value}`;
+          const res = await request(adminUrl);
+          if (res.ok) {
+            const data: TimelineResponse = await res.json();
+            const msgs = (data.messages || []).map(m => ({
+              ...m,
+              id: `admin_${m.id}`,
+              clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+            }));
+            return { msgs, has_more: data.has_more };
+          }
+        } catch (e) {
+          console.warn('[ChatTimeline] Admin timeline fetch failed', e);
+        }
+        return { msgs: [], has_more: false };
+      })();
+
+      const [gatewayMsgs, adminResult] = await Promise.all([gatewayPromise, adminPromise]);
+
+      // 注册 gateway IDs 到 knownIds（用于去重）
+      gatewayMsgs.forEach(m => knownIds.add(m.id));
+
+      // 过滤 admin 消息：去除与 gateway 重复的 + 系统噪音
+      const adminMsgs = adminResult.msgs
+        .filter(m => !knownIds.has(m.id))
+        .filter(m => !isTimelineSystemNoise(m));
+      adminMsgs.forEach(m => knownIds.add(m.id));
+      hasMore.value = adminResult.has_more;
 
       const merged = [...adminMsgs, ...gatewayMsgs].sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
       setMessages(merged);
-      await fetchAgentAvatar();
+
+      // fetchAgentAvatar 不阻塞渲染，后台加载
+      fetchAgentAvatar();
       await fillScrollable();
     } catch (e) {
       console.error('加载聊天记录失败', e);
@@ -451,7 +465,6 @@ export function useChatData(getSessionKey: () => string | undefined) {
   function reset() {
     agentAvatar.value = null;
     knownIds.clear();
-    gatewayBoundary = null;
     resetAdminCursor();
     messages.value = [];
   }
