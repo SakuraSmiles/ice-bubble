@@ -192,16 +192,16 @@ onMounted(() => {
   gap: 10px;
   padding: 10px 16px 10px 14px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background-color 100ms ease, border-color 150ms ease;
   border-left: 3px solid transparent;
 }
 
 .session-item:hover {
-  background: var(--color-bg-subtle);
+  background: var(--ib-hover-bg-light);
 }
 
 .session-item.selected {
-  background: rgba(64, 158, 255, 0.06);
+  background: var(--ib-hover-bg-accent);
   border-left-color: var(--color-accent-blue);
 }
 

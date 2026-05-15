@@ -235,6 +235,11 @@ function autoScrollToBottom() {
   line-height: 32px;
   white-space: nowrap;
   overflow: hidden;
+  transition: background-color 100ms ease;
+}
+
+.log-entry:hover {
+  background-color: var(--ib-hover-bg-light);
 }
 
 .log-time {

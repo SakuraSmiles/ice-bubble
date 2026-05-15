@@ -1,0 +1,190 @@
+/* ============================================================
+ * IceBubble Desktop — 全局交互反馈样式
+ *
+ * 为所有可交互元素提供统一的 hover / focus / active 视觉反馈。
+ * 设计原则：
+ *   - 不破坏现有布局和尺寸
+ *   - 统一过渡参数：hover 150-200ms，active 100ms
+ *   - 尊重 prefers-reduced-motion
+ *   - CSS 变量化，方便暗色主题切换
+ * ============================================================ */
+
+/* ============================================================
+ * CSS 变量 — 交互反馈专用
+ * ============================================================ */
+:root {
+  /* Hover 背景色 */
+  --ib-hover-bg: rgba(0, 0, 0, 0.04);
+  --ib-hover-bg-light: rgba(0, 0, 0, 0.02);
+  --ib-hover-bg-accent: rgba(9, 105, 218, 0.08);
+
+  /* Focus 环 */
+  --ib-focus-ring-color: #0969da;
+  --ib-focus-ring-width: 2px;
+  --ib-focus-ring-offset: 2px;
+  --ib-focus-ring: var(--ib-focus-ring-width) solid var(--ib-focus-ring-color);
+
+  /* Focus 辉光（输入框） */
+  --ib-focus-glow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+
+  /* 过渡 */
+  --ib-transition-fast: 100ms ease;
+  --ib-transition-normal: 150ms ease;
+  --ib-transition-slow: 200ms ease;
+
+  /* 卡片悬浮 */
+  --ib-card-hover-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --ib-card-hover-lift: translateY(-1px);
+}
+
+
+/* ============================================================
+ * 1. Element Plus 按钮 (el-button) — 全局覆盖
+ * ============================================================ */
+
+/* --- hover：微提亮 --- */
+.el-button:not(.el-button--text):not(.is-disabled):hover {
+  filter: brightness(1.04);
+}
+
+.el-button--primary:not(.is-disabled):hover {
+  filter: brightness(1.06);
+}
+
+.el-button--danger:not(.is-disabled):hover {
+  filter: brightness(1.06);
+}
+
+.el-button--success:not(.is-disabled):hover {
+  filter: brightness(1.06);
+}
+
+.el-button--warning:not(.is-disabled):hover {
+  filter: brightness(1.04);
+}
+
+/* --- focus-visible：键盘导航无障碍 --- */
+.el-button:focus-visible:not(.is-disabled) {
+  outline: var(--ib-focus-ring);
+  outline-offset: var(--ib-focus-ring-offset);
+}
+
+/* --- active：微缩放 --- */
+.el-button:not(.is-disabled):active {
+  transform: scale(0.98);
+  transition: transform var(--ib-transition-fast);
+}
+
+/* --- 文本按钮 (link/plain) hover 用标准背景 --- */
+.el-button.is-plain:not(.is-disabled):hover,
+.el-button--default.is-plain:not(.is-disabled):hover {
+  filter: none;
+  background-color: var(--ib-hover-bg);
+  border-color: var(--color-accent-blue);
+  color: var(--color-accent-blue);
+}
+
+/* 确保按钮有过渡 */
+.el-button {
+  transition: filter var(--ib-transition-normal),
+              transform var(--ib-transition-fast),
+              background-color var(--ib-transition-normal),
+              border-color var(--ib-transition-normal),
+              color var(--ib-transition-normal),
+              box-shadow var(--ib-transition-normal);
+}
+
+/* ============================================================
+ * 2. 输入框 (el-input / el-textarea) — 全局覆盖
+ * ============================================================ */
+
+/* 输入框容器 */
+.el-input__wrapper,
+.el-textarea__inner {
+  transition: border-color var(--ib-transition-normal),
+              box-shadow var(--ib-transition-normal);
+}
+
+/* focus 高亮 */
+.el-input.is-focus .el-input__wrapper,
+.el-input__wrapper:focus-within,
+.el-textarea__inner:focus {
+  border-color: var(--ib-focus-ring-color) !important;
+  box-shadow: var(--ib-focus-glow) !important;
+}
+
+/* placeholder 颜色 */
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder {
+  color: #8b949e !important;
+}
+
+/* ============================================================
+ * 3. Select 下拉框 focus
+ * ============================================================ */
+.el-select .el-input.is-focus .el-input__wrapper {
+  border-color: var(--ib-focus-ring-color) !important;
+  box-shadow: var(--ib-focus-glow) !important;
+}
+
+/* ============================================================
+ * 4. 分页器按钮
+ * ============================================================ */
+.el-pager li:not(.is-active):hover {
+  color: var(--color-accent-blue);
+}
+
+.el-pager li:focus-visible {
+  outline: var(--ib-focus-ring);
+  outline-offset: var(--ib-focus-ring-offset);
+}
+
+/* ============================================================
+ * 5. 卡片基础 hover 效果
+ *    使用 .ib-card--hover 类名可快速对任意卡片添加悬浮效果
+ * ============================================================ */
+.ib-card--hover {
+  transition: box-shadow var(--ib-transition-slow),
+              transform var(--ib-transition-slow);
+}
+
+.ib-card--hover:hover {
+  box-shadow: var(--ib-card-hover-shadow);
+  transform: var(--ib-card-hover-lift);
+}
+
+
+/* ============================================================
+ * 6. 列表项 hover
+ *    使用 .ib-list-item 类名可快速添加列表 hover 效果
+ * ============================================================ */
+.ib-list-item {
+  transition: background-color var(--ib-transition-fast);
+}
+
+.ib-list-item:hover {
+  background-color: var(--ib-hover-bg-light);
+}
+
+
+/* ============================================================
+ * 7. prefers-reduced-motion — 关闭所有动画
+ * ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .el-button:not(.is-disabled):active {
+    transform: none !important;
+  }
+
+  .ib-card--hover:hover {
+    transform: none !important;
+  }
+}

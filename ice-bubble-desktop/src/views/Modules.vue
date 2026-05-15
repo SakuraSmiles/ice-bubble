@@ -582,9 +582,11 @@ onUnmounted(() => {
 .module-card {
   width: 360px;
   cursor: pointer;
+  transition: box-shadow 200ms ease, transform 200ms ease;
 }
 .module-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--ib-card-hover-shadow);
+  transform: var(--ib-card-hover-lift);
 }
 
 .card-header {

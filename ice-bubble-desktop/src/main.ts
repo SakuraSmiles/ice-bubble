@@ -5,6 +5,7 @@ import ElementPlus from 'element-plus';
 import 'element-plus/dist/index.css';
 import 'highlight.js/styles/atom-one-dark.css';
 import './assets/fonts.css';
+import './assets/interactions.css';
 import * as ElementPlusIconsVue from '@element-plus/icons-vue';
 
 import App from './App.vue';

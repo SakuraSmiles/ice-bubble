@@ -536,8 +536,13 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   padding: 0;
 }
 
+.agent-card {
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+
 .agent-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--ib-card-hover-shadow);
+  transform: var(--ib-card-hover-lift);
 }
 
 .card-content {

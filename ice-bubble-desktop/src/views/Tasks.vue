@@ -160,6 +160,12 @@ onUnmounted(() => {
   background: var(--el-fill-color-light);
   border-radius: 8px;
   border: 1px solid var(--el-border-color-extra-light);
+  transition: background-color 100ms ease, box-shadow 150ms ease;
+}
+
+.task-item:hover {
+  background: var(--ib-hover-bg-light);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .task-item .task-top {
