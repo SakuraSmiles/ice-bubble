@@ -30,7 +30,7 @@ export interface DataRouterConfig {
 }
 
 export function createDataRouter(config: DataRouterConfig): Router {
-  const { repository, db, agentOverviewService, gatewayProxy } = config;
+  const { repository, db, agentOverviewService } = config;
   const router = Router();
 
   /**
@@ -238,63 +238,10 @@ export function createDataRouter(config: DataRouterConfig): Router {
    *
    * 若 agentOverviewService 不可用，降级为纯 lastActiveAt 判断
    *
-   * 额外结合 Gateway 实时 session 状态：
-   * 若某个 agent 在 Gateway 中有 running 会话，强制 status = "工作"。
-   * Gateway 不可用时优雅降级，不影响原有逻辑。
+   * 状态由 calculateAgentStatus 统一计算（基于 last_active_at 的 2 分钟活跃窗口）
    */
   router.get('/agents', async (_req: Request, res: Response) => {
-    // 辅助函数：从 Gateway 获取有 running 会话的 agent 集合
-    async function getRunningAgentIds(): Promise<Set<string>> {
-      if (!gatewayProxy) {
-        logger.warn('[DataAPI] Gateway sessions.list skipped: gatewayProxy not available');
-        return new Set();
-      }
-      try {
-        const result = await gatewayProxy.request<{
-          sessions: Array<{
-            key?: string;
-            status?: string;
-            childSessions?: string[];
-          }>;
-        }>('sessions.list');
-        const runningIds = new Set<string>();
-        for (const s of result.sessions) {
-          // 从 session key 解析 agent_id：格式 agent:{agentId}:...
-          if (s.key) {
-            const parts = s.key.split(':');
-            const agentId = parts.length >= 2 ? parts[1] : '';
-            // Gateway session 的 status："running" / "done"
-            if (s.status === 'running' && agentId) {
-              runningIds.add(agentId);
-            }
-          }
-          // 同时检查子会话列表（session key 格式为 agent:{agentId}:subagent:...）
-          if (s.childSessions && s.status !== 'done') {
-            for (const childKey of s.childSessions) {
-              const parts = childKey.split(':');
-              // 子会话格式：agent:{agentId}:subagent:{uuid}
-              // agentId 可能是子 agent 的 id
-              // 但如果父会话不是 done 状态，说明子会话可能还在运行
-              // 父 agent 也就还在工作
-              if (parts.length >= 2 && parts[1]) {
-                runningIds.add(parts[1]);
-              }
-            }
-          }
-        }
-        logger.info(`[DataAPI] Gateway running agents: ${[...runningIds].join(', ') || '(none)'}`);
-        return runningIds;
-      } catch (err) {
-        // Gateway 不可用则降级，不影响原有逻辑
-        logger.warn(`[DataAPI] Gateway sessions.list failed, falling back to collector status: ${err instanceof Error ? err.message : String(err)}`);
-        return new Set();
-      }
-    }
-
     try {
-      // 并行获取 Gateway 实时状态（不阻塞其他查询）
-      const runningAgentIdsPromise = getRunningAgentIds();
-
       let agents;
       if (agentOverviewService) {
         // 获取完整 agent 列表，再注入 overview 计算的 status
@@ -307,50 +254,28 @@ export function createDataRouter(config: DataRouterConfig): Router {
           [a.agent_id, getAgentPendingCount(db, a.agent_id)] as [string, number]
         ));
 
-        // 等待 Gateway 查询结果
-        const runningAgentIds = await runningAgentIdsPromise;
-
         agents = fullAgents.map(a => {
           const ov = overviewMap.get(a.agent_id);
-          let calculatedStatus: AgentStatus = ov ? ov.status : '离线';
-
-          // Gateway 实时覆盖：有 running 会话 → 强制工作
-          if (runningAgentIds.has(a.agent_id)) {
-            calculatedStatus = '工作';
-          }
-
+          const calculatedStatus: AgentStatus = ov ? ov.status : '离线';
           const pendingCount = pendingCounts.get(a.agent_id) ?? 0;
           return {
             ...a,
-            // 原有状态（中文）
             status: calculatedStatus,
-            // OpenClaw 标准化状态
             openclaw_status: normalizeAgentStatus(calculatedStatus),
             latest_message: ov ? ov.latest_message : null,
-            // 任务增强字段
             task_enhancement: buildTaskEnhancement(pendingCount),
           };
         });
       } else {
         // 降级：只用 admin_agents 表数据 + lastActiveAt 算 status
         const { calculateAgentStatus } = await import('../data/agent-overview.js');
-        // 同步获取所有 agent 的待办任务数
         const fullAgents = repository.getAgents();
         const pendingCounts = new Map(fullAgents.map(a =>
           [a.agent_id, getAgentPendingCount(db, a.agent_id)] as [string, number]
         ));
 
-        // 等待 Gateway 查询结果
-        const runningAgentIds = await runningAgentIdsPromise;
-
         agents = fullAgents.map(a => {
-          let calculatedStatus = calculateAgentStatus(0, a.last_active_at, true);
-
-          // Gateway 实时覆盖：有 running 会话 → 强制工作
-          if (runningAgentIds.has(a.agent_id)) {
-            calculatedStatus = '工作';
-          }
-
+          const calculatedStatus = calculateAgentStatus(0, a.last_active_at, true);
           const pendingCount = pendingCounts.get(a.agent_id) ?? 0;
           return {
             ...a,
