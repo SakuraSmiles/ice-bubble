@@ -193,6 +193,28 @@ function truncate(text: string | null | undefined, max: number): string {
   return text.length > max ? text.slice(0, max) + '…' : text;
 }
 
+/** 转义 HTML 特殊字符，防止 XSS */
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return text.replace(/[&<>"']/g, ch => map[ch] || ch);
+}
+
+/** 对文本做转义后高亮匹配关键词（大小写不敏感） */
+function highlightText(text: string, keyword: string): string {
+  if (!keyword) return escapeHtml(text);
+  const escaped = escapeHtml(text);
+  const escapedKw = escapeHtml(keyword);
+  // 用正则替换（不区分大小写），保留原始大小写
+  const regex = new RegExp(escapedKw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  return escaped.replace(regex, m => `<mark>${m}</mark>`);
+}
+
 // ====== 生命周期 ======
 onMounted(async () => {
   if (!prefsStore.loaded) {
@@ -315,7 +337,7 @@ onUnmounted(() => {
                   <template v-else>{{ (s.agent_id || '?').charAt(0).toUpperCase() }}</template>
                 </div>
                 <div class="session-card-info">
-                  <div class="session-card-title">{{ formatTitle(s) }}</div>
+                  <div class="session-card-title" v-html="highlightText(formatTitle(s), filterKeyword)" />
                   <div class="session-card-time">
                     {{ formatTime(s.last_message_at || s.updated_at) }}
                     <span v-if="s.message_count" class="msg-count">· {{ s.message_count }} 条消息</span>
@@ -323,7 +345,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="session-card-preview">
-                {{ truncate(s.last_message, 80) || '暂无消息' }}
+                <span v-html="highlightText(truncate(s.last_message, 80) || '暂无消息', filterKeyword)" />
               </div>
             </div>
             <div class="session-card-actions" @click.stop>
@@ -462,13 +484,13 @@ onUnmounted(() => {
   border: 1px solid var(--color-border-subtle);
   border-left: 3px solid transparent;
   border-radius: var(--el-border-radius-base);
-  transition: all 0.2s ease;
+  transition: all 200ms ease;
 }
 
 .session-card:hover {
   border-color: var(--color-border);
-  border-left-color: transparent;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--ib-card-hover-shadow);
+  transform: var(--ib-card-hover-lift);
 }
 
 .session-card-main {
@@ -535,6 +557,14 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.5;
+}
+
+.session-card-preview :deep(mark),
+.session-card-title :deep(mark) {
+  background: #fff3bf;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 2px;
 }
 
 /* 操作按钮 */

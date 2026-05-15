@@ -3,6 +3,7 @@ import { provide, ref, onMounted, onUnmounted } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { gatewayClient } from '@/services/gateway-client';
 import WorkspacePanel from '@/components/WorkspacePanel.vue';
+import GlobalSearch from '@/components/GlobalSearch.vue';
 
 const route = useRoute();
 
@@ -47,6 +48,7 @@ const sidebarCollapsed = ref(false)
 const SIDEBAR_MIN = 120
 const SIDEBAR_MAX = 320
 const isDraggingSidebar = ref(false)
+const showGlobalSearch = ref(false)
 
 function startDragSidebar(e: MouseEvent) {
   e.preventDefault()
@@ -70,6 +72,22 @@ function startDragSidebar(e: MouseEvent) {
   document.addEventListener('mousemove', onMove)
   document.addEventListener('mouseup', onUp)
 }
+
+// ====== 全局搜索快捷键盘 Cmd+K / Ctrl+K ======
+function onGlobalKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    showGlobalSearch.value = true;
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onGlobalKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onGlobalKeydown);
+});
 
 const menuItems = [
   { path: '/', label: '工作台', match: (p: string) => p === '/' },
@@ -162,6 +180,9 @@ const menuItems = [
     </main>
 
     <WorkspacePanel />
+
+    <!-- 全局搜索 -->
+    <GlobalSearch v-model="showGlobalSearch" />
   </div>
 </template>
 
@@ -316,17 +337,18 @@ const menuItems = [
   color: var(--color-text-secondary);
   text-decoration: none;
   font-size: 14px;
-  transition: background 0.15s, color 0.15s;
+  transition: all 150ms ease;
   position: relative;
+  user-select: none;
 }
 
 .nav-item:hover {
-  background: var(--el-fill-color-light);
+  background: var(--ib-hover-bg);
   color: var(--color-text);
 }
 
 .nav-item.active {
-  background: var(--color-accent-blue-subtle);
+  background: var(--ib-hover-bg-accent);
   color: var(--color-accent-blue);
   font-weight: 500;
 }
@@ -337,8 +359,8 @@ const menuItems = [
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 3px;
-  height: 20px;
+  width: 2px;
+  height: 22px;
   background: var(--color-accent-blue);
   border-radius: 0 2px 2px 0;
 }
