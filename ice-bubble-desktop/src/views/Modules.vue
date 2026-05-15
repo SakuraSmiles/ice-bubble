@@ -297,7 +297,7 @@ async function deleteModule(mod: Module) {
     if (res.error) {
       throw new Error(res.error);
     }
-    ElMessage.success('模块已删除');
+    ElMessage.success({ message: '模块已删除', duration: 2000, grouping: true });
     fetchModules();
   } catch (e: any) {
     ElMessage.error('删除失败: ' + (e.message || '未知错误'));

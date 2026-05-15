@@ -15,6 +15,7 @@ import {
   View,
   Hide,
 } from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
 
 const emit = defineEmits<{
   (e: 'connection-change', connected: boolean): void;
@@ -138,7 +139,9 @@ async function testConnection() {
     const result: ConfigureResult = await adminConnection.configure(url, inputToken.value || undefined);
     if (result.success) {
       testPass.value = true;
+      ElMessage.success({ message: '连接成功', duration: 2000, grouping: true });
     } else {
+      ElMessage.error({ message: result.error || '连接失败', duration: 2000, grouping: true });
       // 根据错误类型更新 token 相关状态
       if (result.error === 'AUTH_REQUIRED') {
         inputToken.value = '';
@@ -156,6 +159,7 @@ async function saveConnection() {
   try {
     // configure 已经在 testConnection 中调用过并成功，这里只确保保存
     await adminConnection.configure(url, inputToken.value || undefined);
+    ElMessage.success({ message: '配置已保存', duration: 2000, grouping: true });
   } finally {
     saving.value = false;
   }

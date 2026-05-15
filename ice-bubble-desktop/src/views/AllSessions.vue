@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ElMessage } from 'element-plus';
 import { Refresh, Search } from '@element-plus/icons-vue';
 import { useNow } from '@/composables/useNow';
 import { api } from '@/api/client';
@@ -140,10 +141,12 @@ const agentOptions = computed(() => {
 // ====== 操作 ======
 function handlePin(key: string) {
   prefsStore.togglePin(key);
+  ElMessage.success({ message: prefsStore.isPinned(key) ? '已置顶' : '已取消置顶', duration: 2000, grouping: true });
 }
 
 function handleHide(key: string) {
   prefsStore.toggleHide(key);
+  ElMessage.success({ message: '已隐藏', duration: 2000, grouping: true });
 }
 
 // ====== 辅助 ======
