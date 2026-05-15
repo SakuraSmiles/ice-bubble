@@ -212,16 +212,48 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
+// ===== 输入框拖拽调高 =====
+const inputMinHeight = 56; // 默认高度 px（约 2 行）
+const inputMaxHeight = 300;
+const isDragging = ref(false);
+let dragStartY = 0;
+let dragStartHeight = 0;
+
 function autoResize() {
   const el = inputRef.value;
-  if (!el) return;
+  if (!el || isDragging.value) return;
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  const h = Math.min(el.scrollHeight, inputMaxHeight);
+  el.style.height = h + 'px';
 }
 
 function resetInputHeight() {
   const el = inputRef.value;
-  if (el) el.style.height = 'auto';
+  if (el) el.style.height = inputMinHeight + 'px';
+}
+
+function onResizeDragStart(e: MouseEvent) {
+  e.preventDefault();
+  isDragging.value = true;
+  dragStartY = e.clientY;
+  const el = inputRef.value;
+  dragStartHeight = el ? el.getBoundingClientRect().height : inputMinHeight;
+  document.addEventListener('mousemove', onResizeDragMove);
+  document.addEventListener('mouseup', onResizeDragEnd);
+}
+
+function onResizeDragMove(e: MouseEvent) {
+  if (!isDragging.value) return;
+  const delta = e.clientY - dragStartY;
+  const newHeight = Math.max(inputMinHeight, Math.min(inputMaxHeight, dragStartHeight + delta));
+  const el = inputRef.value;
+  if (el) el.style.height = newHeight + 'px';
+}
+
+function onResizeDragEnd() {
+  isDragging.value = false;
+  document.removeEventListener('mousemove', onResizeDragMove);
+  document.removeEventListener('mouseup', onResizeDragEnd);
 }
 </script>
 
@@ -263,7 +295,9 @@ function resetInputHeight() {
               @keydown="onKeyDown"
               @input="autoResize"
               @paste="onPaste"
+              :style="{ height: inputMinHeight + 'px' }"
             />
+            <div class="resize-handle" @mousedown="onResizeDragStart"></div>
             <div v-if="canSend" class="chat-input-actions">
               <button class="attach-btn" title="添加图片" @click="onFileSelect">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -328,6 +362,7 @@ function resetInputHeight() {
 }
 
 .chat-input-card {
+ position: relative;
  flex: 1;
  display: flex;
  align-items: center;
@@ -355,8 +390,35 @@ function resetInputHeight() {
   background: transparent;
   outline: none;
   line-height: 1.6;
-  max-height: 120px;
+  min-height: 56px;
   overflow-y: auto;
+}
+
+/* 拖拽调高手柄 */
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  left: 12px;
+  right: 12px;
+  height: 8px;
+  cursor: ns-resize;
+  border-radius: 4px 4px 0 0;
+  transition: background 0.15s;
+}
+
+.resize-handle::after {
+  content: '';
+  display: block;
+  width: 32px;
+  height: 3px;
+  margin: 0 auto;
+  border-radius: 2px;
+  background: var(--color-border);
+  transition: background 0.15s;
+}
+
+.resize-handle:hover::after {
+  background: var(--color-text-tertiary);
 }
 
 .chat-input::placeholder {
