@@ -212,32 +212,41 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-// ===== 输入框拖拽调高 =====
-const inputMinHeight = 56; // 默认高度 px（约 2 行）
-const inputMaxHeight = 300;
+// ===== 输入框尺寸 =====
+// 行高 22.4px (14px * 1.6)，加 padding 10px 上下
+const INPUT_LINE_HEIGHT = 22.4;
+const TEXT_DEFAULT_LINES = 3;
+const TEXT_MIN_LINES = 3;
+const TEXT_MAX_LINES = 12;
+const textDefaultHeight = Math.round(INPUT_LINE_HEIGHT * TEXT_DEFAULT_LINES + 20); // ~87px
+const textMinHeight = Math.round(INPUT_LINE_HEIGHT * TEXT_MIN_LINES + 20);
+const textMaxHeight = Math.round(INPUT_LINE_HEIGHT * TEXT_MAX_LINES + 20); // ~289px
+
 const isDragging = ref(false);
 let dragStartY = 0;
 let dragStartHeight = 0;
 
+const textareaHeight = ref(textDefaultHeight);
+
 function autoResize() {
   const el = inputRef.value;
   if (!el || isDragging.value) return;
+  // 先重置测量内容高度
   el.style.height = 'auto';
-  const h = Math.min(el.scrollHeight, inputMaxHeight);
-  el.style.height = h + 'px';
+  const contentH = el.scrollHeight;
+  const newH = Math.max(textMinHeight, Math.min(textMaxHeight, contentH));
+  textareaHeight.value = newH;
 }
 
 function resetInputHeight() {
-  const el = inputRef.value;
-  if (el) el.style.height = inputMinHeight + 'px';
+  textareaHeight.value = textDefaultHeight;
 }
 
 function onResizeDragStart(e: MouseEvent) {
   e.preventDefault();
   isDragging.value = true;
   dragStartY = e.clientY;
-  const el = inputRef.value;
-  dragStartHeight = el ? el.getBoundingClientRect().height : inputMinHeight;
+  dragStartHeight = textareaHeight.value;
   document.addEventListener('mousemove', onResizeDragMove);
   document.addEventListener('mouseup', onResizeDragEnd);
 }
@@ -245,9 +254,9 @@ function onResizeDragStart(e: MouseEvent) {
 function onResizeDragMove(e: MouseEvent) {
   if (!isDragging.value) return;
   const delta = e.clientY - dragStartY;
-  const newHeight = Math.max(inputMinHeight, Math.min(inputMaxHeight, dragStartHeight + delta));
-  const el = inputRef.value;
-  if (el) el.style.height = newHeight + 'px';
+  // 手柄在卡片上方：往上拖(delta<0)应增大高度，往下拖(delta>0)应缩小
+  const newH = Math.max(textMinHeight, Math.min(textMaxHeight, dragStartHeight - delta));
+  textareaHeight.value = newH;
 }
 
 function onResizeDragEnd() {
@@ -284,31 +293,36 @@ function onResizeDragEnd() {
               <button class="attachment-remove" @click="removeAttachment(att.id)">&times;</button>
             </div>
           </div>
+          <!-- 拖拽手柄：在卡片上方外部 -->
+          <div class="resize-handle" @mousedown="onResizeDragStart"></div>
+          <!-- 输入卡片：文本区 + 操作栏 -->
           <div class="chat-input-card">
-            <textarea
-              ref="inputRef"
-              v-model="inputText"
-              class="chat-input"
-              :placeholder="canSend ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '此会话已完成，不可发送消息'"
-              rows="1"
-              :disabled="!canSend || sending"
-              @keydown="onKeyDown"
-              @input="autoResize"
-              @paste="onPaste"
-              :style="{ height: inputMinHeight + 'px' }"
-            />
-            <div class="resize-handle" @mousedown="onResizeDragStart"></div>
-            <div v-if="canSend" class="chat-input-actions">
-              <button class="attach-btn" title="添加图片" @click="onFileSelect">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
-                </svg>
-              </button>
-              <button class="send-btn" :disabled="sending || (!inputText.trim() && attachments.length === 0)" @click="sendMessage">
-                <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M1.5 1.5l13 5-13 5V8.5l8-1.5-8-1.5V1.5z"/>
-                </svg>
-              </button>
+            <div class="chat-textarea-zone" :style="{ height: textareaHeight + 'px' }">
+              <textarea
+                ref="inputRef"
+                v-model="inputText"
+                class="chat-input"
+                :placeholder="canSend ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '此会话已完成，不可发送消息'"
+                :disabled="!canSend || sending"
+                @keydown="onKeyDown"
+                @input="autoResize"
+                @paste="onPaste"
+              />
+            </div>
+            <div v-if="canSend" class="chat-action-row">
+              <span class="action-hint">Enter 发送 / Shift+Enter 换行</span>
+              <div class="chat-input-actions">
+                <button class="attach-btn" title="添加图片" @click="onFileSelect">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                  </svg>
+                </button>
+                <button class="send-btn" :disabled="sending || (!inputText.trim() && attachments.length === 0)" @click="sendMessage">
+                  <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M1.5 1.5l13 5-13 5V8.5l8-1.5-8-1.5V1.5z"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -350,27 +364,53 @@ function onResizeDragEnd() {
   flex-direction: column;
 }
 
-/* ===== 输入框 ===== */
+/* ===== 输入框区域 ===== */
 .chat-input-bar {
   display: flex;
   flex-direction: column;
-  padding: 12px 16px 16px;
+  padding: 0 16px 16px;
   flex-shrink: 0;
   background: var(--color-bg-canvas);
- border-radius: 0 0 8px 8px;
+  border-radius: 0 0 8px 8px;
   transition: all 0.2s ease;
 }
 
+/* 拖拽手柄：卡片上方外部 */
+.resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 10px;
+  cursor: ns-resize;
+  user-select: none;
+  margin-bottom: 2px;
+}
+
+.resize-handle::after {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border);
+  transition: background 0.15s;
+}
+
+.resize-handle:hover::after,
+.resize-handle:active::after {
+  background: var(--color-text-tertiary);
+}
+
+/* 输入卡片：文本区 + 操作栏上下分区 */
 .chat-input-card {
- position: relative;
- flex: 1;
  display: flex;
- align-items: center;
+ flex-direction: column;
  background: #fff;
  border-radius: 12px;
  border: 1px solid var(--color-border);
  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
- transition: border-color 0.15s, box-shadow 0.15s;
+ overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .chat-input-card:focus-within {
@@ -378,47 +418,26 @@ function onResizeDragEnd() {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 2px rgba(9, 105, 218, 0.1);
 }
 
+/* 文本区（默认3行高） */
+.chat-textarea-zone {
+ flex-shrink: 0;
+ overflow: hidden;
+}
+
 .chat-input {
-  flex: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
   resize: none;
   border: none;
-  border-radius: 12px;
-  padding: 10px 8px;
+  padding: 10px 14px;
   font-size: 14px;
   font-family: inherit;
   color: var(--color-text);
   background: transparent;
   outline: none;
   line-height: 1.6;
-  min-height: 56px;
   overflow-y: auto;
-}
-
-/* 拖拽调高手柄 */
-.resize-handle {
-  position: absolute;
-  bottom: 0;
-  left: 12px;
-  right: 12px;
-  height: 8px;
-  cursor: ns-resize;
-  border-radius: 4px 4px 0 0;
-  transition: background 0.15s;
-}
-
-.resize-handle::after {
-  content: '';
-  display: block;
-  width: 32px;
-  height: 3px;
-  margin: 0 auto;
-  border-radius: 2px;
-  background: var(--color-border);
-  transition: background 0.15s;
-}
-
-.resize-handle:hover::after {
-  background: var(--color-text-tertiary);
 }
 
 .chat-input::placeholder {
@@ -429,13 +448,27 @@ function onResizeDragEnd() {
   opacity: 0.5;
 }
 
+/* 操作栏（固定1行，底部） */
+.chat-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-top: 1px solid var(--color-border-lighter);
+  flex-shrink: 0;
+}
+
+.action-hint {
+  font-size: 11px;
+  color: var(--color-text-placeholder);
+  user-select: none;
+}
+
 /* ===== 按钮组 ===== */
 .chat-input-actions {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 6px;
-  flex-shrink: 0;
 }
 
 .send-btn {
