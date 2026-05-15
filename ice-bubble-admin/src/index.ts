@@ -389,7 +389,13 @@ export async function startAdmin(): Promise<void> {
       res.json({ messages, total: result.total });
     });
 
-    // (attachment routes moved before auth middleware — see above)
+    // Attachment query API (after auth middleware, Desktop uses authenticated request())
+    app.get('/api/attachments/query', (req, res) => {
+      const sessionKey = req.query.session_key as string;
+      if (!sessionKey) { res.status(400).json({ attachments: [] }); return; }
+      const attachments = attachmentStorage.getAttachments(sessionKey);
+      res.json({ attachments });
+    });
 
     // Chat routes (only if GatewayProxy is available)
     if (chatController) {

@@ -91,16 +91,23 @@ export class AttachmentStorage {
   /**
    * 查询某条消息关联的附件
    */
-  getAttachments(sessionKey: string, messageContent?: string): AttachmentRecord[] {
-    if (messageContent) {
-      const snippet = messageContent.substring(0, 100);
-      return this.db.prepare(`
-        SELECT * FROM attachments WHERE session_key = ? AND message_content = ?
-        ORDER BY created_at DESC
-      `).all(sessionKey, snippet) as AttachmentRecord[];
-    }
+  getAttachments(sessionKey: string): AttachmentRecord[] {
     return this.db.prepare(`
       SELECT * FROM attachments WHERE session_key = ? ORDER BY created_at DESC
     `).all(sessionKey) as AttachmentRecord[];
+  }
+
+  /**
+   * 按 session_key + 时间窗口（±30秒）查询附件
+   */
+  getAttachmentsByTimestamp(sessionKey: string, messageTimestamp: string): AttachmentRecord[] {
+    const msgTime = new Date(messageTimestamp).getTime();
+    if (isNaN(msgTime)) return [];
+    const from = new Date(msgTime - 30_000).toISOString();
+    const to = new Date(msgTime + 30_000).toISOString();
+    return this.db.prepare(`
+      SELECT * FROM attachments WHERE session_key = ? AND created_at BETWEEN ? AND ?
+      ORDER BY created_at DESC
+    `).all(sessionKey, from, to) as AttachmentRecord[];
   }
 }

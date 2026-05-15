@@ -115,22 +115,20 @@ export function useChatData(getSessionKey: () => string | undefined) {
     try {
       const res = await request(`/attachments/query?session_key=${encodeURIComponent(sessionKey)}`);
       if (!res.ok) return;
-      const data = await res.json() as { attachments: Array<{ id: string; session_key: string; message_content: string | null; file_path: string; mime_type: string; file_size: number }> };
+      const data = await res.json() as { attachments: Array<{ id: string; session_key: string; created_at: string; file_path: string; mime_type: string; file_size: number }> };
       const attList = data.attachments || [];
       if (attList.length === 0) return;
-      // Build a map: message_content(snippet) -> attachments[]
-      const attMap = new Map<string, typeof attList>();
-      for (const a of attList) {
-        const key = a.message_content || '';
-        if (!key) continue;
-        if (!attMap.has(key)) attMap.set(key, []);
-        attMap.get(key)!.push(a);
-      }
+      // Build a map: attachment created_at -> attachment record
+      // Match user messages by timestamp proximity (±30s)
       let changed = false;
       for (const m of userMsgs) {
-        const content = (m.clean_content || m.content || '').substring(0, 100);
-        const matched = attMap.get(content);
-        if (matched && matched.length > 0) {
+        if (!m.timestamp) continue;
+        const msgTime = new Date(m.timestamp).getTime();
+        const matched = attList.filter(a => {
+          const attTime = new Date(a.created_at).getTime();
+          return Math.abs(msgTime - attTime) < 30_000;
+        });
+        if (matched.length > 0) {
           m.attachments = matched.map(a => ({
             type: 'image',
             mimeType: a.mime_type,
