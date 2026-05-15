@@ -21,7 +21,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick, type PropType }
 
 // ============ 类型 ============
 interface VirtualScrollerItem {
-  id?: string;
+  id: string;
   [key: string]: unknown;
 }
 

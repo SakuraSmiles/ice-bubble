@@ -138,72 +138,73 @@ defineExpose({
 
 <template>
   <div class="chat-wrap">
-    <!-- 新消息提示（绝对定位，不影响布局） -->
+    <!-- 新消息提示 -->
     <div v-if="chatData.newMsgCount.value > 0" class="new-msg-banner" @click="chatData.goToBottom()">
       ↓ {{ chatData.newMsgCount.value }} 条新消息
     </div>
 
-    <!-- 首加载 / 空状态（不使用虚拟滚动） -->
-    <div v-if="chatData.loading.value && chatData.messages.value.length === 0" class="loading-tip">
-      <el-icon class="is-loading" :size="20"><Loading /></el-icon>
-      <span>加载中...</span>
+    <!-- 消息列表 -->
+    <div :ref="(el: any) => { chatData.containerRef.value = el }" class="chat-scroll">
+      <!-- 加载更多按钮 -->
+      <div v-if="chatData.hasMore.value && !chatData.loading.value" class="load-more-bar">
+        <button type="button" class="load-more-btn" @click="chatData.loadMore()" :disabled="chatData.loadingMore.value">
+          {{ chatData.loadingMore.value ? '加载中...' : '↑ 加载更早消息' }}
+        </button>
+      </div>
+
+      <!-- 首加载 -->
+      <div v-if="chatData.loading.value && chatData.messages.value.length === 0" class="loading-tip">
+        <el-icon class="is-loading" :size="20"><Loading /></el-icon>
+        <span>加载中...</span>
+      </div>
+      <div v-else-if="chatData.messages.value.length === 0" class="empty-tip">暂无消息</div>
+
+      <!-- 虚拟滚动消息列表 -->
+      <VirtualScroller
+        v-else
+        :ref="(el: any) => { chatData.vsRef.value = el }"
+        :items="chatData.groupedMessages.value"
+        :item-height="120"
+        :dynamic-height="true"
+        container-height="100%"
+        :overscan="5"
+        class="vs-timeline"
+        @scroll="chatData.onScroll()"
+      >
+        <template #default="{ item: grp, index: gi }">
+          <!-- 日期分隔线 -->
+          <div v-if="grp.type === 'date-divider'" class="date-divider">
+            <span class="date-divider-line"></span>
+            <span class="date-divider-text">{{ grp.dateLabel }}</span>
+            <span class="date-divider-line"></span>
+          </div>
+          <MessageBubble
+            v-else
+            :group="grp"
+            :group-index="gi"
+            :is-last-agent-group="gi === lastAgentGroupIndex"
+            :should-show-time="shouldShowTime"
+            :format-time="chatData.formatTime"
+            :extract-tool-name="chatData.extractToolName"
+            :truncate-tool-content="chatData.truncateToolContent"
+            :tool-summary="chatData.toolSummary"
+            @regenerate="regenerate"
+          />
+        </template>
+      </VirtualScroller>
+
+      <!-- 打字指示器（放在 VirtualScroller 外部底部） -->
+      <div v-if="chatData.showTypingIndicator.value" class="typing-indicator">
+        <div class="agent-avatar-col">
+          <div class="avatar-placeholder">?</div>
+        </div>
+        <div class="typing-bubble">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+      </div>
     </div>
-    <div v-else-if="chatData.messages.value.length === 0" class="empty-tip">暂无消息</div>
-
-    <!-- VirtualScroller 作为唯一滚动容器 -->
-    <VirtualScroller
-      v-else
-      :ref="(el: any) => { chatData.vsRef.value = el }"
-      :items="(chatData.allItems.value as any)"
-      :item-height="120"
-      :dynamic-height="true"
-      container-height=""
-      :overscan="5"
-      class="vs-timeline"
-      @scroll="chatData.onScroll()"
-    >
-      <template #default="{ item: grp, index: gi }">
-        <!-- 加载更多按钮（列表第一项） -->
-        <div v-if="grp.type === 'load-more-trigger'" class="load-more-bar">
-          <button type="button" class="load-more-btn" @click="chatData.loadMore()" :disabled="chatData.loadingMore.value">
-            {{ chatData.loadingMore.value ? '加载中...' : '↑ 加载更早消息' }}
-          </button>
-        </div>
-
-        <!-- 日期分隔线 -->
-        <div v-else-if="grp.type === 'date-divider'" class="date-divider">
-          <span class="date-divider-line"></span>
-          <span class="date-divider-text">{{ grp.dateLabel }}</span>
-          <span class="date-divider-line"></span>
-        </div>
-
-        <!-- 打字指示器（列表最后一项） -->
-        <div v-else-if="grp.type === 'typing-indicator'" class="typing-indicator">
-          <div class="agent-avatar-col">
-            <div class="avatar-placeholder">?</div>
-          </div>
-          <div class="typing-bubble">
-            <span class="typing-dot"></span>
-            <span class="typing-dot"></span>
-            <span class="typing-dot"></span>
-          </div>
-        </div>
-
-        <!-- 正常消息组 -->
-        <MessageBubble
-          v-else
-          :group="(grp as any)"
-          :group-index="gi"
-          :is-last-agent-group="gi === lastAgentGroupIndex"
-          :should-show-time="shouldShowTime"
-          :format-time="chatData.formatTime"
-          :extract-tool-name="chatData.extractToolName"
-          :truncate-tool-content="chatData.truncateToolContent"
-          :tool-summary="chatData.toolSummary"
-          @regenerate="regenerate"
-        />
-      </template>
-    </VirtualScroller>
   </div>
 </template>
 
@@ -215,7 +216,6 @@ defineExpose({
   min-height: 0;
   position: relative;
   overflow: hidden;
- background: var(--color-bg-canvas);
 }
 
 .new-msg-banner {
@@ -235,10 +235,15 @@ defineExpose({
 }
 .new-msg-banner:hover { opacity: 0.9; }
 
-.vs-timeline {
+.chat-scroll {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
   padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--color-bg-canvas);
 }
 
 .load-more-bar {
