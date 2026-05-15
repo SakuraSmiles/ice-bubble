@@ -9,6 +9,7 @@ import PageHeader from '../components/PageHeader.vue';
 import ChatTimeline from './components/ChatTimeline.vue';
 import SessionList from './components/SessionList.vue';
 import { Loading } from '@element-plus/icons-vue';
+import { getMainSessionKey, setMainSessionKey } from './components/chat/session-cache';
 
 const route = useRoute();
 const router = useRouter();
@@ -53,8 +54,15 @@ watch(sessionKey, async (key) => {
 
 // /chat 路由自动跳转到 main agent 的 direct session
 async function autoRedirectChat() {
+  // 1. 优先读缓存
+  const cached = getMainSessionKey();
+  if (cached) {
+    router.replace('/workspace/' + encodeURIComponent(cached));
+    return;
+  }
+
+  // 2. 无缓存 → 查 Gateway
   try {
-    // 通过 Gateway sessions API 轻量查找 main agent 的 direct session
     const res = await request('/gateway/sessions');
     if (!res.ok) return;
     const data = await res.json();
@@ -70,11 +78,12 @@ async function autoRedirectChat() {
         return tb - ta;
       })[0];
     if (mainDirect) {
+      setMainSessionKey(mainDirect.key);
       router.replace('/workspace/' + encodeURIComponent(mainDirect.key));
       return;
     }
   } catch { /* ignore */ }
-  // 找不到则跳转到全部会话
+  // 3. 找不到则跳转到全部会话
   router.replace('/sessions');
 }
 
