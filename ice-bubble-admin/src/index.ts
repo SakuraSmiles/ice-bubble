@@ -25,6 +25,7 @@ import { GatewayRpc } from './server/gateway/rpc.js';
 import { SSEManager } from './server/chat/sse-manager.js';
 
 import { ChatController } from './server/chat/controller.js';
+import { AttachmentStorage } from './server/chat/attachment-storage.js';
 import { GatewayProxy } from './gateway/index.js';
 import { GatewayWsServer } from './gateway/ws-server.js';
 import { createChatProxyRouter, createSessionProxyRouter } from './api/chat-proxy.js';
@@ -229,7 +230,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = process.env.ADMIN_DB_PATH || join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(21);  // 执行数据库迁移（v21: 会话偏好表）
+    await dbManager.migrate(22);  // 执行数据库迁移（v22: attachments 表）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 
@@ -255,6 +256,12 @@ export async function startAdmin(): Promise<void> {
 
     // 初始化数据仓库和同步调度器
     const dataRepository = new DataRepository(dbManager.getConnection(), avatarsDirEarly);
+
+    // 初始化附件存储
+    const attachmentsDir = process.env.ATTACHMENTS_DIR || join(process.env.HOME || '/root', '.local', 'share', 'ice-bubble', 'data', 'attachments');
+    const attachmentStorage = new AttachmentStorage(attachmentsDir, dbManager.getConnection());
+    logger.info('[Admin] Attachment storage initialized', { dir: attachmentsDir });
+
     const dataSyncConfig = configData.dataSync || {};
     const dataSync = new DataSync(
       {
@@ -320,7 +327,7 @@ export async function startAdmin(): Promise<void> {
     if (gatewayProxy) {
       gatewayRpc = new GatewayRpc(gatewayProxy);
       sseManager = new SSEManager(gatewayRpc);
-      chatController = new ChatController(gatewayRpc, sseManager);
+      chatController = new ChatController(gatewayRpc, sseManager, attachmentStorage);
       logger.info('[Admin] GatewayRpc (chat SSE) initialized via GatewayProxy');
     } else {
       logger.warn('[Admin] No GatewayProxy — chat SSE will not be available');
@@ -355,6 +362,17 @@ export async function startAdmin(): Promise<void> {
       }));
       res.json({ messages, total: result.total });
     });
+
+    // 附件静态文件服务 + 查询 API
+    app.use('/api/attachments', express.static(attachmentsDir));
+    app.get('/api/attachments/query', (req, res) => {
+      const sessionKey = req.query.session_key as string;
+      const messageContent = req.query.message_content as string;
+      if (!sessionKey) { res.status(400).json({ error: 'session_key required' }); return; }
+      const attachments = attachmentStorage.getAttachments(sessionKey, messageContent);
+      res.json({ attachments });
+    });
+    logger.info('[Admin] Attachment routes registered');
 
     // Chat routes (only if GatewayProxy is available)
     if (chatController) {
@@ -407,7 +425,7 @@ export async function startAdmin(): Promise<void> {
     // 挂载 WebSocket 服务器到 /ws（通过 GatewayProxy）
     if (gatewayProxy) {
         try {
-            const wsServer = new GatewayWsServer(gatewayProxy, authToken);
+            const wsServer = new GatewayWsServer(gatewayProxy, authToken, attachmentStorage);
             wsServer.start(httpServer);
             logger.info('[Admin] WebSocket server started on /ws');
         } catch (err) {

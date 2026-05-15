@@ -991,6 +991,23 @@ export class DBManager {
         `);
         logger.info('Migration v21: created session_preferences table');
         break;
+      case 22:
+        // v22: attachments 表（用户发送图片持久化）
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS attachments (
+            id TEXT PRIMARY KEY,
+            session_key TEXT NOT NULL,
+            message_content TEXT,
+            file_path TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            file_size INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_key);
+          CREATE INDEX IF NOT EXISTS idx_attachments_created ON attachments(created_at);
+        `);
+        logger.info('Migration v22: created attachments table');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

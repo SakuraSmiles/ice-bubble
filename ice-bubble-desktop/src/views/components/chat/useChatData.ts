@@ -4,6 +4,7 @@
 import { ref, computed, nextTick } from 'vue';
 import { request } from '../../../api/client';
 import type { TimelineMessage, TimelineResponse } from './types';
+import { API_BASE } from '../../../config';
 
 export function useChatData(getSessionKey: () => string | undefined) {
   const messages = ref<TimelineMessage[]>([]);
@@ -100,6 +101,50 @@ export function useChatData(getSessionKey: () => string | undefined) {
     filtered.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     messages.value = filtered;
     filtered.forEach(m => knownIds.add(m.id));
+  }
+
+  /**
+   * 为用户历史消息加载持久化的附件（图片）
+   * 批量查询：按 session_key 一次性获取所有附件，再按 message_content 匹配
+   */
+  async function enrichUserAttachments(msgs: TimelineMessage[]): Promise<void> {
+    const sessionKey = getSessionKey();
+    if (!sessionKey) return;
+    const userMsgs = msgs.filter(m => m.message_type === 'user' && (!m.attachments || m.attachments.length === 0));
+    if (userMsgs.length === 0) return;
+    try {
+      const res = await fetch(`${API_BASE}/attachments/query?session_key=${encodeURIComponent(sessionKey)}`);
+      if (!res.ok) return;
+      const data = await res.json() as { attachments: Array<{ id: string; session_key: string; message_content: string | null; file_path: string; mime_type: string; file_size: number }> };
+      const attList = data.attachments || [];
+      if (attList.length === 0) return;
+      // Build a map: message_content(snippet) -> attachments[]
+      const attMap = new Map<string, typeof attList>();
+      for (const a of attList) {
+        const key = a.message_content || '';
+        if (!key) continue;
+        if (!attMap.has(key)) attMap.set(key, []);
+        attMap.get(key)!.push(a);
+      }
+      let changed = false;
+      for (const m of userMsgs) {
+        const content = (m.clean_content || m.content || '').substring(0, 100);
+        const matched = attMap.get(content);
+        if (matched && matched.length > 0) {
+          m.attachments = matched.map(a => ({
+            type: 'image',
+            mimeType: a.mime_type,
+            fileName: a.file_path,
+            content: '',
+            dataUrl: `${API_BASE}/attachments/${a.file_path}`,
+          }));
+          changed = true;
+        }
+      }
+      if (changed) messages.value = [...messages.value];
+    } catch (e) {
+      console.warn('[ChatTimeline] enrichUserAttachments failed', e);
+    }
   }
 
   function extractContentText(content: any): string {
@@ -263,6 +308,9 @@ export function useChatData(getSessionKey: () => string | undefined) {
       hasMore.value = data.has_more;
       await nextTick();
       batches++;
+      // Load attachments for newly added messages
+      const newUserMsgs = messages.value.filter(m => m.id.startsWith('admin_') && m.message_type === 'user' && !m.attachments?.length);
+      if (newUserMsgs.length > 0) enrichUserAttachments(newUserMsgs);
     }
   }
 
@@ -330,6 +378,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
 
       // fetchAgentAvatar 不阻塞渲染，后台加载
       fetchAgentAvatar();
+      enrichUserAttachments(merged); // 后台加载附件
       await fillScrollable();
     } catch (e) {
       console.error('加载聊天记录失败', e);
@@ -381,6 +430,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
       newMsgs.forEach(m => knownIds.add(m.id));
       messages.value = [...newMsgs, ...messages.value];
       hasMore.value = data.has_more;
+      enrichUserAttachments(newMsgs);
     } catch (e) {
       console.error('加载更多失败', e);
     } finally {

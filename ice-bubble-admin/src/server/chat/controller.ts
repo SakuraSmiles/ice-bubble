@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { GatewayRpc } from "../gateway/rpc.js";
 import { SSEManager } from "./sse-manager.js";
+import type { AttachmentStorage } from "./attachment-storage.js";
 
 /**
  * Chat Controller — handles message sending, aborting, and SSE streaming.
@@ -14,6 +15,7 @@ export class ChatController {
   constructor(
     private rpc: GatewayRpc,
     private sseManager: SSEManager,
+    private attachmentStorage?: AttachmentStorage,
   ) {}
 
   /**
@@ -44,6 +46,11 @@ export class ChatController {
     }
 
     const idempotencyKey = crypto.randomUUID();
+
+    // Save attachments before forwarding (fire-and-forget, non-blocking)
+    if (this.attachmentStorage && attachments && Array.isArray(attachments)) {
+      void this.attachmentStorage.saveAttachments(sessionKey, attachments as any[], message);
+    }
 
     // Use sessions.send to target the exact session.
     // sessions.send only accepts: key, message, idempotencyKey (no label).

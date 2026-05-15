@@ -9,6 +9,7 @@ import type { Server as HttpServer } from "http";
 import type { IncomingMessage } from "http";
 import type { GatewayProxy } from "./gateway-proxy.js";
 import { validateToken } from "../utils/auth-middleware.js";
+import type { AttachmentStorage } from "../server/chat/attachment-storage.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -73,14 +74,16 @@ function extractTokenFromRequest(req: IncomingMessage): string | null {
 export class GatewayWsServer {
   private proxy: GatewayProxy;
   private authToken: string;
+  private attachmentStorage?: AttachmentStorage;
   private wss: WsServer | null = null;
   private clients = new Set<WsSocket>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private cleanupFns: Array<() => void> = [];
 
-  constructor(proxy: GatewayProxy, authToken: string) {
+  constructor(proxy: GatewayProxy, authToken: string, attachmentStorage?: AttachmentStorage) {
     this.proxy = proxy;
     this.authToken = authToken;
+    this.attachmentStorage = attachmentStorage;
   }
 
   /** 挂载 WebSocket 服务器到 HTTP server，路径 /ws */
@@ -231,6 +234,19 @@ export class GatewayWsServer {
 
   private forwardToGateway(ws: WsSocket, req: ClientRequest): void {
     try {
+      // Intercept chat.send / sessions.send to save attachments
+      if (this.attachmentStorage &&
+          (req.method === 'chat.send' || req.method === 'sessions.send') &&
+          req.params && typeof req.params === 'object') {
+        const p = req.params as Record<string, unknown>;
+        const atts = p.attachments;
+        const sessionKey = (p.sessionKey || p.key) as string | undefined;
+        const message = (p.message || p.text) as string | undefined;
+        if (sessionKey && Array.isArray(atts) && atts.length > 0) {
+          void this.attachmentStorage.saveAttachments(sessionKey, atts as any[], message);
+        }
+      }
+
       void this.proxy.request(req.method, req.params).then(
         (result) => { try { ws.send(clientReply(req.id, true, result)); } catch { /* socket closed */ } },
         (err) => {
