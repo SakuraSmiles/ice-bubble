@@ -269,7 +269,15 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
         m.content.substring(0, 200) === msg.content.substring(0, 200) &&
         Math.abs(new Date(m.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 5000
       );
-      if (dup) return;
+      if (dup) {
+        // 合并 attachments（流式 chat final 可能不含附件，session.message 才有）
+        if (msg.attachments && msg.attachments.length > 0 && (!dup.attachments || dup.attachments.length === 0)) {
+          opts.messages.value = opts.messages.value.map(m =>
+            m === dup ? { ...m, attachments: msg.attachments } : m
+          );
+        }
+        return;
+      }
       opts.knownIds.add(msg.id);
       opts.messages.value = [...opts.messages.value, msg].sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
