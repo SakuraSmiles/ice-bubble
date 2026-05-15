@@ -21,9 +21,10 @@ export class ChatController {
    * Body: { sessionKey, message }
    */
   async send(req: Request, res: Response): Promise<void> {
-    const { sessionKey, message } = req.body as {
+    const { sessionKey, message, attachments } = req.body as {
       sessionKey?: string;
       message?: string;
+      attachments?: unknown[];
     };
 
     if (!sessionKey || !message) {
@@ -50,6 +51,7 @@ export class ChatController {
       key: sessionKey,
       message,
       idempotencyKey,
+      ...(attachments ? { attachments } : {}),
     });
 
     // Wait for the RPC response with a generous timeout (agent turns can be long).

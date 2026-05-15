@@ -43,6 +43,7 @@ interface ChatAttachment {
   id: string;
   file: File;
   preview: string;
+  dataUrl: string;
 }
 const attachments = ref<ChatAttachment[]>([]);
 
@@ -53,7 +54,15 @@ function addAttachment(file: File): boolean {
     return false;
   }
   const preview = URL.createObjectURL(file);
-  attachments.value.push({ id: crypto.randomUUID(), file, preview });
+  const id = crypto.randomUUID();
+  const att = { id, file, preview, dataUrl: '' };
+  attachments.value.push(att);
+  const reader = new FileReader();
+  reader.onload = () => {
+    const idx = attachments.value.findIndex(a => a.id === id);
+    if (idx >= 0) attachments.value.splice(idx, 1, { ...attachments.value[idx], dataUrl: reader.result as string });
+  };
+  reader.readAsDataURL(file);
   return true;
 }
 
@@ -173,28 +182,40 @@ function onSessionSelect(sessionKeyStr: string) {
 // =========== 发送消息 ===========
 async function sendMessage() {
   const text = inputText.value.trim();
-  if (!text || !sessionKey.value || sending.value) return;
+  if ((!text && attachments.value.length === 0) || !sessionKey.value || sending.value) return;
   sending.value = true;
   const hasAttachments = attachments.value.length > 0;
   if (hasAttachments) {
     console.log('[chat] attachments:', attachments.value.length, attachments.value.map(a => ({ id: a.id, name: a.file.name, type: a.file.type, size: a.file.size })));
   }
+
+  // 构建附件 payload
+  const attachmentPayloads = attachments.value.map(att => {
+    const base64 = att.dataUrl.split(',')[1] || '';
+    return {
+      type: 'image',
+      mimeType: att.file.type,
+      fileName: att.file.name,
+      content: base64,
+    };
+  });
+
   inputText.value = '';
   resetInputHeight();
   clearAttachments();
   try {
     if (gatewayConnected.value) {
-      await gatewayClient.sendMessage(sessionKey.value, text);
-      timelineRef.value?.addOptimisticMessage(text, 'user');
+      await gatewayClient.sendMessage(sessionKey.value, text || '(图片)', attachmentPayloads.length > 0 ? attachmentPayloads : undefined);
+      timelineRef.value?.addOptimisticMessage(text || '(图片)', 'user');
     } else {
       const res = await request('/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionKey: sessionKey.value, message: text }),
+        body: JSON.stringify({ sessionKey: sessionKey.value, message: text || '(图片)', attachments: attachmentPayloads.length > 0 ? attachmentPayloads : undefined }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
-      timelineRef.value?.addOptimisticMessage(text, 'user');
+      timelineRef.value?.addOptimisticMessage(text || '(图片)', 'user');
     }
   } catch (e) {
     inputText.value = text;
