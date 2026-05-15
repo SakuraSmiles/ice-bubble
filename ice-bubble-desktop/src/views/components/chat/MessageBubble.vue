@@ -133,6 +133,16 @@ function previewImage(src: string) {
               <img :src="url" class="media-image" alt="Media" loading="lazy" />
             </a>
           </div>
+          <div v-if="item.message.attachments?.length" class="bubble-images bubble-images--agent">
+            <img
+              v-for="(att, ai) in item.message.attachments"
+              :key="ai"
+              :src="att.dataUrl || `data:${att.mimeType};base64,${att.content}`"
+              class="bubble-image bubble-image--agent"
+              loading="lazy"
+              @click="previewImage(att.dataUrl || `data:${att.mimeType};base64,${att.content}`)"
+            />
+          </div>
           <span v-if="item.message.streamState === 'streaming'" class="streaming-cursor">▊</span>
         </div>
 
@@ -388,6 +398,14 @@ function previewImage(src: string) {
 .bubble-image:hover {
   opacity: 0.9;
   transform: scale(1.02);
+}
+.bubble-images--agent {
+  margin-top: 8px;
+  flex-wrap: nowrap;
+}
+.bubble-image--agent {
+  max-width: 320px;
+  max-height: 320px;
 }
 
 /* 流式光标 */

@@ -32,6 +32,49 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
     return '';
   }
 
+  function extractAttachments(msg: any): TimelineMessage['attachments'] {
+    const raw = msg?.attachments ?? msg?.media;
+    if (!Array.isArray(raw) || raw.length === 0) return undefined;
+    return raw.map((att: any) => {
+      const a: any = typeof att === 'string' ? { url: att } : att;
+      if (a.dataUrl || a.data_url) {
+        const du = a.dataUrl || a.data_url;
+        const match = du.match(/^data:([^;]+);base64,(.+)$/);
+        return {
+          type: a.type || 'image',
+          mimeType: a.mimeType || match?.[1] || 'image/png',
+          fileName: a.fileName || a.filename || `attachment.${guessExt(match?.[1] || '')}`,
+          content: match?.[2] || '',
+          dataUrl: du,
+        };
+      }
+      if (a.content && a.mimeType) {
+        return {
+          type: a.type || 'image',
+          mimeType: a.mimeType,
+          fileName: a.fileName || a.filename || `attachment.${guessExt(a.mimeType)}`,
+          content: a.content,
+          dataUrl: `data:${a.mimeType};base64,${a.content}`,
+        };
+      }
+      if (a.url) {
+        return {
+          type: 'image',
+          mimeType: a.mimeType || 'image/png',
+          fileName: a.fileName || a.filename || 'attachment.png',
+          content: '',
+          dataUrl: a.url,
+        };
+      }
+      return null;
+    }).filter((a): a is NonNullable<typeof a> => !!a);
+  }
+
+  function guessExt(mimeType: string): string {
+    const map: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
+    return map[mimeType] || 'bin';
+  }
+
   function findStreamMsgIndex(runId: string): number {
     return opts.messages.value.findIndex(m => m.streamRunId === runId && m.streamState !== 'complete' && m.streamState !== 'error');
   }
@@ -77,6 +120,7 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
       source_channel: (data.sourceChannel as string) ?? null,
       model: (data.model as string) ?? null,
       timestamp: opts.normalizeTimestamp(data.timestamp as string | number | undefined),
+      attachments: extractAttachments(data),
     };
   }
 
@@ -120,6 +164,7 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
       ? `gw_${rawFinalId}` : `gw_${Date.now()}`;
     const idx = findStreamMsgIndex(runId);
 
+    const attachments = msg ? extractAttachments(msg) : undefined;
     if (idx >= 0) {
       if (opts.isSystemNoise(finalText)) {
         opts.messages.value.splice(idx, 1);
@@ -134,6 +179,7 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
         streamState: 'complete',
         avatar: opts.messages.value[idx].avatar || opts.agentAvatar.value,
         timestamp: new Date().toISOString(),
+        attachments: attachments || opts.messages.value[idx].attachments,
       };
       opts.knownIds.add(finalId);
     }
