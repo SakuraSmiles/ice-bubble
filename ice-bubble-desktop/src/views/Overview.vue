@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { apiMonitor, type MonitorStats } from '../utils/monitor';
 import {
   ChatDotRound, Connection, Calendar, Monitor
@@ -8,35 +8,10 @@ import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api, request } from '../api/client';
 import { gatewayClient } from '@/services/gateway-client';
-import type { ModuleDTO, TimelineResponseDTO, AgentDTO } from '../api/client';
+import type { ModuleDTO, TimelineResponseDTO } from '../api/client';
 // 子组件
 import StatusDropdown from './components/StatusDropdown.vue';
 import RecentSessions from './components/RecentSessions.vue';
-
-
-// =========== 接口定义 ===========
-
-interface AgentRuntimeState {
-  isStreaming: boolean;
-  streamingContent: string;
-  lastCompleteMessage: string;
-  targetLength: number;
-  streamTimer: ReturnType<typeof setTimeout> | null;
-  displayMessage: string;
-}
-
-/** 每个 Agent 的运行时状态 */
-const agentRuntimeStates = ref<Record<string, AgentRuntimeState>>({});
-
-/** 消息元素引用（用于流式输出时滚动） */
-const messageRefs = ref<Record<string, HTMLElement>>({});
-
-// Agent 概览数据
-const agentOverviewData = ref<{ agents: AgentDTO[] } | null>(null);
-
-
-
-
 
 // =========== 数据状态卡片 ===========
 
@@ -97,95 +72,6 @@ async function fetchDataStatus(): Promise<void> {
     // 静默忽略，等待下次轮询
   }
 }
-
-
-
-// =========== 核心功能函数 ===========
-
-/** 获取/初始化 Agent 运行时状态 */
-function getAgentRuntime(agentId: string): AgentRuntimeState {
-  if (!agentRuntimeStates.value[agentId]) {
-    agentRuntimeStates.value[agentId] = {
-      isStreaming: false, streamingContent: '', lastCompleteMessage: '',
-      targetLength: 0, streamTimer: null, displayMessage: ''
-    };
-  }
-  return agentRuntimeStates.value[agentId];
-}
-
-/** 检测 Agent 状态是否为"工作中" */
-function isWorkingStatus(status: string): boolean {
-  return status === '工作' || status === '工作中';
-}
-
-/** 处理新消息 */
-function handleNewMessage(agentId: string, newMessage: string, isWorking: boolean) {
-  const state = getAgentRuntime(agentId);
-  const cleanedMsg = (newMessage || '').replace(/\s+/g, ' ').trim();
-  if (!cleanedMsg) {
-    state.displayMessage = ''; state.lastCompleteMessage = ''; return;
-  }
-  if (state.streamTimer) { clearTimeout(state.streamTimer); state.streamTimer = null; }
-  if (isWorking) {
-    state.isStreaming = true; state.lastCompleteMessage = cleanedMsg;
-    state.targetLength = cleanedMsg.length; startStreaming(agentId, cleanedMsg);
-  } else {
-    state.isStreaming = false; state.streamingContent = '';
-    state.displayMessage = cleanedMsg; state.lastCompleteMessage = cleanedMsg;
-  }
-}
-
-/** 启动流式输出 */
-function startStreaming(agentId: string, fullMessage: string) {
-  const state = getAgentRuntime(agentId);
-  const chars = fullMessage.split('');
-  let currentIndex = 0;
-  const BASE_SPEED = 15; const MIN_DELAY = 5; const MAX_DELAY = 50;
-
-  function streamNext() {
-    if (currentIndex >= chars.length) {
-      state.isStreaming = false; state.streamingContent = '';
-      state.displayMessage = state.lastCompleteMessage; state.streamTimer = null;
-      scrollMessageToTop(agentId); return;
-    }
-    currentIndex++;
-    state.streamingContent = chars.slice(0, currentIndex).join('');
-    state.displayMessage = state.streamingContent;
-    const delay = MIN_DELAY + Math.random() * Math.min(MAX_DELAY, BASE_SPEED * Math.pow(1.05, currentIndex));
-    state.streamTimer = setTimeout(() => streamNext(), delay);
-    nextTick(() => scrollMessageToBottom(agentId));
-  }
-  streamNext();
-}
-
-function scrollMessageToBottom(agentId: string) {
-  const el = messageRefs.value[agentId];
-  if (el) el.scrollTop = el.scrollHeight;
-}
-
-function scrollMessageToTop(agentId: string) {
-  const el = messageRefs.value[agentId];
-  if (el) el.scrollTop = 0;
-}
-
-/** 监听 agent 数据变化 */
-watch(agentOverviewData, (newData) => {
-  if (!newData?.agents) return;
-  for (const agent of newData.agents) {
-    const state = getAgentRuntime(agent.agent_id);
-    const cleanedMsg = (agent.latest_message || '').replace(/\s+/g, ' ').trim();
-    if (cleanedMsg !== state.lastCompleteMessage && !state.isStreaming) {
-      handleNewMessage(agent.agent_id, cleanedMsg, isWorkingStatus(agent.status));
-    } else if (cleanedMsg !== state.lastCompleteMessage && state.isStreaming) {
-      if (state.streamTimer) { clearTimeout(state.streamTimer); state.streamTimer = null; }
-      handleNewMessage(agent.agent_id, cleanedMsg, isWorkingStatus(agent.status));
-    } else if (state.isStreaming && !isWorkingStatus(agent.status)) {
-      if (state.streamTimer) { clearTimeout(state.streamTimer); state.streamTimer = null; }
-      state.isStreaming = false; state.streamingContent = '';
-      state.displayMessage = state.lastCompleteMessage;
-    }
-  }
-});
 
 // =========== 模块监控 ===========
 
@@ -248,18 +134,7 @@ async function refreshModules(): Promise<void> {
 
 async function fetchAgentOverview() {
   try {
-    const data = await api.getAgents();
-    agentOverviewData.value = data;
-    // 清理已消失 agent 的 runtime state
-    const currentIds = new Set((data.agents ?? []).map((a) => a.agent_id));
-    for (const id of Object.keys(agentRuntimeStates.value)) {
-      if (!currentIds.has(id)) {
-        const s = agentRuntimeStates.value[id];
-        if (s.streamTimer) clearTimeout(s.streamTimer);
-        delete agentRuntimeStates.value[id];
-      }
-    }
-    // 旧端点已废弃，不再调用 fetchAllAgentTasks
+    await api.getAgents();
   } catch (e) { console.error('获取 Agent 概览失败', e); }
 }
 
@@ -301,9 +176,6 @@ onUnmounted(() => {
   stopPolling();
   document.removeEventListener('visibilitychange', onVisibilityChange);
   if (unsubSessionMsg) { unsubSessionMsg(); unsubSessionMsg = null; }
-  for (const s of Object.values(agentRuntimeStates.value)) {
-    if (s.streamTimer) { clearTimeout(s.streamTimer); s.streamTimer = null; }
-  }
 });
 </script>
 
@@ -426,146 +298,6 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-}
-
-/* Agent 列表 */
-.agent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.agent-item {
-  display: flex;
-  flex-direction: column;
-  padding: 12px 14px;
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
-  border: 1px solid var(--el-border-color-extra-light);
-  min-height: 100px;
-  overflow: hidden;
-  position: relative;
-}
-
-.agent-item .agent-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.agent-item .agent-avatar {
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--el-fill-color-light);
-  border: 1px solid var(--el-border-color-extra-light);
-}
-
-.agent-item .agent-name {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-item .agent-model-tag {
-  flex-shrink: 0;
-  font-family: var(--font-exo2);
-  font-size: 10px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color);
-  border: 1px solid var(--el-border-color-extra-light);
-}
-
-.agent-item .agent-model-name {
-  margin: 1px 0 0 44px;
-  font-family: var(--font-exo2);
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-  line-height: 1.6;
-}
-
-/* 状态指示器 */
-.avatar-wrapper {
-  position: relative;
-  display: inline-flex;
-}
-
-.avatar-wrapper.is-working .agent-avatar {
-  border-color: var(--color-accent-blue);
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.15);
-  animation: avatar-working 2s ease-in-out infinite;
-}
-
-@keyframes avatar-working {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.15); border-color: var(--color-accent-blue); }
-  50% { box-shadow: 0 0 0 4px rgba(64, 158, 255, 0.25); border-color: var(--color-accent-blue); }
-}
-
-.avatar-wrapper .status-dot {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--el-bg-color);
-  border-radius: 50%;
-}
-
-.status-dot--工作,
-.status-dot--活跃 { background: var(--el-color-success); }
-.status-dot--休假 { background: var(--el-color-warning); }
-.status-dot--离线 { background: var(--el-color-info); }
-.status-dot--失联 { background: var(--el-color-danger); }
-.status-dot--工作中 { background: var(--el-color-success); }
-
-.avatar-wrapper.is-working .status-dot {
-  animation: dot-breathe 1.5s ease-in-out infinite;
-}
-
-@keyframes dot-breathe {
-  0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4); }
-  50% { transform: scale(1.15); opacity: 0.85; box-shadow: 0 0 0 4px rgba(64, 158, 255, 0); }
-}
-
-/* 工作中卡片流光边框 */
-.agent-item.is-working::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 8px;
-  padding: 2px;
-  background: linear-gradient(90deg,
-    transparent 0%, rgba(64, 158, 255, 0.6) 30%, #409eff 50%, rgba(64, 158, 255, 0.6) 70%, transparent 100%);
-  background-size: 200% 100%;
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: border-shimmer 3s ease-in-out infinite;
-}
-
-@keyframes border-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-.main-card {
-  height: 100%;
-}
-
-.main-card :deep(.el-card__body) {
-  padding: 0;
-}
-
-.placeholder-content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
 }
 
 

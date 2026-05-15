@@ -49,12 +49,12 @@ async function testConnection(): Promise<boolean> {
 
   testing.value = true;
   try {
-    // dev 环境走 Vite proxy（相对路径，由 client.ts request() 拼接 API_BASE），prod 环境直连用户填的地址
-    const baseUrl = import.meta.env?.DEV ? '' : `${url}/api`;
+    // 始终使用用户输入的 URL 进行测试（不区分 dev/prod）
+    const baseUrl = `${url}/api`;
 
     // Step 1: verify token if provided
     if (token) {
-      const verifyRes = await request(`${baseUrl}/auth/verify`, { method: 'POST', signal: AbortSignal.timeout(8000) });
+      const verifyRes = await request(`${baseUrl}/auth/verify`, { method: 'POST', signal: AbortSignal.timeout(5000) });
       if (!verifyRes.ok) {
         ElMessage.error('连接失败：Token 不正确');
         return false;
@@ -62,7 +62,7 @@ async function testConnection(): Promise<boolean> {
     }
 
     // Step 2: test a protected endpoint
-    const res = await request(`${baseUrl}/settings`, { signal: AbortSignal.timeout(8000) });
+    const res = await request(`${baseUrl}/settings`, { signal: AbortSignal.timeout(5000) });
     if (res.ok) {
       const data = await res.json();
       adminVersion.value = data.version || '';
@@ -77,9 +77,10 @@ async function testConnection(): Promise<boolean> {
     }
   } catch (e: any) {
     const msg = e.message || String(e);
-    // 常见原因提示
     if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ERR_CONNECTION')) {
-      ElMessage.error('连接失败：无法访问 Admin 服务（可能是 mixed content 限制或网络不通）');
+      ElMessage.error('连接失败：无法访问 Admin 服务（请检查地址是否正确、服务是否运行）');
+    } else if (msg.includes('TimeoutError') || msg.includes('timeout') || msg.includes('The operation was aborted')) {
+      ElMessage.error('连接失败：连接超时（5 秒无响应）');
     } else {
       ElMessage.error('连接失败：' + msg);
     }

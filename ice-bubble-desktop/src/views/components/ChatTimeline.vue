@@ -1098,7 +1098,7 @@ function toolSummary(grp: MsgGroup): string {
     <div ref="containerRef" class="chat-scroll" @scroll="onScroll">
       <!-- 加载更多按钮（在列表顶部显示） -->
       <div v-if="hasMore && !loading" class="load-more-bar">
-        <button class="load-more-btn" @click="loadMore" :disabled="loadingMore">
+        <button type="button" class="load-more-btn" @click="loadMore" :disabled="loadingMore">
           {{ loadingMore ? '加载中...' : '↑ 加载更早消息' }}
         </button>
       </div>
@@ -1362,6 +1362,11 @@ function toolSummary(grp: MsgGroup): string {
   color: var(--color-text);
   border-radius: 16px 4px 16px 16px;
   border: 1px solid var(--color-border-subtle);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.bubble--user:hover {
+  background: #c8e6ff;
+  box-shadow: 0 1px 4px rgba(9, 105, 218, 0.12);
 }
 .bubble--user .bubble-time {
   color: var(--color-text-tertiary);
@@ -1379,6 +1384,11 @@ function toolSummary(grp: MsgGroup): string {
   max-width: 100%;
   padding: 10px 14px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.bubble--agent:hover {
+  background: #fafbfc;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
 
 .bubble-text {
