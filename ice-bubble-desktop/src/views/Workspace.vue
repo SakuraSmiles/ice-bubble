@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick, inject } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useChatInputStore } from '@/stores/chat-input';
 import { gatewayClient } from '@/services/gateway-client';
 import { request } from '../api/client';
 import AppFooter from '../components/AppFooter.vue';
@@ -26,6 +27,10 @@ const agentId = computed(() => {
 // 视图状态：list 或 chat（无 UUID 时强制显示 list）
 const view = ref<'list' | 'chat' | 'loading'>('list');
 const inputText = ref('');
+
+// 聊天输入缓存
+const chatInputStore = useChatInputStore();
+chatInputStore.bind(sessionKey, inputText);
 const sending = ref(false);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const timelineRef = ref<InstanceType<typeof ChatTimeline> | null>(null);
