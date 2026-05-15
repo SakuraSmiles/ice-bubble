@@ -113,7 +113,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
     const userMsgs = msgs.filter(m => m.message_type === 'user' && (!m.attachments || m.attachments.length === 0));
     if (userMsgs.length === 0) return;
     try {
-      const res = await fetch(`${API_BASE}/attachments/query?session_key=${encodeURIComponent(sessionKey)}`);
+      const res = await request(`/attachments/query?session_key=${encodeURIComponent(sessionKey)}`);
       if (!res.ok) return;
       const data = await res.json() as { attachments: Array<{ id: string; session_key: string; message_content: string | null; file_path: string; mime_type: string; file_size: number }> };
       const attList = data.attachments || [];

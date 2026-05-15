@@ -219,8 +219,34 @@ export async function startAdmin(): Promise<void> {
       res.sendFile(filePath);
     });
 
+    // Attachment static files + query API — no auth required
+    // (browser <img> tags and Desktop API calls need unauthenticated access)
+    const attachmentsDirEarly = process.env.ATTACHMENTS_DIR || join(process.env.HOME || '/root', '.local', 'share', 'ice-bubble', 'data', 'attachments');
+    if (!existsSync(attachmentsDirEarly)) {
+      mkdirSync(attachmentsDirEarly, { recursive: true });
+    }
+    app.get('/api/attachments/:filename', (req, res) => {
+      const { filename } = req.params;
+      if (!filename || filename.includes('..') || filename.includes('/')) {
+        res.status(404).json({ error: 'Attachment not found' });
+        return;
+      }
+      const filePath = join(attachmentsDirEarly, filename);
+      if (!existsSync(filePath)) {
+        res.status(404).json({ error: 'Attachment not found' });
+        return;
+      }
+      const ext = filename.split('.').pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
+      res.setHeader('Content-Type', mimeMap[ext || ''] || 'application/octet-stream');
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+      res.sendFile(filePath);
+    });
+
     // Bearer token auth middleware for all /api/* routes
     // Auth is always enforced for every request to /api/* regardless of source IP.
+    // Note: /api/resources/avatars and /api/attachments are registered before this middleware
+    // because browser <img> tags cannot send Authorization header.
     app.use('/api', createBearerAuthMiddleware(authToken));
 
     const PORT = configData.server?.port || 13000;
@@ -363,16 +389,7 @@ export async function startAdmin(): Promise<void> {
       res.json({ messages, total: result.total });
     });
 
-    // 附件静态文件服务 + 查询 API
-    app.use('/api/attachments', express.static(attachmentsDir));
-    app.get('/api/attachments/query', (req, res) => {
-      const sessionKey = req.query.session_key as string;
-      const messageContent = req.query.message_content as string;
-      if (!sessionKey) { res.status(400).json({ error: 'session_key required' }); return; }
-      const attachments = attachmentStorage.getAttachments(sessionKey, messageContent);
-      res.json({ attachments });
-    });
-    logger.info('[Admin] Attachment routes registered');
+    // (attachment routes moved before auth middleware — see above)
 
     // Chat routes (only if GatewayProxy is available)
     if (chatController) {
