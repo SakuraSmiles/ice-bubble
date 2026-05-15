@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Copy, RefreshCw } from 'lucide-vue-next';
 import MarkdownContent from '../../../components/MarkdownContent.vue';
@@ -21,6 +22,30 @@ const emit = defineEmits<{
   (e: 'regenerate'): void;
 }>();
 
+// 解析消息内容中的 MEDIA:<url> 指令，返回清洗后的内容和提取的 URL 列表
+function extractMedia(content: string): { cleaned: string; urls: string[] } {
+  const urls: string[] = [];
+  const lines = content.split('\n');
+  const cleanedLines = lines.filter(line => {
+    if (line.startsWith('MEDIA:')) {
+      const url = line.slice(6).trim();
+      if (url) urls.push(url);
+      return false;
+    }
+    return true;
+  });
+  return { cleaned: cleanedLines.join('\n'), urls };
+}
+
+// 预处理 Agent 消息：提取 MEDIA: 指令，分离显示内容和图片 URL
+const messagesWithMedia = computed(() => {
+  return props.group.messages.map(m => {
+    const raw = m.clean_content || m.content || '';
+    const { cleaned, urls } = extractMedia(raw);
+    return { message: m, displayContent: cleaned, mediaUrls: urls };
+  });
+});
+
 function copyMessage() {
   const text = props.group.messages.map(m => m.clean_content || m.content || '').join('\n');
   if (!text.trim()) return;
@@ -34,6 +59,14 @@ function copyMessage() {
 function regenerate() {
   emit('regenerate');
 }
+
+function previewImage(src: string) {
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.write(`<html><head><title>Image Preview</title><style>body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#111}img{max-width:100%;max-height:100vh;object-fit:contain}</style></head><body><img src="${src}"></body></html>`);
+    win.document.close();
+  }
+}
 </script>
 
 <template>
@@ -41,7 +74,17 @@ function regenerate() {
   <div v-if="group.type === 'user' && group.messages.length > 0" class="msg-row msg-row--user" :data-msg-id="group.messages[0]?.id">
     <div class="bubble bubble--user">
       <span v-if="shouldShowTime(group.timestamp, groupIndex)" class="bubble-time">{{ formatTime(group.timestamp) }}</span>
-      <MarkdownContent :content="group.messages[0]?.clean_content || group.messages[0]?.content || ''" />
+      <MarkdownContent v-if="group.messages[0]?.clean_content || group.messages[0]?.content" :content="group.messages[0]?.clean_content || group.messages[0]?.content || ''" />
+      <div v-if="group.messages[0]?.attachments?.length" class="bubble-images">
+        <img
+          v-for="(att, ai) in group.messages[0].attachments"
+          :key="ai"
+          :src="att.dataUrl || `data:${att.mimeType};base64,${att.content}`"
+          class="bubble-image"
+          loading="lazy"
+          @click="previewImage(att.dataUrl || `data:${att.mimeType};base64,${att.content}`)"
+        />
+      </div>
     </div>
   </div>
 
@@ -76,9 +119,21 @@ function regenerate() {
         <!-- 工具调用实时展示 -->
         <ToolCallBadge v-if="group.messages[0]?.toolCalls?.length" :tool-calls="group.messages[0].toolCalls" />
 
-        <div class="bubble-text" v-for="(m, mi) in group.messages" :key="mi">
-          <MarkdownContent :content="m.clean_content || m.content || ''" />
-          <span v-if="m.streamState === 'streaming'" class="streaming-cursor">▊</span>
+        <div class="bubble-text" v-for="(item, mi) in messagesWithMedia" :key="mi">
+          <MarkdownContent :content="item.displayContent" />
+          <div v-if="item.mediaUrls.length > 0" class="media-gallery">
+            <a
+              v-for="(url, ui) in item.mediaUrls"
+              :key="ui"
+              :href="url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="media-link"
+            >
+              <img :src="url" class="media-image" alt="Media" loading="lazy" />
+            </a>
+          </div>
+          <span v-if="item.message.streamState === 'streaming'" class="streaming-cursor">▊</span>
         </div>
 
         <!-- 工具消息折叠 -->
@@ -286,6 +341,53 @@ function regenerate() {
   white-space: pre-wrap;
   word-break: break-all;
   color: #666;
+}
+
+/* MEDIA: 图片展示 */
+.media-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.media-link {
+  display: block;
+  line-height: 0;
+}
+
+.media-image {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  display: block;
+  border: 1px solid var(--color-border-subtle, #e5e7eb);
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.media-image:hover {
+  opacity: 0.9;
+}
+
+/* 用户消息图片 */
+.bubble-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.bubble-image {
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+  cursor: pointer;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+.bubble-image:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
 }
 
 /* 流式光标 */

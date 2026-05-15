@@ -200,13 +200,15 @@ async function sendMessage() {
     };
   });
 
+  // 保存附件 dataUrl 用于乐观消息展示
+  const attachmentDataUrls = attachments.value.map(a => a.dataUrl).filter(Boolean);
   inputText.value = '';
   resetInputHeight();
   clearAttachments();
   try {
     if (gatewayConnected.value) {
       await gatewayClient.sendMessage(sessionKey.value, text || '(图片)', attachmentPayloads.length > 0 ? attachmentPayloads : undefined);
-      timelineRef.value?.addOptimisticMessage(text || '(图片)', 'user');
+      timelineRef.value?.addOptimisticMessage(text || '(图片)', 'user', attachmentDataUrls);
     } else {
       const res = await request('/chat/send', {
         method: 'POST',
@@ -215,7 +217,7 @@ async function sendMessage() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
-      timelineRef.value?.addOptimisticMessage(text || '(图片)', 'user');
+      timelineRef.value?.addOptimisticMessage(text || '(图片)', 'user', attachmentDataUrls);
     }
   } catch (e) {
     inputText.value = text;

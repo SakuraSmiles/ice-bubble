@@ -28,6 +28,13 @@ export interface TimelineMessage {
   streamRunId?: string;
   streamState?: 'thinking' | 'streaming' | 'complete' | 'error';
   toolCalls?: ToolCallEntry[];
+  attachments?: Array<{
+    type: string;
+    mimeType: string;
+    fileName: string;
+    content: string; // base64 data
+    dataUrl?: string; // full data URL for rendering
+  }>;
 }
 
 export interface TimelineResponse {

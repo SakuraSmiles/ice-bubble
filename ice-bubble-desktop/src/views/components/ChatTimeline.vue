@@ -111,7 +111,7 @@ onUnmounted(() => {
 
 defineExpose({
   getMessages: () => chatData.messages.value,
-  addOptimisticMessage(content: string, role: string = 'user') {
+  addOptimisticMessage(content: string, role: string = 'user', attachmentDataUrls?: string[]) {
     const msg = {
       id: `gw_${Date.now()}`,
       session_key: props.sessionKey || '',
@@ -127,6 +127,13 @@ defineExpose({
       source_channel: role === 'user' ? 'desktop' : null,
       model: null,
       timestamp: new Date().toISOString(),
+      attachments: attachmentDataUrls?.map(dataUrl => ({
+        type: 'image',
+        mimeType: 'image/jpeg',
+        fileName: 'image',
+        content: '',
+        dataUrl,
+      })),
     } as any;
     chatData.knownIds.add(msg.id);
     chatData.messages.value = [...chatData.messages.value, msg];
