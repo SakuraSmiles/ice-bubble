@@ -1,46 +1,11 @@
 <script setup lang="ts">
-import { provide, ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import { gatewayClient } from '@/services/gateway-client';
 import WorkspacePanel from '@/components/WorkspacePanel.vue';
 import GlobalSearch from '@/components/GlobalSearch.vue';
 
 const route = useRoute();
 
-// GatewayClient 连接状态
-const gatewayConnected = ref(false);
-const gatewayInitError = ref<string | null>(null);
-
-// 全局连接状态，供子视图使用
-const isAdminConnected = ref(true);
-provide('isAdminConnected', isAdminConnected);
-provide('gatewayConnected', gatewayConnected);
-
-// 初始化 GatewayClient
-onMounted(async () => {
-  try {
-    await gatewayClient.connect();
-    gatewayConnected.value = true;
-    gatewayInitError.value = null;
-  } catch (e) {
-    gatewayConnected.value = false;
-    gatewayInitError.value = e instanceof Error ? e.message : 'Gateway 连接失败';
-    console.warn('[Layout] Gateway 连接失败，降级到轮询模式:', e);
-  }
-
-  // 监听连接状态变化
-  gatewayClient.on('connect', () => {
-    gatewayConnected.value = true;
-    gatewayInitError.value = null;
-  });
-  gatewayClient.on('disconnect', () => {
-    gatewayConnected.value = false;
-  });
-});
-
-onUnmounted(() => {
-  gatewayClient.disconnect();
-});
 
 // ====== 左侧边栏展开/收起 + 拖拽 ======
 const sidebarWidth = ref(200)

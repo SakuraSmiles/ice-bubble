@@ -1,6 +1,41 @@
 <script setup lang="ts">
+import { ref, provide, onMounted, onUnmounted } from 'vue';
 import { useLogger } from '@/composables/useLogger';
+import { gatewayClient } from '@/services/gateway-client';
+
 useLogger();
+
+// GatewayClient 连接状态 — 与应用生命周期同步
+const gatewayConnected = ref(false);
+provide('gatewayConnected', gatewayConnected);
+
+onMounted(async () => {
+  try {
+    await gatewayClient.connect();
+    gatewayConnected.value = true;
+  } catch (e) {
+    gatewayConnected.value = false;
+    console.warn('[App] Gateway 连接失败:', e);
+  }
+
+  gatewayClient.on('connect', () => {
+    gatewayConnected.value = true;
+  });
+  gatewayClient.on('disconnect', () => {
+    gatewayConnected.value = false;
+  });
+});
+
+// 浏览器关闭时断开连接
+const onBeforeUnload = () => {
+  gatewayClient.disconnect();
+};
+onMounted(() => {
+  window.addEventListener('beforeunload', onBeforeUnload);
+});
+onUnmounted(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload);
+});
 </script>
 
 <template>
