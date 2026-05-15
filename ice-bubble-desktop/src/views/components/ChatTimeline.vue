@@ -159,10 +159,16 @@ defineExpose({
       <div v-else-if="chatData.messages.value.length === 0" class="empty-tip">暂无消息</div>
 
       <!-- 消息组 -->
-      <MessageBubble
-        v-for="(grp, gi) in chatData.groupedMessages.value"
-        :key="gi"
-        :group="grp"
+      <template v-for="(grp, gi) in chatData.groupedMessages.value" :key="gi">
+        <!-- 日期分隔线 -->
+        <div v-if="grp.type === 'date-divider'" class="date-divider">
+          <span class="date-divider-line"></span>
+          <span class="date-divider-text">{{ grp.dateLabel }}</span>
+          <span class="date-divider-line"></span>
+        </div>
+        <MessageBubble
+          v-else
+          :group="grp"
         :group-index="gi"
         :is-last-agent-group="gi === lastAgentGroupIndex"
         :should-show-time="shouldShowTime"
@@ -172,6 +178,7 @@ defineExpose({
         :tool-summary="chatData.toolSummary"
         @regenerate="regenerate"
       />
+      </template>
 
       <!-- 打字指示器 -->
       <div v-if="chatData.showTypingIndicator.value" class="typing-indicator">
@@ -259,6 +266,25 @@ defineExpose({
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+
+/* 日期分隔线 */
+.date-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 4px;
+  user-select: none;
+}
+.date-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--el-border-color-lighter);
+}
+.date-divider-text {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  white-space: nowrap;
 }
 
 /* 打字指示器 */

@@ -414,13 +414,36 @@ export function useChatData(getSessionKey: () => string | undefined) {
     }
     if (current) groups.push(current);
 
+    // Insert date-divider groups between messages on different dates
+    const withDividers: import('./types').MsgGroup[] = [];
+    let lastDateStr = '';
     for (const grp of groups) {
+      const grpDate = new Date(grp.timestamp);
+      const dateStr = `${grpDate.getFullYear()}-${grpDate.getMonth()}-${grpDate.getDate()}`;
+      if (dateStr !== lastDateStr) {
+        lastDateStr = dateStr;
+        withDividers.push({
+          type: 'date-divider',
+          agentId: '',
+          agentName: null,
+          avatar: null,
+          timestamp: grp.timestamp,
+          messages: [],
+          toolMsgs: [],
+          hiddenToolCount: 0,
+          dateLabel: formatDateLabel(grp.timestamp),
+        });
+      }
+      withDividers.push(grp);
+    }
+
+    for (const grp of withDividers) {
       if (grp.toolMsgs.length > 3) {
         grp.hiddenToolCount = grp.toolMsgs.length - 2;
         grp.toolMsgs = grp.toolMsgs.slice(0, 2);
       }
     }
-    return groups;
+    return withDividers;
   });
 
   // ── 重置（session 切换时） ──
@@ -448,12 +471,29 @@ export function useChatData(getSessionKey: () => string | undefined) {
     return content.length <= maxLen ? content : content.substring(0, maxLen) + '...';
   }
 
+  function formatDateLabel(ts: string): string {
+    const d = new Date(ts);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.round((today.getTime() - date.getTime()) / 86400000);
+    if (diffDays === 0) return '今天';
+    if (diffDays === 1) return '昨天';
+    if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
   function formatTime(ts: string) {
     const d = new Date(ts);
     const now = new Date();
-    const isToday = d.toDateString() === now.toDateString();
-    if (isToday) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-    return `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.round((today.getTime() - date.getTime()) / 86400000);
+    const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    if (diffDays === 0) return time;
+    if (diffDays === 1) return `昨天 ${time}`;
+    if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${time}`;
   }
 
   function toolSummary(grp: import('./types').MsgGroup): string {

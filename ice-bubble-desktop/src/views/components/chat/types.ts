@@ -45,7 +45,9 @@ export interface TimelineResponse {
 }
 
 export type MsgGroup = {
-  type: 'user' | 'agent';
+  type: 'user' | 'agent' | 'date-divider';
+  /** For date-divider: the display label like "今天", "昨天", "5月13日" */
+  dateLabel?: string;
   agentId: string;
   agentName: string | null;
   avatar: string | null;
