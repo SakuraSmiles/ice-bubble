@@ -193,14 +193,37 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
     if (sessionKey && gatewayClient.isConnected) {
       setTimeout(async () => {
         try {
-          const res = await gatewayClient.getChatHistory(sessionKey, 1);
+          // 获取最近 5 条消息，增加匹配概率
+          const res = await gatewayClient.getChatHistory(sessionKey, 5);
           const history = res as any;
           const messages = history?.messages || [];
           if (messages.length === 0) return;
-          const latest = messages[messages.length - 1];
-          const fullText = extractText(latest);
-          if (!fullText || !fullText.includes('MEDIA:')) return;
-          // 找到对应的流式消息并更新内容
+          // 优先按消息 ID 精确匹配
+          let targetMsg: any = null;
+          for (let i = messages.length - 1; i >= 0; i--) {
+            const text = extractText(messages[i]);
+            if (text && text.includes('MEDIA:')) {
+              const msgId = messages[i].id;
+              if (msgId && (String(msgId) === String(rawFinalId) ||
+                  messages[i].id === data.id ||
+                  messages[i].messageId === data.messageId)) {
+                targetMsg = messages[i];
+                break;
+              }
+            }
+          }
+          // ID 匹配失败，兜底取最近含 MEDIA: 的消息
+          if (!targetMsg) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const text = extractText(messages[i]);
+              if (text && text.includes('MEDIA:')) {
+                targetMsg = messages[i];
+                break;
+              }
+            }
+          }
+          if (!targetMsg) return;
+          const fullText = extractText(targetMsg);
           const curIdx = opts.messages.value.findIndex(
             m => m.streamRunId === runId || m.id === finalId
           );

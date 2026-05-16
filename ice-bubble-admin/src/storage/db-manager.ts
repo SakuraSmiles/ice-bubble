@@ -1008,6 +1008,13 @@ export class DBManager {
         `);
         logger.info('Migration v22: created attachments table');
         break;
+      case 23:
+        // v23: attachments.file_path 索引（proxy-cache 查询加速）
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_attachments_file_path ON attachments(file_path);
+        `);
+        logger.info('Migration v23: added file_path index on attachments');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }
