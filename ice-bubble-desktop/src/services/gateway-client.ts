@@ -259,6 +259,13 @@ export class GatewayClient {
   }
 
   /**
+   * 向正在处理的会话追加消息（Steer）
+   */
+  async steerSession(sessionKey: string, message: string): Promise<unknown> {
+    return this.request('sessions.steer', { key: sessionKey, message })
+  }
+
+  /**
    * 获取会话聊天历史
    */
   async getChatHistory(sessionKey: string, limit?: number): Promise<unknown> {

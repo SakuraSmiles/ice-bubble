@@ -110,6 +110,8 @@ onUnmounted(() => {
 });
 
 defineExpose({
+  isProcessing: gwStream.isProcessing,
+  activeRunId: gwStream.activeRunId,
   getMessages: () => chatData.messages.value,
   addOptimisticMessage(content: string, role: string = 'user', attachmentDataUrls?: string[]) {
     const msg = {

@@ -26,7 +26,7 @@ export interface TimelineMessage {
   model: string | null;
   timestamp: string;
   streamRunId?: string;
-  streamState?: 'thinking' | 'streaming' | 'complete' | 'error';
+  streamState?: 'thinking' | 'streaming' | 'complete' | 'error' | 'aborted';
   toolCalls?: ToolCallEntry[];
   attachments?: Array<{
     type: string;

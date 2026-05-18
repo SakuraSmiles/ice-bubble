@@ -28,8 +28,15 @@ function extractMedia(content: string): { cleaned: string; urls: string[] } {
   const lines = content.split('\n');
   const cleanedLines = lines.filter(line => {
     if (line.startsWith('MEDIA:')) {
-      const url = line.slice(6).trim();
-      if (url) urls.push(url);
+      let url = line.slice(6).trim();
+      if (url) {
+        // 如果是服务器绝对路径，转为 Admin media API 可访问的相对 URL
+        if (url.startsWith('/') && !url.startsWith('http')) {
+          const fileName = url.split('/').pop();
+          if (fileName) url = `/api/media/file/${fileName}`;
+        }
+        urls.push(url);
+      }
       return false;
     }
     return true;
@@ -153,6 +160,7 @@ function previewImage(src: string) {
             />
           </div>
           <span v-if="item.message.streamState === 'streaming'" class="streaming-cursor">▊</span>
+          <div v-if="item.message.streamState === 'aborted'" class="aborted-indicator">已停止生成</div>
         </div>
 
         <!-- 工具消息折叠 -->
@@ -433,5 +441,23 @@ function previewImage(src: string) {
 }
 @keyframes blink {
   50% { opacity: 0; }
+}
+
+.aborted-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
+  color: var(--el-text-color-secondary, #909399);
+  font-size: 12px;
+}
+.aborted-indicator::before,
+.aborted-indicator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--el-border-color-lighter, #ebeef5);
 }
 </style>

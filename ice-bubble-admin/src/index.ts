@@ -34,6 +34,7 @@ import { createSessionGroupsRouter } from './api/session-groups.js';
 import { createSessionPreferencesRouter } from './api/session-preferences.js';
 import { createWorkspaceRouter } from './api/workspace.js';
 import { createSettingsRouter } from './api/settings.js';
+import { createMediaRouter, createMediaFileRouter } from './api/media.js';
 
 // 加载环境变量
 config();
@@ -250,6 +251,14 @@ export async function startAdmin(): Promise<void> {
       res.sendFile(filePath);
     });
 
+    // Media file download — no auth required (browser <img> tags cannot send Authorization header)
+    // Placeholder: actual router registered after DB init
+    let mediaFileHandler: ((req: any, res: any) => void) | null = null;
+    app.get('/api/media/file/:id', (req, res) => {
+      if (mediaFileHandler) { mediaFileHandler(req, res); return; }
+      res.status(503).json({ error: 'Media service not ready' });
+    });
+
     // Bearer token auth middleware for all /api/* routes
     // Auth is always enforced for every request to /api/* regardless of source IP.
     // Note: /api/resources/avatars and /api/attachments are registered before this middleware
@@ -263,7 +272,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = process.env.ADMIN_DB_PATH || join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(22);  // 执行数据库迁移（v22: attachments 表）
+    await dbManager.migrate(23);  // 执行数据库迁移（v23: attachments file_path 索引）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 
@@ -395,6 +404,25 @@ export async function startAdmin(): Promise<void> {
       }));
       res.json({ messages, total: result.total });
     });
+
+    // Media routes (after auth middleware — metadata queries are authenticated)
+    const gatewayMediaDir = join(process.env.HOME || '/root', '.openclaw', 'media', 'inbound');
+    const mediaMetaRouter = createMediaRouter({
+      db: dbManager.getConnection(),
+      attachmentsDir: attachmentsDir,
+      gatewayProxy,
+      gatewayMediaDir,
+    });
+    app.use('/api/media', mediaMetaRouter);
+
+    // Wire up media file handler (registered before auth, now we have DB access)
+    const mediaFileRouter = createMediaFileRouter({
+      db: dbManager.getConnection(),
+      attachmentsDir: attachmentsDir,
+      gatewayProxy,
+      gatewayMediaDir,
+    });
+    mediaFileHandler = (req, res) => mediaFileRouter(req, res, () => {});
 
     // Attachment query API — after auth middleware, Desktop uses authenticated request()
     // (handler placeholder was registered earlier before :filename route)

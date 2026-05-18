@@ -38,6 +38,16 @@ const timelineRef = ref<InstanceType<typeof ChatTimeline> | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const dragOver = ref(false);
 
+// Agent 处理状态
+const isAgentProcessing = computed(() => {
+  const r = timelineRef.value as any;
+  const v = r?.isProcessing;
+  return typeof v === 'object' && v !== null && 'value' in v ? v.value : !!v;
+});
+const isBusy = computed(() => sending.value || isAgentProcessing.value);
+const canSteer = computed(() => isAgentProcessing.value && inputText.value.trim().length > 0);
+const aborting = ref(false);
+
 // ===== 附件 =====
 interface ChatAttachment {
   id: string;
@@ -183,6 +193,22 @@ function onSessionSelect(sessionKeyStr: string) {
 async function sendMessage() {
   const text = inputText.value.trim();
   if ((!text && attachments.value.length === 0) || !sessionKey.value || sending.value) return;
+
+  // Steer: Agent 处理中时追加消息
+  if (isAgentProcessing.value) {
+    if (!text && attachments.value.length === 0) return;
+    try {
+      await gatewayClient.steerSession(sessionKey.value, text);
+      inputText.value = '';
+      resetInputHeight();
+      nextTick(() => inputRef.value?.focus());
+      return;
+    } catch (e) {
+      console.error('追加消息失败', e);
+      return;
+    }
+  }
+
   sending.value = true;
   const hasAttachments = attachments.value.length > 0;
   if (hasAttachments) {
@@ -231,8 +257,22 @@ async function sendMessage() {
 function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
+    if (isBusy.value && !sending.value) return; // 处理中 Enter 不发送
     sendMessage();
+  } else if (e.key === 'Escape' && isBusy.value && !sending.value) {
+    handleAbort();
   }
+}
+
+async function handleAbort() {
+  if (aborting.value || !isAgentProcessing.value || !sessionKey.value) return;
+  aborting.value = true;
+  try {
+    await gatewayClient.abortTurn(sessionKey.value);
+  } catch (e) {
+    console.error('中止失败', e);
+  }
+  setTimeout(() => { aborting.value = false; }, 800);
 }
 
 // ===== 输入框尺寸 =====
@@ -319,14 +359,14 @@ function onResizeDragEnd() {
           <!-- 拖拽手柄：在卡片上方外部 -->
           <div class="resize-handle" @mousedown="onResizeDragStart"></div>
           <!-- 输入卡片：文本区 + 操作栏 -->
-          <div class="chat-input-card">
+          <div class="chat-input-card" :class="{ 'is-processing': isBusy || aborting }">
             <div class="chat-textarea-zone" :style="{ height: textareaHeight + 'px' }">
               <textarea
                 ref="inputRef"
                 v-model="inputText"
                 class="chat-input"
-                :placeholder="canSend ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '此会话已完成，不可发送消息'"
-                :disabled="!canSend || sending"
+                :placeholder="isAgentProcessing ? '追加消息到当前回复…' : (canSend ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '此会话已完成，不可发送消息')"
+                :disabled="!canSend"
                 @keydown="onKeyDown"
                 @input="autoResize"
                 @paste="onPaste"
@@ -340,7 +380,23 @@ function onResizeDragEnd() {
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
                   </svg>
                 </button>
-                <button class="send-btn" :disabled="sending || (!inputText.trim() && attachments.length === 0)" @click="sendMessage">
+                <!-- 中止按钮（Agent 处理中显示） -->
+                <button v-if="(isBusy && !sending) || aborting" class="abort-btn" :class="{ 'abort-btn--done': aborting }" title="停止生成 (Esc)" @click="handleAbort">
+                  <svg v-if="!aborting" width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+                    <rect x="3" y="3" width="10" height="10" rx="2" />
+                  </svg>
+                  <svg v-else width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 8.5l3 3L13 4.5" />
+                  </svg>
+                </button>
+                <!-- 追加按钮（steer，Agent 处理中且有输入） -->
+                <button v-else-if="canSteer" class="steer-btn" title="追加消息" @click="sendMessage">
+                  <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
+                  </svg>
+                </button>
+                <!-- 发送按钮（空闲时显示） -->
+                <button v-else class="send-btn" :disabled="sending || (!inputText.trim() && attachments.length === 0)" @click="sendMessage">
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M1.5 1.5l13 5-13 5V8.5l8-1.5-8-1.5V1.5z"/>
                   </svg>
@@ -441,6 +497,12 @@ function onResizeDragEnd() {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 2px rgba(9, 105, 218, 0.1);
 }
 
+/* Agent 处理中输入框卡片 */
+.chat-input-card.is-processing {
+  border-color: var(--color-accent-blue);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 2px rgba(9, 105, 218, 0.1);
+}
+
 /* 文本区（默认3行高） */
 .chat-textarea-zone {
  flex-shrink: 0;
@@ -519,6 +581,51 @@ function onResizeDragEnd() {
   opacity: 0.3;
   cursor: not-allowed;
   background: var(--color-text-quaternary, #d1d5db);
+}
+
+/* 中止按钮 */
+.abort-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: var(--el-color-danger, #f56c6c);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.abort-btn:hover:not(:disabled) {
+  opacity: 0.85;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(245, 108, 108, 0.3);
+}
+.abort-btn--done {
+  background: var(--el-color-success, #67c23a) !important;
+}
+
+/* 追加按钮（steer） */
+.steer-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-accent-blue);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.steer-btn:hover:not(:disabled) {
+  opacity: 0.85;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(9, 105, 218, 0.3);
 }
 
 /* ===== 附件按钮 ===== */

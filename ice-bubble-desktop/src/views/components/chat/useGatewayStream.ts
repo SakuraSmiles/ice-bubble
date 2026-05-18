@@ -1,7 +1,7 @@
 /**
  * useGatewayStream — Gateway WebSocket 实时事件处理
  */
-import { nextTick } from 'vue';
+import { nextTick, ref, type Ref } from 'vue';
 import { gatewayClient } from '@/services/gateway-client';
 import type { TimelineMessage, ToolCallEntry } from './types';
 
@@ -17,12 +17,17 @@ interface UseGatewayStreamOptions {
   normalizeTimestamp: (ts: string | number | undefined) => string;
   simpleHash: (str: string) => number;
   scrollToBottom: (smooth?: boolean) => void;
+  onProcessingChange?: (processing: boolean) => void;
+  onRunIdChange?: (runId: string | null) => void;
 }
 
 export function useGatewayStream(opts: UseGatewayStreamOptions) {
   let unsubSessionMsg: (() => void) | null = null;
   let unsubChat: (() => void) | null = null;
   let unsubAgent: (() => void) | null = null;
+
+  const activeRunId: Ref<string | null> = ref(null);
+  const isProcessing: Ref<boolean> = ref(false);
 
   // ── helpers ──
 
@@ -126,11 +131,27 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
 
   // ── chat handlers ──
 
+  function setProcessing(v: boolean) {
+    if (isProcessing.value !== v) {
+      isProcessing.value = v;
+      opts.onProcessingChange?.(v);
+    }
+  }
+
+  function setActiveRunId(id: string | null) {
+    if (activeRunId.value !== id) {
+      activeRunId.value = id;
+      opts.onRunIdChange?.(id);
+    }
+  }
+
   function handleChatDelta(data: Record<string, unknown>, runId: string) {
     const msg = data.message as Record<string, unknown> | undefined;
     if (!msg) return;
     const text = extractText(msg);
     if (!text) return;
+    if (!isProcessing.value) setProcessing(true);
+    if (activeRunId.value !== runId) setActiveRunId(runId);
     const idx = findStreamMsgIndex(runId);
 
     if (idx >= 0) {
@@ -186,6 +207,8 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
       opts.knownIds.add(finalId);
     }
     opts.showTypingIndicator.value = false;
+    setActiveRunId(null);
+    setProcessing(false);
     if (opts.atBottom.value) nextTick(() => opts.scrollToBottom(false));
 
     // 流式文本中 MEDIA: 已被 Gateway 剥离，通过 chat.history 获取完整内容以渲染图片
@@ -255,6 +278,28 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
       }];
     }
     opts.showTypingIndicator.value = false;
+    setActiveRunId(null);
+    setProcessing(false);
+    if (opts.atBottom.value) nextTick(() => opts.scrollToBottom(false));
+  }
+
+  function handleChatAborted(_data: Record<string, unknown>, runId: string) {
+    const idx = findStreamMsgIndex(runId);
+    if (idx >= 0) {
+      const content = opts.messages.value[idx].content || '';
+      opts.messages.value[idx] = { ...opts.messages.value[idx], content, clean_content: content, streamState: 'aborted' as const };
+    } else {
+      // 兜底：找不到对应消息时，将所有仍在 streaming 的消息标记为 aborted
+      opts.messages.value.forEach((m, i) => {
+        if (m.streamState === 'streaming' || m.streamState === 'thinking') {
+          const c = m.content || '';
+          opts.messages.value[i] = { ...m, content: c, clean_content: c, streamState: 'aborted' as const };
+        }
+      });
+    }
+    opts.showTypingIndicator.value = false;
+    setActiveRunId(null);
+    setProcessing(false);
     if (opts.atBottom.value) nextTick(() => opts.scrollToBottom(false));
   }
 
@@ -295,10 +340,17 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
     }
   }
 
-  function handleLifecycleEvent(_runId: string, phase?: string) {
+  function handleLifecycleEvent(runId: string, phase?: string) {
     switch (phase) {
-      case 'start': opts.showTypingIndicator.value = true; break;
-      case 'end': case 'error': opts.showTypingIndicator.value = false; break;
+      case 'start':
+        opts.showTypingIndicator.value = true;
+        if (!isProcessing.value) setProcessing(true);
+        if (runId && activeRunId.value !== runId) setActiveRunId(runId);
+        break;
+      case 'end': case 'error':
+        opts.showTypingIndicator.value = false;
+        // 不在此处设 false，等 final/aborted/error (chat 事件) 统一处理
+        break;
     }
   }
 
@@ -309,7 +361,10 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
       const data = payload as Record<string, unknown> | undefined;
       if (!data) return;
       const msgSessionKey = data.sessionKey as string | undefined;
-      if (opts.getSessionKey() && msgSessionKey !== opts.getSessionKey()) return;
+      if (opts.getSessionKey() && msgSessionKey !== opts.getSessionKey()) {
+        console.warn('[GW msg] sessionKey mismatch:', msgSessionKey, '!=', opts.getSessionKey());
+        return;
+      }
       const msg = payloadToMessage(data);
       if (!msg || opts.knownIds.has(msg.id)) return;
       if (opts.isSystemNoise(msg.content)) return;
@@ -336,13 +391,20 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
 
     unsubChat = gatewayClient.on('chat', (payload: unknown) => {
       const data = payload as Record<string, unknown> | undefined;
-      if (!data || data.sessionKey !== opts.getSessionKey()) return;
+      if (!data) return;
+      if (data.sessionKey !== opts.getSessionKey()) {
+        if (data.state === 'delta' || data.state === 'final') console.warn('[GW stream] sessionKey mismatch:', data.sessionKey, '!=', opts.getSessionKey());
+        return;
+      }
       const runId = data.runId as string | undefined;
       const state = data.state as string | undefined;
       switch (state) {
+        case 'start': setProcessing(true); if (runId) setActiveRunId(runId); break;
+        default: break;
         case 'delta': handleChatDelta(data, runId || ''); break;
         case 'final': handleChatFinal(data, runId || ''); break;
         case 'error': handleChatError(data, runId || ''); break;
+        case 'aborted': handleChatAborted(data, runId || ''); break;
       }
     });
 
@@ -365,5 +427,5 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
     opts.showTypingIndicator.value = false;
   }
 
-  return { subscribe, unsubscribe };
+  return { subscribe, unsubscribe, activeRunId, isProcessing };
 }
