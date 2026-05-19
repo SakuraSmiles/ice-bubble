@@ -8,7 +8,7 @@ import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api, request } from '../api/client';
 import { gatewayClient } from '@/services/gateway-client';
-import type { ModuleDTO, TimelineResponseDTO, AgentDTO, ParentTaskDTO } from '../api/client';
+import type { ModuleDTO, TimelineResponseDTO } from '../api/client';
 // 子组件
 import StatusDropdown from './components/StatusDropdown.vue';
 import RecentSessions from './components/RecentSessions.vue';

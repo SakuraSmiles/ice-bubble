@@ -1,6 +1,6 @@
 [package]
 name = "ice_bubble_desktop"
-version = "1.0.0"
+version = "1.5.1"
 description = "ice-bubble 桌面端展示应用"
 authors = ["SakuraSmiles"]
 edition = "2021"
