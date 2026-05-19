@@ -134,11 +134,12 @@ onUnmounted(() => {
 .content-area {
   flex: 1;
   min-height: 0;
+  margin: 8px 24px;
+  border-radius: var(--radius);
   display: flex;
   flex-direction: column;
   background: var(--color-bg-canvas);
   border-radius: var(--radius);
-  margin: 8px 24px;
   overflow: hidden;
 }
 
@@ -200,4 +201,6 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
 }
+
+
 </style>

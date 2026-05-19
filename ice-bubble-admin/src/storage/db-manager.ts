@@ -1015,6 +1015,19 @@ export class DBManager {
         `);
         logger.info('Migration v23: added file_path index on attachments');
         break;
+      case 24:
+        // v24: session AI 摘要字段
+        this.db.exec(`
+          ALTER TABLE admin_sessions ADD COLUMN summary TEXT;
+        `);
+        this.db.exec(`
+          ALTER TABLE admin_sessions ADD COLUMN summary_updated_at TEXT;
+        `);
+        this.db.exec(`
+          ALTER TABLE admin_sessions ADD COLUMN last_summarized_msg_id INTEGER;
+        `);
+        logger.info('Migration v24: added summary columns to admin_sessions');
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

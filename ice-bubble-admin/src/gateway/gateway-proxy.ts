@@ -140,12 +140,14 @@ export class GatewayProxy {
       });
 
       socket.on("close", () => {
+        // Only clear state if this socket is still the active one
+        if (this.ws !== socket) return;
         this.ws = null;
         if (!settled && !this.closed) {
           settled = true;
           reject(new Error("Connection closed before authentication"));
         }
-        // Always schedule reconnect if we're not intentionally closed
+        // Only schedule reconnect if we're not intentionally closed
         if (!this.closed) {
           this.onConnectionLost();
         }

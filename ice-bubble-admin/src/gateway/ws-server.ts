@@ -233,6 +233,11 @@ export class GatewayWsServer {
   // ── Gateway forwarding ─────────────────────────────────────────────────
 
   private forwardToGateway(ws: WsSocket, req: ClientRequest): void {
+    if (!this.proxy.isConnected) {
+      try { ws.send(clientReply(req.id, false, undefined, "Gateway not connected")); } catch { /* socket closed */ }
+      return;
+    }
+
     try {
       // Intercept chat.send / sessions.send to save attachments
       if (this.attachmentStorage &&

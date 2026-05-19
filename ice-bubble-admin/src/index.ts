@@ -272,7 +272,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = process.env.ADMIN_DB_PATH || join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(23);  // 执行数据库迁移（v23: attachments file_path 索引）
+    await dbManager.migrate(24);  // 执行数据库迁移（v24: session summary columns）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 

@@ -79,7 +79,10 @@ export default defineConfig({
   },
   server: {
     port: VITE_PORT,
-    proxy: apiProxy
+    proxy: apiProxy,
+    watch: {
+      usePolling: true,
+    },
   },
   build: {
     outDir: 'dist',

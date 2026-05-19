@@ -8,6 +8,7 @@ import AppFooter from '../components/AppFooter.vue';
 import PageHeader from '../components/PageHeader.vue';
 import ChatTimeline from './components/ChatTimeline.vue';
 import SessionList from './components/SessionList.vue';
+
 import { Loading } from '@element-plus/icons-vue';
 import { getMainSessionKey, setMainSessionKey } from './components/chat/session-cache';
 
@@ -15,6 +16,8 @@ const route = useRoute();
 const router = useRouter();
 
 const gatewayConnected = inject<{ value: boolean }>('gatewayConnected') ?? { value: false };
+
+// Mock 数据已移至 Tasks.vue（工作台视图）
 
 const rawKey = computed(() => route.params.key as string || '');
 const sessionKey = computed(() => rawKey.value ? decodeURIComponent(rawKey.value) : '');
@@ -347,7 +350,8 @@ function onResizeDragEnd() {
 
       <!-- 聊天视图 -->
       <template v-else>
-        <ChatTimeline ref="timelineRef" :key="sessionKey" :session-key="sessionKey" />
+        <div class="workspace-content">
+          <ChatTimeline ref="timelineRef" :key="sessionKey" :session-key="sessionKey" />
         <div class="chat-input-bar" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop" :class="{ 'drag-over': dragOver }">
           <input ref="fileInputRef" type="file" accept="image/*" multiple class="file-input-hidden" @change="onFileChange" />
           <div v-if="attachments.length > 0" class="attachment-preview-bar">
@@ -405,6 +409,7 @@ function onResizeDragEnd() {
             </div>
           </div>
         </div>
+      </div><!-- /workspace-content -->
       </template>
     </div>
 
@@ -441,6 +446,15 @@ function onResizeDragEnd() {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* 聊天视图容器 */
+.workspace-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* ===== 输入框区域 ===== */
