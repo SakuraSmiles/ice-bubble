@@ -19,6 +19,9 @@ import { TaskEnhancementStatus, normalizeAgentStatus, type TaskEnhancement, type
 import type { Database } from 'better-sqlite3';
 import type { GatewayProxy } from '../gateway/index.js';
 
+/** Admin 服务启动时间（模块加载时刻） */
+const startTime = Date.now();
+
 export interface DataRouterConfig {
   repository: DataRepository;
   /** Admin 数据库实例 */
@@ -299,7 +302,8 @@ export function createDataRouter(config: DataRouterConfig): Router {
    */
   router.get('/stats', (_req: Request, res: Response) => {
     const stats = repository.getStats();
-    res.json(stats);
+    const uptime = Math.round((Date.now() - startTime) / (1000 * 60 * 60) * 100) / 100;
+    res.json({ ...stats, uptime });
   });
 
   /**
@@ -641,8 +645,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
     const flowGroups = new Map<string, typeof allFlows>();
     for (const flow of allFlows) {
       const d = new Date(flow.end_at);
-      d.setHours(0, 0, 0, 0);
-      const dateStr = d.toISOString().slice(0, 10);
+      const dateStr = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}`;
       if (!flowGroups.has(dateStr)) flowGroups.set(dateStr, []);
       flowGroups.get(dateStr)!.push(flow);
     }
@@ -650,8 +653,8 @@ export function createDataRouter(config: DataRouterConfig): Router {
     const flows = Array.from(flowGroups.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([dateStr, items]) => {
-        const d = new Date(dateStr);
-        d.setHours(0, 0, 0, 0);
+        const [y, m, day] = dateStr.split('-').map(Number);
+        const d = new Date(y, m - 1, day);
         const today2 = new Date(); today2.setHours(0, 0, 0, 0);
         const yesterday2 = new Date(today2); yesterday2.setDate(yesterday2.getDate() - 1);
         let label: string;

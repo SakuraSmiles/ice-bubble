@@ -3,6 +3,7 @@
  */
 import { ref, computed, nextTick } from 'vue';
 import { request } from '../../../api/client';
+import { API_BASE } from '../../../config';
 import type { TimelineMessage, TimelineResponse } from './types';
 
 import { parseMediaAttached, stripMediaAttachedMarkers, detectInlineImages } from './media-parser';
@@ -148,7 +149,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
           mimeType: item.mimeType || 'image/png',
           fileName: item.fileName || 'image',
           content: '',
-          dataUrl: `/api/media/file/${item.id}`,
+          dataUrl: `${API_BASE}/media/file/${item.id}`,
         }));
         m.content = stripMediaAttachedMarkers(m.content || '');
         if (m.clean_content) m.clean_content = stripMediaAttachedMarkers(m.clean_content);

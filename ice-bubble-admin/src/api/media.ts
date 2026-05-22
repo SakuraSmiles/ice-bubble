@@ -37,6 +37,7 @@ interface MediaMetaOptions {
   attachmentsDir: string;
   gatewayProxy: GatewayProxy | null;
   gatewayMediaDir?: string;
+  canvasDir?: string;
 }
 
 /**
@@ -110,9 +111,27 @@ function findInGateway(id: string, gatewayMediaDir: string): MediaItem | null {
 }
 
 /**
+ * 从 canvas 目录查找
+ */
+function findInCanvas(id: string, canvasDir: string): MediaItem | null {
+  const filePath = join(canvasDir, id);
+  if (!existsSync(filePath)) return null;
+  const stat = statSync(filePath);
+  const ext = id.split('.').pop()?.toLowerCase() || 'bin';
+  return {
+    id,
+    url: `/api/media/file/${id}`,
+    mimeType: MIME_MAP[ext] || 'application/octet-stream',
+    fileName: id,
+    size: stat.size,
+    source: 'gateway',
+  };
+}
+
+/**
  * 查找媒体文件的本地磁盘路径
  */
-function resolveFilePath(id: string, db: Database, attachmentsDir: string, gatewayMediaDir: string | undefined): string | null {
+function resolveFilePath(id: string, db: Database, attachmentsDir: string, gatewayMediaDir: string | undefined, canvasDir?: string): string | null {
   // 1. 尝试按 UUID 从 Admin DB 查找文件名
   const row = db.prepare(`SELECT file_path FROM attachments WHERE id = ?`).get(id) as { file_path: string } | undefined;
   if (row) {
@@ -129,6 +148,12 @@ function resolveFilePath(id: string, db: Database, attachmentsDir: string, gatew
   // 3. 尝试 Gateway media 目录
   if (gatewayMediaDir && !id.includes('..') && !id.includes('/')) {
     const p = join(gatewayMediaDir, id);
+    if (existsSync(p)) return p;
+  }
+
+  // 4. 尝试 canvas 目录
+  if (canvasDir && !id.includes('..') && !id.includes('/')) {
+    const p = join(canvasDir, id);
     if (existsSync(p)) return p;
   }
 
@@ -151,6 +176,12 @@ function getMediaMeta(id: string, opts: MediaMetaOptions): MediaItem | null {
   if (opts.gatewayMediaDir) {
     const fromGateway = findInGateway(id, opts.gatewayMediaDir);
     if (fromGateway) return fromGateway;
+  }
+
+  // 4. Canvas dir
+  if (opts.canvasDir && !id.includes('..') && !id.includes('/')) {
+    const fromCanvas = findInCanvas(id, opts.canvasDir);
+    if (fromCanvas) return fromCanvas;
   }
 
   return null;
@@ -222,7 +253,7 @@ export function createMediaFileRouter(opts: MediaMetaOptions): (req: Request, re
     }
 
     // 查找本地文件
-    const filePath = resolveFilePath(id, opts.db, opts.attachmentsDir, opts.gatewayMediaDir);
+    const filePath = resolveFilePath(id, opts.db, opts.attachmentsDir, opts.gatewayMediaDir, opts.canvasDir);
     if (!filePath) {
       res.status(404).json({ error: 'Media file not found' });
       return;

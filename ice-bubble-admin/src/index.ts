@@ -407,11 +407,13 @@ export async function startAdmin(): Promise<void> {
 
     // Media routes (after auth middleware — metadata queries are authenticated)
     const gatewayMediaDir = join(process.env.HOME || '/root', '.openclaw', 'media', 'inbound');
+    const canvasDir = join(process.env.HOME || '/root', '.openclaw', 'canvas');
     const mediaMetaRouter = createMediaRouter({
       db: dbManager.getConnection(),
       attachmentsDir: attachmentsDir,
       gatewayProxy,
       gatewayMediaDir,
+      canvasDir,
     });
     app.use('/api/media', mediaMetaRouter);
 
@@ -421,6 +423,7 @@ export async function startAdmin(): Promise<void> {
       attachmentsDir: attachmentsDir,
       gatewayProxy,
       gatewayMediaDir,
+      canvasDir,
     });
     mediaFileHandler = (req, res) => mediaFileRouter(req, res, () => {});
 

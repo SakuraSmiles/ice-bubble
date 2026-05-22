@@ -33,7 +33,7 @@ function extractMedia(content: string): { cleaned: string; urls: string[] } {
         // 如果是服务器绝对路径，转为 Admin media API 可访问的相对 URL
         if (url.startsWith('/') && !url.startsWith('http')) {
           const fileName = url.split('/').pop();
-          if (fileName) url = `/api/media/file/${fileName}`;
+          if (fileName) url = `${API_BASE}/media/file/${fileName}`;
         }
         urls.push(url);
       }
