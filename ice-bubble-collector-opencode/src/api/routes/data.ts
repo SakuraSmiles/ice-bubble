@@ -206,7 +206,7 @@ export function createDataRouter(collector: SQLiteCollector): Router {
 function sessionToApiFormat(s: ConvertedSession, stats?: { count: number; firstAt: number | null; lastAt: number | null }): Record<string, unknown> {
     return {
         session_key: s.sessionKey,
-        agent_id: s.agent ? ('opencode:' + s.agent) : ('opencode:model:' + (s.model || 'unknown')),
+        agent_id: s.agent ? ('opencode:' + s.agent) : 'opencode:build',
         channel: 'opencode',
         account_id: null,
         peer_id: null,
