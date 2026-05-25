@@ -28,7 +28,13 @@ export function createDataRouter(collector: SQLiteCollector): Router {
     router.get('/sessions', (_req: Request, res: Response) => {
         try {
             const rawSessions = collector.getSessions();
-            const sessions = rawSessions.map((s) => convertSession(s));
+            const sessions = rawSessions.map((s) => {
+                const primaryAgent = collector.getDbReader().isOpen
+                    ? collector.getDbReader().getPrimaryAgentForSession(s.id) : null;
+                const primaryModel = collector.getDbReader().isOpen
+                    ? collector.getDbReader().getPrimaryModelForSession(s.id) : null;
+                return convertSession(s, primaryAgent, primaryModel);
+            });
 
             // 转换为 CollectorClient 期望的格式
             const result = {
@@ -88,7 +94,9 @@ export function createDataRouter(collector: SQLiteCollector): Router {
 
             const result = {
                 count: limited.length,
-                max_time_updated: collector.getMaxTimeUpdated(),
+                max_time_updated: unifiedMessages.length > 0
+                    ? Math.max(...unifiedMessages.map(m => m.timestamp.getTime()))
+                    : (sinceParam ? parseSince(sinceParam) : collector.getMaxTimeUpdated()),
                 messages: limited.map(messageToApiFormat),
             };
 
@@ -130,22 +138,40 @@ export function createDataRouter(collector: SQLiteCollector): Router {
 
     router.get('/agents', (_req: Request, res: Response) => {
         try {
-            const agents = collector.getAgents();
+            const agents = collector.getDbReader().isOpen
+                ? collector.getDbReader().getAgentsFromMessages()
+                : collector.getAgents()
+                    .filter(a => a.agent)
+                    .map(a => ({ agent: a.agent!, count: a.count }));
+
             const now = new Date().toISOString();
+            const MAIN_AGENTS = ['build', 'plan'];
+            const SUB_AGENTS = ['explore', 'Hephaestus (Deep Agent)', 'Sisyphus (Ultraworker)', 'Sisyphus-Junior'];
 
             const result = {
                 count: agents.length,
-                agents: agents.map((a) => ({
-                    agent_id: a.agent ? ('opencode:' + a.agent) : 'opencode:unknown',
-                    agent_name: a.agent || 'unknown',
-                    workspace: null,
-                    source: 'opencode',
-                    config_json: '{}',
-                    status: 'active',
-                    last_seen_at: now,
-                    created_at: now,
-                    updated_at: now,
-                })),
+                agents: agents.map((a) => {
+                    const name = a.agent;
+                    let category: string;
+                    if (MAIN_AGENTS.includes(name)) {
+                        category = 'main';
+                    } else if (SUB_AGENTS.includes(name)) {
+                        category = 'sub';
+                    } else {
+                        category = 'main';
+                    }
+                    return {
+                        agent_id: 'opencode:' + name,
+                        agent_name: name,
+                        workspace: null,
+                        source: 'opencode',
+                        config_json: JSON.stringify({ category }),
+                        status: 'active',
+                        last_seen_at: now,
+                        created_at: now,
+                        updated_at: now,
+                    };
+                }),
             };
 
             res.json(result);

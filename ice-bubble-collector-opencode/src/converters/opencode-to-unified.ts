@@ -81,12 +81,16 @@ export interface ConvertedSession {
 /**
  * agent → messageType 的映射（用于 session 级别的默认类型推断）
  */
-export function convertSession(session: OpenCodeSession): ConvertedSession {
+export function convertSession(
+    session: OpenCodeSession,
+    primaryAgent?: string | null,
+    primaryModel?: string | null,
+): ConvertedSession {
     return {
         sessionKey: session.id,
         title: session.title,
-        agent: session.agent,
-        model: session.model,
+        agent: primaryAgent ?? session.agent,
+        model: primaryModel ?? session.model,
         platform: 'opencode',
         source: 'sqlite',
         directory: session.directory,

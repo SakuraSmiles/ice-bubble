@@ -209,7 +209,7 @@ export class DbReader {
     }
 
     /**
-     * 获取 distinct agents
+     * 获取 distinct agents（从 session 表，兼容旧逻辑）
      */
     getDistinctAgents(): Array<{ agent: string | null; count: number }> {
         this.ensureOpen();
@@ -219,6 +219,81 @@ export class DbReader {
             GROUP BY agent
             ORDER BY count DESC
         `).all() as Array<{ agent: string | null; count: number }>;
+    }
+
+    /**
+     * 从 message.data JSON 中提取所有 agent 列表
+     */
+    getAgentsFromMessages(): Array<{ agent: string; count: number }> {
+        this.ensureOpen();
+        const rows = this.db!.prepare(`
+            SELECT data FROM message
+        `).all() as Array<{ data: string }>;
+
+        const agentCounts: Record<string, number> = {};
+        for (const row of rows) {
+            try {
+                const d = JSON.parse(row.data);
+                const agent = d.agent;
+                if (agent && agent !== 'compaction') {
+                    agentCounts[agent] = (agentCounts[agent] || 0) + 1;
+                }
+            } catch {}
+        }
+
+        return Object.entries(agentCounts)
+            .map(([agent, count]) => ({ agent, count }))
+            .sort((a, b) => b.count - a.count);
+    }
+
+    /**
+     * 获取 session 的主 agent（排除 compaction，消息最多的 agent）
+     */
+    getPrimaryAgentForSession(sessionId: string): string | null {
+        this.ensureOpen();
+        const rows = this.db!.prepare(`
+            SELECT data FROM message
+            WHERE session_id = ?
+        `).all(sessionId) as Array<{ data: string }>;
+
+        const agentCounts: Record<string, number> = {};
+        for (const row of rows) {
+            try {
+                const d = JSON.parse(row.data);
+                const agent = d.agent;
+                if (agent && agent !== 'compaction') {
+                    agentCounts[agent] = (agentCounts[agent] || 0) + 1;
+                }
+            } catch {}
+        }
+
+        if (Object.keys(agentCounts).length === 0) return null;
+        return Object.entries(agentCounts).sort((a, b) => b[1] - a[1])[0][0];
+    }
+
+    /**
+     * 获取 session 的主 model（排除 compaction，消息最多的 model）
+     */
+    getPrimaryModelForSession(sessionId: string): string | null {
+        this.ensureOpen();
+        const rows = this.db!.prepare(`
+            SELECT data FROM message
+            WHERE session_id = ?
+        `).all(sessionId) as Array<{ data: string }>;
+
+        const modelCounts: Record<string, number> = {};
+        for (const row of rows) {
+            try {
+                const d = JSON.parse(row.data);
+                const model = d.modelID;
+                if (model) {
+                    modelCounts[model] = (modelCounts[model] || 0) + 1;
+                }
+            } catch {}
+        }
+
+        if (Object.keys(modelCounts).length === 0) return null;
+        return Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0][0];
     }
 
     /**
