@@ -42,6 +42,11 @@ const fallbackAgents: AgentOption[] = [
   { platform: 'opencode', agent: 'build', label: 'build', emoji: '🔨', tag: 'OpenCode' },
 ]
 
+// Agent 显示名映射（OpenCode agent_id → 自定义昵称）
+const AGENT_DISPLAY_NAMES: Record<string, string> = {
+  'opencode:build': 'build',  // 可改为中文名，如 '代码助手'
+}
+
 // 判断是否为 primary agent（可出现在聊天页 AgentSelector 中）
 // OpenCode 仅 build，OpenClaw 仅 main
 function isPrimaryAgent(a: { agent_id: string; platform?: string }): boolean {
@@ -61,7 +66,7 @@ async function loadAvailableAgents() {
         agent: a.platform === 'opencode'
           ? (a.agent_id || '').replace('opencode:', '')
           : a.agent_id,
-        label: a.agent_name || a.agent_id,
+        label: AGENT_DISPLAY_NAMES[a.agent_id] || a.agent_name || a.agent_id,
         emoji: '',
         tag: a.platform === 'opencode' ? 'OpenCode' : 'OpenClaw',
       })) as AgentOption[]
