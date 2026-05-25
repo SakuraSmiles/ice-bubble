@@ -67,8 +67,7 @@ const displayLabel = computed(() => {
       <el-dropdown-menu class="agent-dropdown-menu">
         <template v-for="(group, gi) in groupedAgents" :key="group.platform">
           <el-dropdown-item
-            v-if="gi > 0"
-            divided
+            :divided="gi > 0"
             disabled
             class="agent-group-header"
           >
@@ -95,11 +94,10 @@ const displayLabel = computed(() => {
   gap: 6px;
   padding: 0 10px;
   height: 34px;
-  /* min-width removed — auto-fit to content */
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
