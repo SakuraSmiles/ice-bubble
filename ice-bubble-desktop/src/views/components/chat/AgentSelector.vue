@@ -94,10 +94,17 @@ const displayLabel = computed(() => {
   gap: 6px;
   padding: 0 10px;
   height: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.92);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  flex-shrink: 0;
+}
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
@@ -106,12 +113,14 @@ const displayLabel = computed(() => {
   flex-shrink: 0;
 }
 .agent-selector-btn:hover {
+  color: rgba(255, 255, 255, 1) !important;
   background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 .agent-selector-btn.is-open {
+  color: rgba(255, 255, 255, 1) !important;
   background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 .agent-label {
   font-weight: 500;
