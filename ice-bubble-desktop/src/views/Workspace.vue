@@ -11,6 +11,9 @@ import SessionList from './components/SessionList.vue';
 
 import { Loading } from '@element-plus/icons-vue';
 import { getMainSessionKey, setMainSessionKey } from './components/chat/session-cache';
+import AgentSelector from './components/chat/AgentSelector.vue';
+import type { AgentOption } from './components/chat/AgentSelector.vue';
+import { sendOpenCodeChat } from '../api/opencode';
 
 const route = useRoute();
 const router = useRouter();
@@ -40,6 +43,10 @@ const inputRef = ref<HTMLTextAreaElement | null>(null);
 const timelineRef = ref<InstanceType<typeof ChatTimeline> | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const dragOver = ref(false);
+
+// ===== Agent 选择 =====
+const selectedAgent = ref<AgentOption>({ platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw' });
+const openCodeSessionId = ref<string | undefined>();
 
 // Agent 处理状态
 const isAgentProcessing = computed(() => {
@@ -235,6 +242,23 @@ async function sendMessage() {
   resetInputHeight();
   clearAttachments();
   try {
+    // ===== OpenCode 分支 =====
+    if (selectedAgent.value.platform === 'opencode') {
+      const result = await sendOpenCodeChat({
+        agent: selectedAgent.value.agent as 'build' | 'plan',
+        message: text,
+        sessionId: openCodeSessionId.value,
+      });
+      openCodeSessionId.value = result.sessionId;
+      // 添加用户消息到本地消息列表
+      timelineRef.value?.addOptimisticMessage(text, 'user');
+      // 添加 agent 回复到本地消息列表
+      nextTick(() => {
+        timelineRef.value?.addOptimisticMessage(result.content, 'agent');
+      });
+      return;
+    }
+
     if (gatewayConnected.value) {
       await gatewayClient.sendMessage(sessionKey.value, text || '(图片)', attachmentPayloads.length > 0 ? attachmentPayloads : undefined);
       timelineRef.value?.addOptimisticMessage(hasAttachments && !text ? '' : text, 'user', attachmentDataUrls);
@@ -352,6 +376,10 @@ function onResizeDragEnd() {
       <template v-else>
         <div class="workspace-content">
           <ChatTimeline ref="timelineRef" :key="sessionKey" :session-key="sessionKey" />
+        <!-- Agent 选择器 -->
+        <div class="agent-selector-bar" v-if="canSend">
+          <AgentSelector v-model="selectedAgent" :disabled="sending || isBusy" />
+        </div>
         <div class="chat-input-bar" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop" :class="{ 'drag-over': dragOver }">
           <input ref="fileInputRef" type="file" accept="image/*" multiple class="file-input-hidden" @change="onFileChange" />
           <div v-if="attachments.length > 0" class="attachment-preview-bar">
@@ -455,6 +483,15 @@ function onResizeDragEnd() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* ===== Agent 选择栏 ===== */
+.agent-selector-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px 0;
+  flex-shrink: 0;
+  background: var(--color-bg-canvas);
 }
 
 /* ===== 输入框区域 ===== */
