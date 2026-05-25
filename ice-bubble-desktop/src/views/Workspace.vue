@@ -124,7 +124,7 @@ async function loadRecentSession(agent: AgentOption): Promise<string | null> {
   const agentKey = getAgentKey(agent)
   try {
     if (agent.platform === 'opencode') {
-      const res = await request(`/opencode/sessions?agent=${encodeURIComponent(agent.agent)}&limit=1`)
+      const res = await request(`/sessions?agent_id=opencode:${encodeURIComponent(agent.agent)}&platform=opencode&limit=1`)
       if (!res.ok) return null
       const data = await res.json()
       const sessions = (data.sessions || []) as any[]
@@ -133,7 +133,7 @@ async function loadRecentSession(agent: AgentOption): Promise<string | null> {
         new Date(b.last_message_at || b.updated_at || 0).getTime()
         - new Date(a.last_message_at || a.updated_at || 0).getTime(),
       )[0]
-      const sid = latest.session_id || latest.id
+      const sid = latest.session_key || latest.session_id || latest.id
       if (!sid) return null
       agentSessionMap[agentKey] = sid
       return sid
