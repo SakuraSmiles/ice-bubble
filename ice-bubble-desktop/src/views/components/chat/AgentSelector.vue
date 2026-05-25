@@ -19,9 +19,7 @@ const emit = defineEmits<{
 }>();
 
 const openclawOption: AgentOption = { platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw' };
-const opencodeOptions: AgentOption[] = [
-  { platform: 'opencode', agent: 'build', label: 'build', emoji: '🔨', tag: 'OpenCode' },
-];
+const opencodeOption: AgentOption = { platform: 'opencode', agent: 'build', label: 'build', emoji: '🔨', tag: 'OpenCode' };
 
 const isOpen = ref(false);
 
@@ -62,10 +60,10 @@ const currentPlatform = computed(() => platformConfig[props.modelValue.platform]
             <span class="opt-tag" style="color: #67c23a">OpenClaw</span>
           </span>
         </el-dropdown-item>
-        <el-dropdown-item divided v-for="opt in opencodeOptions" :key="opt.agent" :command="opt" :class="{ 'is-active': modelValue.platform === 'opencode' && modelValue.agent === opt.agent }">
+        <el-dropdown-item :command="opencodeOption" :class="{ 'is-active': modelValue.platform === 'opencode' }">
           <span class="opt-row">
             <span class="opt-dot" style="background: #409eff"></span>
-            <span class="opt-name">{{ opt.label }}</span>
+            <span class="opt-name">{{ opencodeOption.label }}</span>
             <span class="opt-tag" style="color: #409eff">OpenCode</span>
           </span>
         </el-dropdown-item>
@@ -79,8 +77,9 @@ const currentPlatform = computed(() => platformConfig[props.modelValue.platform]
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 0 8px;
+  padding: 0 10px;
   height: 34px;
+  min-width: 120px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
@@ -157,12 +156,7 @@ const currentPlatform = computed(() => platformConfig[props.modelValue.platform]
   background: rgba(255, 255, 255, 0.06) !important;
   color: rgba(255, 255, 255, 0.9) !important;
 }
-.agent-dropdown-menu .el-dropdown-menu__item--divided {
-  margin-top: 4px !important;
-}
-.agent-dropdown-menu .el-dropdown-menu__item--divided::before {
-  display: none !important;
-}
+
 
 .opt-row {
   display: flex;
