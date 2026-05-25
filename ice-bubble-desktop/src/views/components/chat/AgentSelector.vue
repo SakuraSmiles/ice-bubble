@@ -135,17 +135,18 @@ const displayLabel = computed(() => {
   --el-border-color-light: var(--color-border, rgba(0,0,0,0.05));
 }
 .agent-dropdown-popper .el-dropdown-menu {
-  border: 1px solid var(--color-border, rgba(0,0,0,0.05));
+  border: 1px solid var(--color-border, rgba(0,0,0,0.08));
   border-radius: 8px;
-  padding: 4px;
+  padding: 0;
   min-width: 140px;
   background: var(--color-bg-elevated, var(--el-bg-color));
+  overflow: hidden;
 }
 .agent-dropdown-popper .el-dropdown-menu__item {
   color: var(--color-text-secondary, #57606a);
-  border-radius: 5px;
-  margin: 2px 4px;
-  padding: 7px 8px;
+  border-radius: 0;
+  margin: 0;
+  padding: 8px 12px;
   line-height: 1.4;
   font-size: 13px;
 }
