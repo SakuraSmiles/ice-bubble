@@ -79,17 +79,17 @@ const displayLabel = computed(() => {
 .agent-selector-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   height: 34px;
-  padding: 0 10px;
-  border: 1px solid var(--color-border, rgba(0,0,0,0.06));
+  padding: 0 8px 0 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 8px;
-  background: transparent;
-  color: var(--color-text-secondary, #57606a);
-  font-size: 13px;
+  background: rgba(0, 0, 0, 0.03);
+  color: #555;
+  font-size: 12.5px;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.2s, background 0.2s;
+  transition: all 0.15s ease;
   user-select: none;
   flex-shrink: 0;
   font-family: inherit;
@@ -98,12 +98,14 @@ const displayLabel = computed(() => {
 }
 .agent-selector-btn:hover,
 .agent-selector-btn:focus-visible {
-  color: var(--color-text-primary, #24292f);
-  background: var(--color-bg-overlay, rgba(0,0,0,0.04));
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.18);
 }
 .agent-selector-btn.is-open {
-  color: var(--color-text-primary, #24292f);
-  background: var(--color-bg-overlay, rgba(0,0,0,0.06));
+  color: #333;
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.2);
 }
 
 .agent-label {
@@ -136,20 +138,20 @@ const displayLabel = computed(() => {
   --el-dropdown-box-shadow: none;
 }
 .agent-dropdown-popper .el-dropdown-menu {
-  border: 1px solid var(--color-border, rgba(0,0,0,0.08));
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 8px;
-  padding: 0;
+  padding: 4px 0;
   min-width: 140px;
-  background: var(--color-bg-elevated, var(--el-bg-color));
+  background: #fff;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 .agent-dropdown-popper .el-dropdown-menu__item {
-  color: var(--color-text-secondary, #57606a);
+  color: #555;
   margin: 0;
-  padding: 8px 12px;
-  line-height: 1.4;
-  font-size: 13px;
+  padding: 7px 12px;
+  line-height: 1.3;
+  font-size: 12.5px;
 }
 
 /* 分组标题 */
