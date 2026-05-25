@@ -44,7 +44,7 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐      │
 │  │    Overview     │  │    Modules      │  │    Sessions     │      │
-│  │     概览页面      │  │    模块管理      │  │    会话记录      │      │
+│  │     概览页面      │  │    模块管理      │  │   会话（多平台）  │      │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘      │
 │           │                   │                   │                │
 │           └───────────────────┼───────────────────┘                │
@@ -56,15 +56,17 @@
                                 │
                     ┌───────────▼─────────────┐
                     │    ice-bubble-admin     │
-                    │      (端口 13000)       │
+│                   │      (端口 13000)       │
                     └───────────┬─────────────┘
                                 │
-                                │ HTTP API (13100)
-                                │
-                    ┌───────────▼─────────────┐
-                    │ ice-bubble-collector     │
-                    │      (端口 13100)       │
-                    └─────────────────────────┘
+                     ┌──────────┼──────────────┐
+                     │ HTTP API │ HTTP API      │
+                     ▼          ▼              │
+          ┌──────────────┐ ┌──────────────┐   │
+          │  collector    │ │  collector    │   │
+          │  openclaw     │ │  opencode     │   │
+          │  (13100)      │ │  (13101)      │   │
+          └──────────────┘ └──────────────┘   │
 ```
 
 ### 端口说明
@@ -73,7 +75,8 @@
 |------|------|------|
 | desktop 前端 | 1420 | Vite Dev Server（开发）/ Tauri 窗口（生产） |
 | admin | 13000 | 管理 API |
-| collector | 13100 | 数据采集 API |
+| collector (openclaw) | 13100 | OpenClaw 数据采集 API |
+| collector (opencode) | 13101 | OpenCode 数据采集 API |
 
 ---
 
@@ -163,7 +166,7 @@ export const ADMIN_API_BASE = 'http://localhost:13000';
 | 概览 | / | 系统统计、模块状态 |
 | 模块管理 | /modules | 查看各模块运行状态 |
 | 成员列表 | /agents | Agent 列表和状态 |
-| 全部会话 | /sessions | 所有会话列表和详情 |
+| 全部会话 | /sessions | 所有会话列表（支持 OpenClaw / OpenCode 平台区分） |
 | 任务管理 | /tasks | 任务列表和管理 |
 | 工作区 | /workspace/:key | 单个 Agent 的工作区视图 |
 | 聊天 | /chat | 对话界面 |
@@ -189,7 +192,7 @@ desktop 通过 Vite proxy（开发）或 Tauri（生产）直连 admin 服务：
 | POST | /api/modules | admin | 新增模块 |
 | PUT | /api/modules/:key | admin | 更新模块 |
 | DELETE | /api/modules/:key | admin | 删除模块 |
-| GET | /api/agents | admin | 成员列表 |
+| GET | /api/agents | admin | 成员列表（支持 OpenClaw / OpenCode 平台标识） |
 | GET | /api/agents/with-activity | admin | 带活跃数据的成员列表 |
 | GET | /api/agents/token-summary | admin | Token 统计汇总 |
 | GET | /api/subagent-tasks | admin | 任务列表 |
@@ -237,6 +240,21 @@ src-tauri/
 | npm run build | 构建前端 |
 | npm run tauri dev | Tauri 开发模式 |
 | npm run tauri build | 构建 Tauri 应用 |
+
+## 多平台支持
+
+Desktop 现在支持展示来自两个平台的会话数据：
+
+| 平台 | Channel 标识 | 数据来源 | 说明 |
+|------|-------------|---------|------|
+| **OpenClaw** | discord / telegram / local / ... | collector-openclaw (13100) | OpenClaw Agent 的对话数据 |
+| **OpenCode** | `opencode` | collector-opencode (13101) | OpenCode 的本地开发会话 |
+
+### 平台区分
+
+- 会话列表和 Agent 列表均包含平台标识，方便区分数据来源
+- 聊天界面的消息气泡支持根据平台类型显示不同的视觉标识
+- 概览页的统计数据汇总了两个平台的数据
 
 ---
 

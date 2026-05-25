@@ -58,24 +58,27 @@
 │         └────────────────┼───────────────────┘              │
 │                          │                                  │
 │                    SQLite (admin.db)                        │
-└──────────────────────────┼──────────────────────────────────┘
-                           │
-                           │ HTTP API
-                           │
-┌──────────────────────────┼──────────────────────────────────┐
-│                    Collector                                 │
-│                   (端口 13100)                              │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              /api/meta/status                       │    │
-│  │              /api/meta/config                       │    │
-│  │              /api/data/sessions                     │    │
-│  │              /api/data/messages                     │    │
-│  │              /api/data/stats                        │    │
-│  └─────────────────────────────────────────────────────┘    │
-│                          │                                  │
-│                    SQLite (collector.db)                     │
+└──────────┬───────────────┼───────────────────┬─────────────┘
+           │               │                   │
+           │ HTTP API      │ HTTP API          │
+           │               │                   │
+┌──────────▼───────────────┼───────────────────▼─────────────┐
+│        Collector (openclaw)     Collector (opencode)        │
+│           端口 13100              端口 13101                │
+│  ┌─────────────────────┐   ┌─────────────────────┐        │
+│  │ /api/data/sessions  │   │ /api/data/sessions  │        │
+│  │ /api/data/messages  │   │ /api/data/messages  │        │
+│  │ /api/data/stats     │   │ /api/data/stats     │        │
+│  │ /api/data/agents    │   │ /api/data/agents    │        │
+│  │ /api/meta/status    │   │ /api/meta/status    │        │
+│  └─────────────────────┘   └─────────────────────┘        │
+│           │                        │                       │
+│    SQLite (只读)           OpenCode DB (只读)               │
+│    .jsonl 文件               opencode.db                    │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> **重要**：Admin 绝对不能直接访问 Collector 的 SQLite 数据库，必须通过 HTTP API 通信。两个 Collector 的 API 响应格式完全对齐，CollectorClient 无需区分平台。
 
 ---
 
@@ -135,6 +138,13 @@ npm run start
       "moduleKey": "collector-openclaw",
       "name": "OpenClaw采集器",
       "baseUrl": "http://localhost:13100",
+      "enabled": true,
+      "pollInterval": 30000
+    },
+    {
+      "moduleKey": "collector-opencode",
+      "name": "OpenCode采集器",
+      "baseUrl": "http://localhost:13101",
       "enabled": true,
       "pollInterval": 30000
     }
@@ -307,7 +317,7 @@ admin 从 collector 同步的数据包含以下溯源字段：
 
 | 字段 | 说明 |
 |------|------|
-| source_module | 来源模块标识（如 collector-openclaw） |
+| source_module | 来源模块标识（如 `collector-openclaw` 或 `collector-opencode`） |
 | source_id | 原始数据 ID |
 | source_created_at | 原始创建时间 |
 

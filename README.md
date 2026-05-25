@@ -14,7 +14,7 @@
 
 **模块版本**
 
-> admin `1.2.1` · collector `1.1.2` · desktop `1.3.1`
+> admin `1.2.1` · collector-openclaw `1.1.2` · collector-opencode `0.1.0` · desktop `1.3.1`
 
 </div>
 
@@ -33,8 +33,9 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 | **VIEW LAYER** | **ice-bubble-desktop** | `1.3.1` | 桌面端展示应用（Tauri + Vue3 + Element Plus），面向最终用户 |
 | **BIZ LAYER** | **ice-bubble-admin** | `1.2.1` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
 | **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.1.2` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 |
+| **DATA LAYER** | **ice-bubble-collector-opencode** | `0.1.0` | OpenCode 数据采集器，从 OpenCode SQLite 数据库采集 Session 和 Message 数据 |
 
-> DATA LAYER 设计为可插拔：未来新增数据源（如 WorkBuddy）只需实现标准接口的 Collector 即可。
+> DATA LAYER 设计为可插拔：两个 Collector（openclaw + opencode）共用统一的 API 响应格式，Admin 的 CollectorClient 无需区分平台。
 
 ---
 
@@ -55,7 +56,8 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 |------|------|
 | [desktop](./ice-bubble-desktop/README.md) | 桌面端展示应用详细文档 |
 | [admin](./ice-bubble-admin/README.md) | 核心业务模块详细文档 |
-| [collector-openclaw](./ice-bubble-collector-openclaw/README.md) | 数据采集模块详细文档 |
+| [collector-openclaw](./ice-bubble-collector-openclaw/README.md) | OpenClaw 数据采集模块详细文档 |
+| [collector-opencode](./ice-bubble-collector-opencode/README.md) | OpenCode 数据采集模块详细文档 |
 | [接入规范](./docs/integration.md) | 模块接入标准和规范 |
 
 ---
@@ -84,6 +86,10 @@ ice-bubble/
 │   ├── src/
 │   ├── tests/
 │   └── docs/
+├── ice-bubble-collector-opencode/     ← DATA LAYER：OpenCode 数据采集器
+│   ├── README.md
+│   ├── config/
+│   └── src/
 └── ice-bubble-desktop/                ← VIEW LAYER：桌面端展示应用
     ├── README.md
     ├── .env.example
@@ -97,7 +103,8 @@ ice-bubble/
 |------|------|------|
 | desktop 前端 | 1420 | Vite Dev Server（开发）/ Tauri 窗口（生产） |
 | admin | 13000 | 业务 API |
-| collector | 13100 | 数据采集 API |
+| collector (openclaw) | 13100 | OpenClaw 数据采集 API |
+| collector (opencode) | 13101 | OpenCode 数据采集 API |
 | task | 13102 | 任务管理 API（已废弃，由 subagent sessions 替代） |
 
 ## 快速开始
@@ -106,8 +113,9 @@ ice-bubble/
 
 ```
 1. collector-openclaw  (13100)  — 数据源，最先启动
-2. admin              (13000)  — 依赖 collector，提供业务 API
-3. desktop            (1420)   — 前端展示，直连 admin
+2. collector-opencode  (13101)  — 数据源，可与 openclaw 并行启动
+3. admin              (13000)  — 依赖 collector，提供业务 API
+4. desktop            (1420)   — 前端展示，直连 admin
 ```
 
 > 注：原 task 服务（13102）已废弃，功能由 subagent sessions 替代，相关配置保留但已禁用。
@@ -117,13 +125,16 @@ ice-bubble/
 ```bash
 # 根目录没有统一的 dev 脚本，请分别启动各子模块：
 
-# 1. 数据采集层
+# 1. 数据采集层（OpenClaw）
 cd ice-bubble-collector-openclaw && npm run dev
 
-# 2. 业务管理层（另起终端）
+# 2. 数据采集层（OpenCode）（另起终端）
+cd ice-bubble-collector-opencode && npm run dev
+
+# 3. 业务管理层（另起终端）
 cd ice-bubble-admin && npm run dev
 
-# 3. 桌面端（另起终端）
+# 4. 桌面端（另起终端）
 cd ice-bubble-desktop && npm run dev
 ```
 
