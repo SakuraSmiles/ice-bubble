@@ -9,13 +9,11 @@ export interface AgentOption {
   tag: string;
 }
 
-const props = withDefaults(defineProps<{
+defineProps<{
   modelValue: AgentOption;
   disabled?: boolean;
   agents: AgentOption[];
-}>(), {
-  agents: () => [],
-});
+}>();
 
 const emit = defineEmits<{
   'update:modelValue': [value: AgentOption];
