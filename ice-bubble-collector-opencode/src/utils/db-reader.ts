@@ -322,6 +322,24 @@ export class DbReader {
     }
 
     /**
+     * 获取指定 session 的消息统计
+     */
+    getSessionMessageStats(sessionId: string): { count: number; firstAt: number | null; lastAt: number | null } {
+        this.ensureOpen();
+        const row = this.db!.prepare(`
+            SELECT COUNT(*) as cnt, MIN(time_created) as first_at, MAX(time_created) as last_at
+            FROM message
+            WHERE session_id = ?
+        `).get(sessionId) as any;
+
+        return {
+            count: row.cnt || 0,
+            firstAt: row.first_at || null,
+            lastAt: row.last_at || null,
+        };
+    }
+
+    /**
      * 获取 DB 路径
      */
     getDbPath(): string {

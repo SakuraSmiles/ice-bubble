@@ -28,19 +28,22 @@ export function createDataRouter(collector: SQLiteCollector): Router {
     router.get('/sessions', (_req: Request, res: Response) => {
         try {
             const rawSessions = collector.getSessions();
-            const sessions = rawSessions.map((s) => {
-                const primaryAgent = collector.getDbReader().isOpen
-                    ? collector.getDbReader().getPrimaryAgentForSession(s.id) : null;
-                const primaryModel = collector.getDbReader().isOpen
-                    ? collector.getDbReader().getPrimaryModelForSession(s.id) : null;
-                return convertSession(s, primaryAgent, primaryModel);
+            const dbReader = collector.getDbReader();
+            const sessionsWithStats = rawSessions.map((s) => {
+                const primaryAgent = dbReader.isOpen
+                    ? dbReader.getPrimaryAgentForSession(s.id) : null;
+                const primaryModel = dbReader.isOpen
+                    ? dbReader.getPrimaryModelForSession(s.id) : null;
+                const stats = dbReader.isOpen
+                    ? dbReader.getSessionMessageStats(s.id) : { count: 0, firstAt: null, lastAt: null };
+                return { session: convertSession(s, primaryAgent, primaryModel), stats };
             });
 
             // 转换为 CollectorClient 期望的格式
             const result = {
-                count: sessions.length,
+                count: sessionsWithStats.length,
                 max_time_updated: collector.getMaxSessionUpdated(),
-                sessions: sessions.map(sessionToApiFormat),
+                sessions: sessionsWithStats.map(({ session, stats }) => sessionToApiFormat(session, stats)),
             };
 
             res.json(result);
@@ -200,7 +203,7 @@ export function createDataRouter(collector: SQLiteCollector): Router {
 /**
  * ConvertedSession → CollectorSession 格式
  */
-function sessionToApiFormat(s: ConvertedSession): Record<string, unknown> {
+function sessionToApiFormat(s: ConvertedSession, stats?: { count: number; firstAt: number | null; lastAt: number | null }): Record<string, unknown> {
     return {
         session_key: s.sessionKey,
         agent_id: s.agent ? ('opencode:' + s.agent) : ('opencode:model:' + (s.model || 'unknown')),
@@ -210,8 +213,9 @@ function sessionToApiFormat(s: ConvertedSession): Record<string, unknown> {
         guild_id: null,
         created_at: s.createdAt.toISOString(),
         updated_at: s.updatedAt.toISOString(),
-        message_count: 0,
-        last_message_at: null,
+        message_count: stats?.count ?? 0,
+        first_message_at: stats?.firstAt ? new Date(stats.firstAt).toISOString() : null,
+        last_message_at: stats?.lastAt ? new Date(stats.lastAt).toISOString() : null,
         label: s.title ?? null,
         status: s.timeArchived ? 'archived' : 'active',
         model: s.model ?? null,
