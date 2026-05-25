@@ -209,11 +209,22 @@ export function initializeSchema(db: DatabaseType): void {
       last_message_at TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      source_created_at TIMESTAMP
+      source_created_at TIMESTAMP,
+      label TEXT,
+      session_status TEXT DEFAULT 'unknown',
+      model TEXT,
+      model_provider TEXT,
+      spawned_by TEXT,
+      spawn_depth INTEGER DEFAULT 0,
+      summary TEXT,
+      summary_updated_at TEXT,
+      last_summarized_msg_id INTEGER,
+      platform TEXT DEFAULT 'openclaw'
     );
     CREATE INDEX IF NOT EXISTS idx_admin_sessions_agent ON admin_sessions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_admin_sessions_channel ON admin_sessions(channel);
     CREATE INDEX IF NOT EXISTS idx_admin_sessions_updated ON admin_sessions(updated_at);
+    CREATE INDEX IF NOT EXISTS idx_admin_sessions_platform ON admin_sessions(platform);
   `);
 
   // admin_messages
@@ -235,11 +246,40 @@ export function initializeSchema(db: DatabaseType): void {
       timestamp TIMESTAMP NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       source_created_at TIMESTAMP,
+      platform TEXT DEFAULT 'openclaw',
       UNIQUE(session_key, source_id)
     );
     CREATE INDEX IF NOT EXISTS idx_admin_messages_session ON admin_messages(session_key);
     CREATE INDEX IF NOT EXISTS idx_admin_messages_timestamp ON admin_messages(timestamp);
     CREATE INDEX IF NOT EXISTS idx_admin_messages_type ON admin_messages(message_type);
+    CREATE INDEX IF NOT EXISTS idx_admin_messages_platform ON admin_messages(platform);
+  `);
+
+  // admin_tool_calls
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_tool_calls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_id TEXT NOT NULL DEFAULT '',
+      source_module TEXT NOT NULL DEFAULT '',
+      session_key TEXT NOT NULL,
+      message_type TEXT NOT NULL DEFAULT 'tool',
+      content TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      model TEXT,
+      tokens_input INTEGER DEFAULT 0,
+      tokens_output INTEGER DEFAULT 0,
+      cost_total REAL,
+      cost_input REAL,
+      cost_output REAL,
+      metadata TEXT,
+      tool_name TEXT,
+      tool_input TEXT,
+      platform TEXT NOT NULL DEFAULT 'openclaw',
+      UNIQUE(source_module, source_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON admin_tool_calls(session_key);
+    CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON admin_tool_calls(created_at);
+    CREATE INDEX IF NOT EXISTS idx_tool_calls_type ON admin_tool_calls(message_type);
   `);
 
   // admin_agents
@@ -255,7 +295,8 @@ export function initializeSchema(db: DatabaseType): void {
       last_active_at TIMESTAMP,
       model TEXT,
       avatar TEXT,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      platform TEXT DEFAULT 'openclaw'
     );
     CREATE INDEX IF NOT EXISTS idx_admin_agents_last_active ON admin_agents(last_active_at);
   `);

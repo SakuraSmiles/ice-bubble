@@ -29,6 +29,10 @@ const USER_NOISE_PATTERNS = [
  * 检测 user 消息是否为系统噪音
  */
 export function isUserSystemNoise(content: string): boolean {
+  // null/空字符串/NULL 占位符
+  if (!content || content === 'NULL') return true;
+  // [cron:...] 格式
+  if (/^\[cron:/.test(content)) return true;
   // [date] 前缀检测（需先移除日期前缀再判断）
   if (/^\[(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2}/.test(content)) {
     const afterDate = content.replace(/^\[[^\]]+\]\s*/, '').trim();
