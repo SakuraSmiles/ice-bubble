@@ -83,7 +83,7 @@ const currentPlatform = computed(() => platformConfig[props.modelValue.platform]
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.75);
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
@@ -134,27 +134,24 @@ const currentPlatform = computed(() => platformConfig[props.modelValue.platform]
 <style>
 /* Dropdown menu — global because el-dropdown teleports to <body> */
 .agent-dropdown-menu {
-  background: #1e1e22 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid var(--el-border-color-darker, rgba(255,255,255,0.08)) !important;
   border-radius: 8px !important;
   padding: 4px !important;
-  min-width: 160px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  min-width: 140px;
 }
 .agent-dropdown-menu .el-dropdown-menu__item {
-  color: rgba(255, 255, 255, 0.65) !important;
+  color: var(--el-text-color-primary, rgba(255,255,255,0.85)) !important;
   border-radius: 5px !important;
   padding: 6px 10px !important;
   line-height: 1.4 !important;
   height: auto !important;
+  font-size: 13px !important;
 }
 .agent-dropdown-menu .el-dropdown-menu__item:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: rgba(255, 255, 255, 0.95) !important;
+  background: var(--el-fill-color-light, rgba(255,255,255,0.1)) !important;
 }
 .agent-dropdown-menu .el-dropdown-menu__item.is-active {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: rgba(255, 255, 255, 0.9) !important;
+  background: var(--el-fill-color, rgba(255,255,255,0.06)) !important;
 }
 
 
