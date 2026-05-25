@@ -146,7 +146,7 @@ function handlePut(req: Request, res: Response): void {
   if (changed) {
     writeConfig(config);
     logger.info('[settings] 配置已保存');
-    console.log('[settings] 配置已更新，部分修改需要重启 Admin 服务才生效');
+    logger.info('[settings] 配置已更新，部分修改需要重启 Admin 服务才生效');
   }
 
   res.json({ success: true, changed });

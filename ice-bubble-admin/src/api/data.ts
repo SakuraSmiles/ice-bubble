@@ -15,7 +15,7 @@ import { DataRepository } from '../storage/data-repository.js';
 import type { AgentOverviewService } from '../data/agent-overview.js';
 import type { Database } from 'better-sqlite3';
 import type { GatewayProxy } from '../gateway/index.js';
-import { createSessionsRouter } from './data/sessions.js';
+import { createSessionsRouter } from './data/sessions/index.js';
 import { createMessagesRouter } from './data/messages.js';
 import { createAgentsRouter } from './data/agents.js';
 
@@ -52,6 +52,6 @@ export function createDataRouter(config: DataRouterConfig): Router {
 }
 
 // Re-export for use by sub-routers
-export { createSessionsRouter } from './data/sessions.js';
+export { createSessionsRouter } from './data/sessions/index.js';
 export { createMessagesRouter } from './data/messages.js';
 export { createAgentsRouter } from './data/agents.js';

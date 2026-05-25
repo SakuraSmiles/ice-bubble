@@ -70,33 +70,33 @@ describe('AdminConnection.configure - URL 校验', () => {
 
   it('非法 URL（无效协议 ftp://）触发 CONFIG_ERROR', async () => {
     const result = await adminConnection.configure('ftp://localhost:13000');
-    expect(result).toBe(false);
+    expect(result.success).toBe(false);
     expect(adminConnection.getState()).toBe('CONFIG_ERROR');
   });
 
   it('非法 URL（无端口）触发 CONFIG_ERROR', async () => {
     const result = await adminConnection.configure('http://localhost');
-    expect(result).toBe(false);
+    expect(result.success).toBe(false);
     expect(adminConnection.getState()).toBe('CONFIG_ERROR');
   });
 
   it('合法 URL（标准域名）可被接受，连接失败触发 CONN_FAILED', async () => {
     mockFetch.mockRejectedValueOnce(new Error('Connection refused'));
     const result = await adminConnection.configure('http://example.com:13000');
-    expect(result).toBe(false);
+    expect(result.success).toBe(false);
     expect(adminConnection.getState()).toBe('CONN_FAILED');
   });
 
   it('非法 URL（无效 IP 段 >255）触发 CONFIG_ERROR', async () => {
     const result = await adminConnection.configure('http://256.256.256.256:13000');
-    expect(result).toBe(false);
+    expect(result.success).toBe(false);
     expect(adminConnection.getState()).toBe('CONFIG_ERROR');
   });
 
   it('合法 URL 但连接失败触发 CONN_FAILED', async () => {
     mockFetch.mockRejectedValueOnce(new Error('Connection refused'));
     const result = await adminConnection.configure('http://localhost:13000');
-    expect(result).toBe(false);
+    expect(result.success).toBe(false);
     expect(adminConnection.getState()).toBe('CONN_FAILED');
   });
 
@@ -106,7 +106,7 @@ describe('AdminConnection.configure - URL 校验', () => {
       json: () => Promise.resolve({ sessionCount: 0, messageCount: 0, moduleCount: 0, collectorStatus: 'unknown' as const })
     });
     const result = await adminConnection.configure('http://localhost:13000');
-    expect(result).toBe(true);
+    expect(result.success).toBe(true);
     expect(adminConnection.getState()).toBe('CONNECTED');
     expect(adminConnection.getCurrentUrl()).toBe('http://localhost:13000');
   });

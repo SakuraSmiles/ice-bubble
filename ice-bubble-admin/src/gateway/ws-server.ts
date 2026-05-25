@@ -9,6 +9,7 @@ import type { Server as HttpServer } from "http";
 import type { IncomingMessage } from "http";
 import type { GatewayProxy } from "./gateway-proxy.js";
 import { validateToken } from "../utils/auth-middleware.js";
+import { logger } from "../utils/index.js";
 import type { AttachmentStorage } from "../server/chat/attachment-storage.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -101,7 +102,7 @@ export class GatewayWsServer {
       // Authenticate: extract Bearer token from Authorization header or query param
       const providedToken = extractTokenFromRequest(req);
       if (!validateToken(providedToken, this.authToken)) {
-        console.log("[WsServer] Rejected unauthenticated WebSocket connection");
+        logger.info("[WsServer] Rejected unauthenticated WebSocket connection");
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
@@ -134,7 +135,7 @@ export class GatewayWsServer {
     // Start heartbeat timer
     this.heartbeatTimer = setInterval(() => this.sendHeartbeats(), HEARTBEAT_INTERVAL_MS);
 
-    console.log("[WsServer] WebSocket server mounted on /ws");
+    logger.info("[WsServer] WebSocket server mounted on /ws");
   }
 
   stop(): void {
@@ -167,7 +168,7 @@ export class GatewayWsServer {
 
   private onClientConnect(ws: WsSocket): void {
     this.clients.add(ws);
-    console.log(`[WsServer] Client connected (${this.clients.size} total)`);
+    logger.info(`[WsServer] Client connected (${this.clients.size} total)`);
 
     // 立即发送 connect.hello，让 Desktop 的 gatewayClient 认为连接成功
     try {
@@ -201,20 +202,20 @@ export class GatewayWsServer {
     ws.on("close", () => this.onClientDisconnect(ws));
 
     ws.on("error", (err: Error) => {
-      console.error("[WsServer] Client error:", err.message);
+      logger.error("[WsServer] Client error:", { message: err.message });
       this.onClientDisconnect(ws);
     });
   }
 
   private onClientDisconnect(ws: WsSocket): void {
     this.clients.delete(ws);
-    console.log(`[WsServer] Client disconnected (${this.clients.size} remaining)`);
+    logger.info(`[WsServer] Client disconnected (${this.clients.size} remaining)`);
   }
 
   // ── Message handling ───────────────────────────────────────────────────
 
   private onClientMessage(ws: WsSocket, data: string): void {
-    console.log("[WsServer] Received:", data.substring(0, 200));
+    logger.info("[WsServer] Received:", { data: data.substring(0, 200) });
     let parsed: unknown;
     try {
       parsed = JSON.parse(data);
