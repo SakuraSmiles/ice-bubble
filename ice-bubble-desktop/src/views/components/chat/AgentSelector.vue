@@ -55,7 +55,7 @@ const displayLabel = computed(() => {
       </svg>
     </button>
     <template #dropdown>
-      <el-dropdown-menu>
+      <el-dropdown-menu size="small">
         <template v-for="(group, gi) in groupedAgents" :key="group.platform">
           <el-dropdown-item :divided="gi > 0" disabled class="agent-group-header">
             {{ group.tag }}
@@ -86,7 +86,7 @@ const displayLabel = computed(() => {
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.03);
   color: #555;
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -151,7 +151,7 @@ const displayLabel = computed(() => {
   margin: 0;
   padding: 7px 12px;
   line-height: 1.3;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 /* 分组标题 */
