@@ -129,8 +129,11 @@ const displayLabel = computed(() => {
   background: inherit;
 }
 
-/* ── popper 容器 ── */
+/* ── popper 容器：通过CSS变量让el-dropdown自己处理hover/active ── */
 .agent-dropdown-popper {
+  --el-dropdown-menuItem-hover-fill: var(--color-bg-overlay, rgba(0,0,0,0.04));
+  --el-dropdown-menuItem-hover-color: var(--color-text-primary, #24292f);
+  --el-dropdown-box-shadow: none;
 }
 .agent-dropdown-popper .el-dropdown-menu {
   border: 1px solid var(--color-border, rgba(0,0,0,0.08));
@@ -139,6 +142,7 @@ const displayLabel = computed(() => {
   min-width: 140px;
   background: var(--color-bg-elevated, var(--el-bg-color));
   overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 .agent-dropdown-popper .el-dropdown-menu__item {
   color: var(--color-text-secondary, #57606a);
@@ -146,10 +150,6 @@ const displayLabel = computed(() => {
   padding: 8px 12px;
   line-height: 1.4;
   font-size: 13px;
-}
-.agent-dropdown-popper .el-dropdown-menu__item:hover {
-  color: var(--color-text-primary, #24292f);
-  background: var(--color-bg-overlay, rgba(0,0,0,0.04));
 }
 
 /* 分组标题 */
@@ -162,13 +162,13 @@ const displayLabel = computed(() => {
   line-height: 1;
 }
 .agent-dropdown-popper .agent-group-header:hover {
-  background: transparent;
-  color: var(--color-text-tertiary, #8b949e);
+  background: transparent !important;
+  color: var(--color-text-tertiary, #8b949e) !important;
 }
 
 /* 分隔线 */
 .agent-dropdown-popper .el-dropdown-menu__item--divided::before {
   margin: 0 4px;
-  border-color: var(--color-border, rgba(0,0,0,0.05));
+  border-color: var(--color-border, rgba(0,0,0,0.06));
 }
 </style>
