@@ -131,8 +131,6 @@ const displayLabel = computed(() => {
 
 /* ── popper 容器 ── */
 .agent-dropdown-popper {
-  --el-dropdown-menuItem-hover-fill: var(--color-bg-overlay, rgba(0,0,0,0.04));
-  --el-border-color-light: var(--color-border, rgba(0,0,0,0.05));
 }
 .agent-dropdown-popper .el-dropdown-menu {
   border: 1px solid var(--color-border, rgba(0,0,0,0.08));
@@ -144,7 +142,6 @@ const displayLabel = computed(() => {
 }
 .agent-dropdown-popper .el-dropdown-menu__item {
   color: var(--color-text-secondary, #57606a);
-  border-radius: 0;
   margin: 0;
   padding: 8px 12px;
   line-height: 1.4;
@@ -152,10 +149,7 @@ const displayLabel = computed(() => {
 }
 .agent-dropdown-popper .el-dropdown-menu__item:hover {
   color: var(--color-text-primary, #24292f);
-}
-.agent-dropdown-popper .el-dropdown-menu__item.is-active {
-  color: var(--color-text-primary, #24292f);
-  background: var(--color-bg-selected, rgba(0,0,0,0.05));
+  background: var(--color-bg-overlay, rgba(0,0,0,0.04));
 }
 
 /* 分组标题 */
