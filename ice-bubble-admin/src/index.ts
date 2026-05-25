@@ -36,6 +36,7 @@ import { createSessionPreferencesRouter } from './api/session-preferences.js';
 import { createWorkspaceRouter } from './api/workspace.js';
 import { createSettingsRouter } from './api/settings.js';
 import { createMediaRouter, createMediaFileRouter } from './api/media.js';
+import { createHealthRouter } from './api/health.js';
 
 // 加载环境变量
 config();
@@ -545,10 +546,8 @@ export async function startAdmin(): Promise<void> {
       });
     }
 
-    // 健康检查
-    app.get('/health', (_req, res) => {
-        res.json({ status: 'ok', version: VERSION });
-    });
+    // 健康检查（在 auth middleware 之前，方便监控）
+    app.use(createHealthRouter(dbManager.getConnection(), configData));
 
     // 启动调度器
     scheduler.start();
