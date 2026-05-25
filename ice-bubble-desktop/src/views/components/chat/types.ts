@@ -65,6 +65,51 @@ export type MsgGroup = {
   hiddenToolCount: number;
 };
 
+// ── Gateway message types (used in useChatData / useGatewayStream) ──
+
+/** Gateway chat.history 单条消息 */
+export interface GatewayMessage {
+  id?: string | number;
+  role: string;
+  content?: string | GatewayContentBlock[];
+  timestamp?: string | number;
+  agentName?: string;
+  model?: string;
+  runId?: string;
+  messageId?: string | number;
+  images?: string[];
+  attachments?: unknown[];
+  media?: unknown[];
+}
+
+export interface GatewayContentBlock {
+  type: string;
+  text?: string;
+}
+
+export interface GatewayToolCallBlock {
+  type: 'toolCall' | 'tool_call';
+  toolName?: string;
+  name?: string;
+  arguments?: Record<string, unknown>;
+  args?: Record<string, unknown>;
+}
+
+export interface GatewayHistoryResponse {
+  messages?: GatewayMessage[];
+  history?: GatewayMessage[];
+}
+
+export interface MediaBatchItem {
+  id: string;
+  mimeType?: string;
+  fileName?: string;
+}
+
+export interface MediaBatchResponse {
+  items: MediaBatchItem[];
+}
+
 export interface UseChatDataOptions {
   sessionKey: () => string | undefined;
   onMessagesUpdate?: () => void;

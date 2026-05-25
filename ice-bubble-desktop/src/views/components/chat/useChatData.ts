@@ -4,7 +4,7 @@
 import { ref, computed, nextTick } from 'vue';
 import { request } from '../../../api/client';
 import { API_BASE } from '../../../config';
-import type { TimelineMessage, TimelineResponse } from './types';
+import type { TimelineMessage, TimelineResponse, GatewayMessage, GatewayContentBlock, GatewayToolCallBlock, GatewayHistoryResponse, MediaBatchResponse, MediaBatchItem } from './types';
 
 import { parseMediaAttached, stripMediaAttachedMarkers, detectInlineImages } from './media-parser';
 
@@ -134,7 +134,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
     try {
       const res = await request(`/media/batch?ids=${allIds.join(',')}`);
       if (res.ok) {
-        const data = await res.json() as any;
+        const data = await res.json() as MediaBatchResponse;
         mediaItems = data.items || [];
       }
     } catch (e) {
@@ -147,10 +147,10 @@ export function useChatData(getSessionKey: () => string | undefined) {
 
     let changed = false;
     for (const [m, ids] of msgMediaMap) {
-      const items = ids.map(id => mediaMap.get(id)).filter(Boolean);
+      const items = ids.map(id => mediaMap.get(id)).filter((x): x is MediaBatchItem => !!x);
       if (items.length > 0) {
-        m.attachments = items.map((item: any) => ({
-          type: 'image',
+        m.attachments = items.map((item: MediaBatchItem) => ({
+          type: 'image' as const,
           mimeType: item.mimeType || 'image/png',
           fileName: item.fileName || 'image',
           content: '',
@@ -174,9 +174,9 @@ export function useChatData(getSessionKey: () => string | undefined) {
     if (changed) messages.value = [...messages.value];
   }
 
-  function extractContentText(content: any): string {
+  function extractContentText(content: string | GatewayContentBlock[] | unknown): string {
     if (typeof content === 'string') return content;
-    if (Array.isArray(content)) return content.filter((c: any) => c.type === 'text').map((c: any) => c.text ?? '').join('');
+    if (Array.isArray(content)) return (content as GatewayContentBlock[]).filter(c => c.type === 'text').map(c => c.text ?? '').join('');
     return String(content ?? '');
   }
 
@@ -184,7 +184,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
     type: 'user' | 'agent' | 'tool',
     agentId: string, agentName: string | null, model: string | null,
     content: string, timestamp: string,
-    rawId: any, avatar: string | null, runId?: string,
+    rawId: string | number | unknown, avatar: string | null, runId?: string,
   ): TimelineMessage {
     const stableId = typeof rawId === 'number' || typeof rawId === 'string'
       ? `gw_${rawId}`
@@ -210,7 +210,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
     };
   }
 
-  function gatewayMsgsToTimeline(rawMessages: any[]): TimelineMessage[] {
+  function gatewayMsgsToTimeline(rawMessages: GatewayMessage[]): TimelineMessage[] {
     const result: TimelineMessage[] = [];
     const sessionAgentId = getSessionKey()?.match(/^agent:([^:]+)/)?.[1];
     for (const m of rawMessages) {
@@ -241,27 +241,27 @@ export function useChatData(getSessionKey: () => string | undefined) {
       if (role === 'assistant') {
         if (typeof m.content === 'string') {
           if (isSystemNoise(m.content)) continue;
-          result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, m.content, timestamp, m.id, null, runId));
+          result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName ?? null, m.model ?? null, m.content, timestamp, m.id, null, runId));
           continue;
         }
         if (!Array.isArray(m.content)) continue;
         let textParts: string[] = [];
-        let toolCallBlocks: any[] = [];
+        let toolCallBlocks: GatewayToolCallBlock[] = [];
         for (const block of m.content) {
           switch (block.type) {
             case 'text': textParts.push(block.text ?? ''); break;
             case 'thinking': break;
-            case 'toolCall': case 'tool_call': toolCallBlocks.push(block); break;
+            case 'toolCall': case 'tool_call': toolCallBlocks.push(block as GatewayToolCallBlock); break;
           }
         }
         const combinedText = textParts.join('');
         if (!isSystemNoise(combinedText)) {
-          result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, combinedText, timestamp, m.id, null, runId));
+          result.push(makeMsg('agent', m.agentName || sessionAgentId || 'assistant', m.agentName ?? null, m.model ?? null, combinedText, timestamp, m.id, null, runId));
         }
         for (const tc of toolCallBlocks) {
           const toolName = tc.toolName || tc.name || 'unknown';
           const toolContent = `Tool: ${toolName}\nArgs: ${JSON.stringify(tc.arguments ?? tc.args ?? {}, null, 2)}`;
-          result.push(makeMsg('tool', m.agentName || sessionAgentId || 'assistant', m.agentName || null, m.model, toolContent, timestamp, m.id, null, runId));
+          result.push(makeMsg('tool', m.agentName || sessionAgentId || 'assistant', m.agentName ?? null, m.model ?? null, toolContent, timestamp, m.id, null, runId));
         }
         continue;
       }
@@ -310,9 +310,9 @@ export function useChatData(getSessionKey: () => string | undefined) {
       if (!agentId) return;
       const res = await request('/agents');
       if (!res.ok) return;
-      const data = await res.json() as any;
-      const agents: any[] = data?.agents ?? [];
-      const match = agents.find((a: any) => (a.id || a.agent_id) === agentId);
+      const data = await res.json() as { agents?: Array<{ id?: string; agent_id?: string; avatar?: string | null }> };
+      const agents = data?.agents ?? [];
+      const match = agents.find(a => (a.id || a.agent_id) === agentId);
       const avatar = match?.avatar ?? null;
       agentAvatar.value = avatar;
       if (avatar) {
@@ -370,8 +370,8 @@ export function useChatData(getSessionKey: () => string | undefined) {
           const historyUrl = `/chat/history?sessionKey=${encodeURIComponent(sessionKey)}&limit=10`;
           const historyRes = await request(historyUrl);
           if (historyRes.ok) {
-            const result = await historyRes.json() as any;
-            const rawMsgs = result?.messages ?? result?.history ?? result ?? [];
+            const result = await historyRes.json() as GatewayHistoryResponse | GatewayMessage[];
+            const rawMsgs = Array.isArray(result) ? result : ((result as GatewayHistoryResponse)?.messages ?? (result as GatewayHistoryResponse)?.history ?? []);
             const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
             return gatewayMsgsToTimeline(arr);
           }
@@ -514,7 +514,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
             hiddenToolCount: 0,
           };
           if (current && current.messages.length === 0) {
-            current.messages.push({ id: msg.id, content: '', clean_content: '', message_type: 'agent', agent_id: msg.agent_id, agent_name: msg.agent_name, timestamp: msg.timestamp } as any);
+            current.messages.push({ id: msg.id, content: '', clean_content: '', message_type: 'agent' as const, agent_id: msg.agent_id, agent_name: msg.agent_name, timestamp: msg.timestamp, session_key: '', avatar: null, content_summary: null, is_cron: false, is_system_noise: false, source_channel: null, model: null } satisfies TimelineMessage);
           }
         }
       }

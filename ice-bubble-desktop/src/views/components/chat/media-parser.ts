@@ -119,8 +119,8 @@ export function stripMediaAttachedMarkers(text: string): string {
  * @param message - Gateway chat.history 返回的消息对象
  * @returns 内联图片列表
  */
-export function detectInlineImages(message: any): InlineImage[] {
-  const images: string[] = message?.images;
+export function detectInlineImages(message: { images?: string[] }): InlineImage[] {
+  const images: string[] = message?.images ?? [];
   if (!Array.isArray(images) || images.length === 0) return [];
 
   return images.map((b64) => {
@@ -139,7 +139,7 @@ export function detectInlineImages(message: any): InlineImage[] {
  * @param message - Gateway 消息对象，需至少包含 `content` 字段；可选 `images` 字段
  * @returns 合并后的附件列表（media_ref 在前，inline 在后）
  */
-export function parseAllAttachments(message: any): ParsedAttachment[] {
+export function parseAllAttachments(message: { content?: string; images?: string[] }): ParsedAttachment[] {
   const text = message?.content ?? '';
   const results: ParsedAttachment[] = [];
 

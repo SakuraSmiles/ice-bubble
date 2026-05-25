@@ -3,7 +3,7 @@
  */
 import { nextTick, ref, type Ref } from 'vue';
 import { gatewayClient } from '@/services/gateway-client';
-import type { TimelineMessage, ToolCallEntry } from './types';
+import type { TimelineMessage, ToolCallEntry, GatewayMessage, GatewayContentBlock } from './types';
 
 interface UseGatewayStreamOptions {
   getSessionKey: () => string | undefined;
@@ -31,19 +31,22 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
 
   // ── helpers ──
 
-  function extractText(msg: any): string {
-    if (Array.isArray(msg.content)) return msg.content.filter((c: any) => c.type === 'text').map((c: any) => c.text || '').join('');
-    if (typeof msg.content === 'string') return msg.content;
+  function extractText(msg: unknown): string {
+    const content = (msg as Record<string, unknown>)?.content;
+    if (Array.isArray(content)) return (content as GatewayContentBlock[]).filter(c => c.type === 'text').map(c => c.text || '').join('');
+    if (typeof content === 'string') return content;
     return '';
   }
 
-  function extractAttachments(msg: any): TimelineMessage['attachments'] {
-    const raw = msg?.attachments ?? msg?.media;
+  function extractAttachments(msg: unknown): TimelineMessage['attachments'] {
+    const m = msg as Record<string, unknown>;
+    const raw = (m?.attachments ?? m?.media) as unknown[] | undefined;
     if (!Array.isArray(raw) || raw.length === 0) return undefined;
-    return raw.map((att: any) => {
-      const a: any = typeof att === 'string' ? { url: att } : att;
+    return raw.map((rawAtt: unknown) => {
+      const att = typeof rawAtt === 'string' ? { url: rawAtt } : rawAtt as Record<string, unknown>;
+      const a = att as { dataUrl?: string; data_url?: string; type?: string; mimeType?: string; fileName?: string; filename?: string; content?: string; url?: string };
       if (a.dataUrl || a.data_url) {
-        const du = a.dataUrl || a.data_url;
+        const du = a.dataUrl || a.data_url || '';
         const match = du.match(/^data:([^;]+);base64,(.+)$/);
         return {
           type: a.type || 'image',
@@ -218,11 +221,11 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
         try {
           // 获取最近 5 条消息，增加匹配概率
           const res = await gatewayClient.getChatHistory(sessionKey, 5);
-          const history = res as any;
+          const history = res as { messages?: GatewayMessage[] } | null;
           const messages = history?.messages || [];
           if (messages.length === 0) return;
           // 优先按消息 ID 精确匹配
-          let targetMsg: any = null;
+          let targetMsg: GatewayMessage | null = null;
           for (let i = messages.length - 1; i >= 0; i--) {
             const text = extractText(messages[i]);
             if (text && text.includes('MEDIA:')) {
