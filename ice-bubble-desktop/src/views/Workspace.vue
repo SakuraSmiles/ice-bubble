@@ -527,14 +527,13 @@ function onResizeDragEnd() {
         </div><!-- /workspace-content -->
       </template>
 
-      <!-- 无会话 / OpenCode 新对话 -->
+      <!-- 空状态提示 + 聊天时间线 -->
       <template v-else-if="view === 'no-session' || view === 'opencode-new'">
         <div class="workspace-content">
           <div class="empty-chat-state">
-            <div class="empty-chat-emoji">{{ selectedAgent.emoji }}</div>
-            <div class="empty-chat-title">{{ selectedAgent.label }} — {{ selectedAgent.tag }}</div>
             <div class="empty-chat-hint">{{ view === 'no-session' ? '暂无会话，发送消息开始新对话' : '发送消息开始新对话' }}</div>
           </div>
+          <ChatTimeline ref="timelineRef" :key="'opencode-' + selectedAgent.agent" session-key="" />
           <div class="chat-input-bar" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop" :class="{ 'drag-over': dragOver }">
             <input ref="fileInputRef" type="file" accept="image/*" multiple class="file-input-hidden" @change="onFileChange" />
             <div class="resize-handle" @mousedown="onResizeDragStart"></div>
