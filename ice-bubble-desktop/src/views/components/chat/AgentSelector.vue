@@ -95,7 +95,7 @@ const displayLabel = computed(() => {
   gap: 6px;
   padding: 0 10px;
   height: 34px;
-  min-width: 100px;
+  /* min-width removed — auto-fit to content */
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
@@ -134,12 +134,12 @@ const displayLabel = computed(() => {
   border: 1px solid var(--el-border-color-darker, rgba(255,255,255,0.08)) !important;
   border-radius: 8px !important;
   padding: 4px !important;
-  min-width: 130px;
+  min-width: 140px;
 }
 .agent-dropdown-menu .el-dropdown-menu__item {
   color: var(--el-text-color-primary, rgba(255,255,255,0.85)) !important;
   border-radius: 5px !important;
-  padding: 6px 10px !important;
+  padding: 8px 12px !important;
   line-height: 1.4 !important;
   height: auto !important;
   font-size: 13px !important;
@@ -153,7 +153,7 @@ const displayLabel = computed(() => {
 /* 平台分组标题 */
 .agent-dropdown-menu .agent-group-header {
   font-size: 11px !important;
-  opacity: 0.45 !important;
+  opacity: 0.65 !important;
   letter-spacing: 0.5px;
   padding: 8px 10px 2px !important;
   cursor: default !important;

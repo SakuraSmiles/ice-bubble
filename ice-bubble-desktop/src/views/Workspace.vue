@@ -38,8 +38,8 @@ const gatewayConnected = inject<{ value: boolean }>('gatewayConnected') ?? { val
 const availableAgents = ref<AgentOption[]>([])
 
 const fallbackAgents: AgentOption[] = [
-  { platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw' },
-  { platform: 'opencode', agent: 'build', label: 'build', emoji: '🔨', tag: 'OpenCode' },
+  { platform: 'openclaw', agent: 'main', label: '加载中…', emoji: '', tag: 'OpenClaw' },
+  { platform: 'opencode', agent: 'build', label: '加载中…', emoji: '', tag: 'OpenCode' },
 ]
 
 // Agent 显示名映射（OpenCode agent_id → 自定义昵称）
@@ -70,7 +70,13 @@ async function loadAvailableAgents() {
         emoji: '',
         tag: a.platform === 'opencode' ? 'OpenCode' : 'OpenClaw',
       })) as AgentOption[]
-    if (list.length > 0) availableAgents.value = list
+    if (list.length > 0) {
+      availableAgents.value = list
+      // 更新 selectedAgent 为 API 返回的真实数据
+      const current = selectedAgent.value
+      const match = list.find(a => a.platform === current.platform && a.agent === current.agent)
+      if (match) selectedAgent.value = { ...match }
+    }
   } catch {
     // API 失败时保留空列表，使用 fallback
   }
