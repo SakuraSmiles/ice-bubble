@@ -80,7 +80,7 @@ const currentPlatform = computed(() => platformConfig[props.modelValue.platform]
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 12px;
   line-height: 1;
   cursor: pointer;

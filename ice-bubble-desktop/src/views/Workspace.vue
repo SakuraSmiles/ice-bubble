@@ -42,11 +42,20 @@ const fallbackAgents: AgentOption[] = [
   { platform: 'opencode', agent: 'build', label: 'build', emoji: '🔨', tag: 'OpenCode' },
 ]
 
+// 判断是否为 primary agent（可出现在聊天页 AgentSelector 中）
+// OpenCode 全为 primary，OpenClaw 仅 main 为 primary
+function isPrimaryAgent(a: { agent_id: string; platform?: string }): boolean {
+  if (a.platform === 'opencode') return true
+  if (a.platform === 'openclaw') return a.agent_id === 'main'
+  return false
+}
+
 async function loadAvailableAgents() {
   try {
     const data = await api.getAgents()
     const list = (data.agents || [])
       .filter((a) => !a.agent_id.includes('unknown'))
+      .filter(isPrimaryAgent)
       .map((a) => ({
         platform: (a.platform || 'openclaw') as AgentOption['platform'],
         agent: a.platform === 'opencode'
