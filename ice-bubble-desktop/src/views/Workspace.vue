@@ -188,6 +188,12 @@ watch(selectedAgent, async (newAgent, oldAgent) => {
   const key = getAgentKey(newAgent);
   // 如果该 agent 已有缓存的 sessionKey，导航到对应会话
   if (agentSessionMap[key]) {
+    if (newAgent.platform === 'opencode') {
+      // OpenCode：恢复 sessionId + 设置视图
+      openCodeSessionId.value = agentSessionMap[key];
+      view.value = 'opencode-new';
+      return;
+    }
     router.push('/workspace/' + encodeURIComponent(agentSessionMap[key]));
     return;
   }
@@ -199,6 +205,11 @@ watch(sessionKey, async (key) => {
   if (key) {
     // 缓存到 agentSessionMap
     agentSessionMap[getAgentKey(selectedAgent.value)] = key;
+    // OpenCode 不使用 URL sessionKey 路由
+    if (selectedAgent.value.platform === 'opencode') {
+      view.value = 'opencode-new';
+      return;
+    }
     view.value = 'chat';
   } else if (route.path === '/chat') {
     // /chat 路由无 key：轻量查找当前 agent 的 direct session 并自动跳转
@@ -212,6 +223,30 @@ watch(sessionKey, async (key) => {
 // 加载指定 agent 的最近一次会话
 async function loadRecentSession(agent: AgentOption) {
   try {
+    // OpenCode 走自己的端点
+    if (agent.platform === 'opencode') {
+      const res = await request(`/opencode/sessions?agent=${encodeURIComponent(agent.agent)}&limit=1`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const sessions = (data.sessions || []) as any[];
+      if (sessions.length > 0) {
+        const latest = sessions.sort((a: any, b: any) => {
+          const ta = new Date(a.last_message_at || a.updated_at || 0).getTime();
+          const tb = new Date(b.last_message_at || b.updated_at || 0).getTime();
+          return tb - ta;
+        })[0];
+        const sid = latest.session_id || latest.id;
+        if (sid) {
+          openCodeSessionId.value = sid;
+          agentSessionMap[getAgentKey(agent)] = sid;
+          view.value = 'opencode-new';
+          return;
+        }
+      }
+      view.value = 'no-session';
+      return;
+    }
+
     const res = await request(`/sessions/unified?agentId=${encodeURIComponent(agent.agent)}&limit=1`);
     if (!res.ok) return;
     const data = await res.json();
@@ -272,7 +307,8 @@ function onSessionSelect(sessionKeyStr: string) {
 // =========== 发送消息 ===========
 async function sendMessage() {
   const text = inputText.value.trim();
-  if ((!text && attachments.value.length === 0) || !sessionKey.value || sending.value) return;
+  const isOpenCode = selectedAgent.value.platform === 'opencode';
+  if ((!text && attachments.value.length === 0) || (!sessionKey.value && !isOpenCode) || sending.value) return;
 
   // Steer: Agent 处理中时追加消息
   if (isAgentProcessing.value) {

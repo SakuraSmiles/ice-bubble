@@ -31,38 +31,43 @@ function select(opt: AgentOption) {
   isOpen.value = false;
 }
 
-const currentLabel = computed(() => {
-  const v = props.modelValue;
-  return `${v.emoji} ${v.label}  ${v.tag}`;
-});
+// Platform badge color config
+const platformConfig: Record<string, { color: string; bg: string; border: string }> = {
+  openclaw: { color: '#67c23a', bg: 'rgba(103, 194, 58, 0.12)', border: 'rgba(103, 194, 58, 0.25)' },
+  opencode: { color: '#409eff', bg: 'rgba(64, 158, 255, 0.10)', border: 'rgba(64, 158, 255, 0.25)' },
+};
+
+const currentPlatform = computed(() => platformConfig[props.modelValue.platform] ?? platformConfig.openclaw);
 </script>
 
 <template>
   <el-dropdown trigger="click" :disabled="disabled" @command="select" v-model:visible="isOpen">
-    <button class="agent-selector-btn" :class="{ 'is-opencode': modelValue.platform === 'opencode' }" @click="isOpen = !isOpen">
-      <span class="agent-selector-label">{{ currentLabel }}</span>
-      <svg class="agent-selector-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <button
+      class="agent-selector-btn"
+      :class="{ 'is-open': isOpen }"
+      @click="isOpen = !isOpen"
+    >
+      <span class="agent-dot" :style="{ background: currentPlatform.color }"></span>
+      <span class="agent-label">{{ modelValue.label }}</span>
+      <span class="agent-tag" :style="{ color: currentPlatform.color }">{{ modelValue.tag }}</span>
+      <svg class="agent-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none">
+        <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
     <template #dropdown>
-      <el-dropdown-menu>
+      <el-dropdown-menu class="agent-dropdown-menu">
         <el-dropdown-item :command="openclawOption" :class="{ 'is-active': modelValue.platform === 'openclaw' }">
-          <span class="agent-option">
-            <span class="agent-option-emoji">{{ openclawOption.emoji }}</span>
-            <span class="agent-option-text">
-              <span class="agent-option-name">{{ openclawOption.label }}</span>
-              <span class="agent-option-tag">{{ openclawOption.tag }}</span>
-            </span>
+          <span class="opt-row">
+            <span class="opt-dot" style="background: #67c23a"></span>
+            <span class="opt-name">{{ openclawOption.label }}</span>
+            <span class="opt-tag" style="color: #67c23a">OpenClaw</span>
           </span>
         </el-dropdown-item>
         <el-dropdown-item divided v-for="opt in opencodeOptions" :key="opt.agent" :command="opt" :class="{ 'is-active': modelValue.platform === 'opencode' && modelValue.agent === opt.agent }">
-          <span class="agent-option">
-            <span class="agent-option-emoji">{{ opt.emoji }}</span>
-            <span class="agent-option-text">
-              <span class="agent-option-name">{{ opt.label }}</span>
-              <span class="agent-option-tag">{{ opt.tag }}</span>
-            </span>
+          <span class="opt-row">
+            <span class="opt-dot" style="background: #409eff"></span>
+            <span class="opt-name">{{ opt.label }}</span>
+            <span class="opt-tag" style="color: #409eff">OpenCode</span>
           </span>
         </el-dropdown-item>
       </el-dropdown-menu>
@@ -74,64 +79,111 @@ const currentLabel = computed(() => {
 .agent-selector-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 5px;
+  gap: 5px;
+  padding: 0 8px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.6);
   font-size: 12px;
-  line-height: 1.3;
+  line-height: 1;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
   user-select: none;
-  height: 26px;
+  flex-shrink: 0;
 }
 .agent-selector-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.1);
 }
-.agent-selector-btn.is-opencode {
-  border-color: rgba(64, 158, 255, 0.3);
-  background: rgba(64, 158, 255, 0.08);
-  color: rgba(64, 200, 255, 0.9);
-}
-.agent-selector-btn.is-opencode:hover {
-  background: rgba(64, 158, 255, 0.14);
-}
-.agent-selector-label {
-  white-space: nowrap;
-}
-.agent-selector-arrow {
-  flex-shrink: 0;
-  opacity: 0.5;
-  transition: transform 0.2s;
+.agent-selector-btn.is-open {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
-.agent-option {
+.agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.agent-label {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.agent-tag {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+.agent-arrow {
+  flex-shrink: 0;
+  opacity: 0.4;
+  transition: transform 0.2s;
+}
+.is-open .agent-arrow {
+  transform: rotate(180deg);
+}
+
+/* ===== Dropdown items (scoped, override el-dropdown-menu via deep) =====
+   The el-dropdown-menu is teleported to body, so scoped styles won't apply.
+   We use :global for the dropdown menu overrides. */
+</style>
+
+<style>
+/* Dropdown menu — global because el-dropdown teleports to <body> */
+.agent-dropdown-menu {
+  background: #1e1e22 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+.agent-dropdown-menu .el-dropdown-menu__item {
+  color: rgba(255, 255, 255, 0.65) !important;
+  border-radius: 5px !important;
+  padding: 6px 10px !important;
+  line-height: 1.4 !important;
+  height: auto !important;
+}
+.agent-dropdown-menu .el-dropdown-menu__item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+.agent-dropdown-menu .el-dropdown-menu__item.is-active {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+.agent-dropdown-menu .el-dropdown-menu__item--divided {
+  margin-top: 4px !important;
+}
+.agent-dropdown-menu .el-dropdown-menu__item--divided::before {
+  display: none !important;
+}
+
+.opt-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.agent-option-emoji {
-  font-size: 16px;
+.opt-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   flex-shrink: 0;
 }
-.agent-option-text {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.agent-option-name {
+.opt-name {
   font-weight: 500;
-  font-size: 13px;
+  font-size: 12px;
 }
-.agent-option-tag {
-  font-size: 11px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.45);
+.opt-tag {
+  font-size: 10px;
   font-weight: 400;
+  opacity: 0.65;
+  margin-left: auto;
 }
 </style>
