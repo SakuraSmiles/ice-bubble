@@ -105,13 +105,6 @@ const displayLabel = computed(() => {
   user-select: none;
   flex-shrink: 0;
 }
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  user-select: none;
-  flex-shrink: 0;
-}
 .agent-selector-btn:hover {
   color: rgba(255, 255, 255, 1) !important;
   background: rgba(255, 255, 255, 0.08);
