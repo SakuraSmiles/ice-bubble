@@ -77,7 +77,6 @@ const displayLabel = computed(() => {
 <style scoped>
 /* ── trigger 按钮 ── */
 .agent-selector-btn {
-  all: unset;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -93,6 +92,9 @@ const displayLabel = computed(() => {
   transition: color 0.2s, background 0.2s;
   user-select: none;
   flex-shrink: 0;
+  font-family: inherit;
+  margin: 0;
+  outline: none;
 }
 .agent-selector-btn:hover,
 .agent-selector-btn:focus-visible {
@@ -121,6 +123,12 @@ const displayLabel = computed(() => {
 
 <!-- 下拉菜单挂载在 body 上，不能 scoped -->
 <style>
+/* ── 重置 el-tooltip__trigger（el-dropdown 自动添加的类）── */
+.agent-selector-btn.el-tooltip__trigger {
+  color: inherit;
+  background: inherit;
+}
+
 /* ── popper 容器 ── */
 .agent-dropdown-popper {
   --el-dropdown-menuItem-hover-fill: var(--color-bg-overlay, rgba(255, 255, 255, 0.06));
