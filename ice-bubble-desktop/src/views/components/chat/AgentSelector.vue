@@ -9,17 +9,17 @@ export interface AgentOption {
   tag: string;
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: AgentOption;
   disabled?: boolean;
-}>();
+  agents: AgentOption[];
+}>(), {
+  agents: () => [],
+});
 
 const emit = defineEmits<{
   'update:modelValue': [value: AgentOption];
 }>();
-
-const openclawOption: AgentOption = { platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw' };
-const opencodeOption: AgentOption = { platform: 'opencode', agent: 'build', label: 'build', emoji: '🔨', tag: 'OpenCode' };
 
 const isOpen = ref(false);
 
@@ -53,18 +53,15 @@ const currentPlatform = computed(() => platformConfig[props.modelValue.platform]
     </button>
     <template #dropdown>
       <el-dropdown-menu class="agent-dropdown-menu">
-        <el-dropdown-item :command="openclawOption" :class="{ 'is-active': modelValue.platform === 'openclaw' }">
+        <el-dropdown-item
+          v-for="opt in agents" :key="opt.platform + ':' + opt.agent"
+          :command="opt"
+          :class="{ 'is-active': modelValue.platform === opt.platform && modelValue.agent === opt.agent }"
+        >
           <span class="opt-row">
-            <span class="opt-dot" style="background: #67c23a"></span>
-            <span class="opt-name">{{ openclawOption.label }}</span>
-            <span class="opt-tag" style="color: #67c23a">OpenClaw</span>
-          </span>
-        </el-dropdown-item>
-        <el-dropdown-item :command="opencodeOption" :class="{ 'is-active': modelValue.platform === 'opencode' }">
-          <span class="opt-row">
-            <span class="opt-dot" style="background: #409eff"></span>
-            <span class="opt-name">{{ opencodeOption.label }}</span>
-            <span class="opt-tag" style="color: #409eff">OpenCode</span>
+            <span class="opt-dot" :style="{ background: platformConfig[opt.platform]?.color }"></span>
+            <span class="opt-name">{{ opt.label }}</span>
+            <span class="opt-tag" :style="{ color: platformConfig[opt.platform]?.color }">{{ opt.tag }}</span>
           </span>
         </el-dropdown-item>
       </el-dropdown-menu>

@@ -12,7 +12,7 @@ import { ref, reactive, watch, computed, nextTick, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useChatInputStore } from '@/stores/chat-input'
 import { gatewayClient } from '@/services/gateway-client'
-import { request } from '../api/client'
+import { request, api } from '../api/client'
 import AppFooter from '../components/AppFooter.vue'
 import PageHeader from '../components/PageHeader.vue'
 import ChatTimeline from './components/ChatTimeline.vue'
@@ -33,6 +33,41 @@ const router = useRouter()
 const gatewayConnected = inject<{ value: boolean }>('gatewayConnected') ?? { value: false }
 
 // ============================================================
+// Agent 动态列表（从 Admin API 获取）
+// ============================================================
+const availableAgents = ref<AgentOption[]>([])
+
+const fallbackAgents: AgentOption[] = [
+  { platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw' },
+  { platform: 'opencode', agent: 'build', label: 'build', emoji: '🔨', tag: 'OpenCode' },
+]
+
+async function loadAvailableAgents() {
+  try {
+    const data = await api.getAgents()
+    const list = (data.agents || [])
+      .filter((a) => !a.agent_id.includes('unknown'))
+      .map((a) => ({
+        platform: (a.platform || 'openclaw') as AgentOption['platform'],
+        agent: a.platform === 'opencode'
+          ? (a.agent_id || '').replace('opencode:', '')
+          : a.agent_id,
+        label: a.agent_name || a.agent_id,
+        emoji: '',
+        tag: a.platform === 'opencode' ? 'OpenCode' : 'OpenClaw',
+      })) as AgentOption[]
+    if (list.length > 0) availableAgents.value = list
+  } catch {
+    // API 失败时保留空列表，使用 fallback
+  }
+}
+
+// 最终可用的 agents 列表（优先动态，否则 fallback）
+const resolvedAgents = computed(() =>
+  availableAgents.value.length > 0 ? availableAgents.value : fallbackAgents,
+)
+
+// ============================================================
 // URL 解析（唯一的状态来源）
 // ============================================================
 const urlSessionKey = computed(() => {
@@ -49,9 +84,7 @@ const urlAgentId = computed(() => {
 // ============================================================
 // Agent 状态
 // ============================================================
-const selectedAgent = ref<AgentOption>({
-  platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw',
-})
+const selectedAgent = ref<AgentOption>(fallbackAgents[0])
 
 // 各 agent 的会话缓存，key: "platform:agent", value: sessionKey 或 sessionId
 const agentSessionMap = reactive<Record<string, string>>({})
@@ -104,15 +137,11 @@ function initAgentFromQuery() {
   const q = route.query
   const platform = q.platform as string
   const agentParam = q.agent as string
-  if (platform === 'opencode' && (agentParam === 'build' || agentParam === 'plan')) {
-    selectedAgent.value = {
-      platform: 'opencode', agent: agentParam, label: agentParam,
-      emoji: agentParam === 'build' ? '🔨' : '📋', tag: 'OpenCode',
-    }
-  } else if (platform === 'openclaw' && agentParam === 'main') {
-    selectedAgent.value = {
-      platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw',
-    }
+  const found = resolvedAgents.value.find(
+    (a) => a.platform === platform && a.agent === agentParam,
+  )
+  if (found) {
+    selectedAgent.value = found
   }
 }
 
@@ -203,6 +232,9 @@ async function resolveChatRoute() {
 // ============================================================
 // 路由监听（唯一入口，URL → view state）
 // ============================================================
+
+// 启动时加载 agent 列表（非阻塞，fallback 保证 UI 可用）
+loadAvailableAgents()
 let resolveSeq = 0
 
 watch(
@@ -659,7 +691,7 @@ const headerSubtitle = computed(() => {
               <div v-if="view === 'chat' && canSend" class="chat-action-row">
                 <span class="action-hint">Enter 发送 / Shift+Enter 换行</span>
                 <div class="chat-input-actions">
-                  <AgentSelector :model-value="selectedAgent" :disabled="sending || isBusy" size="small" class="toolbar-agent-selector" @update:model-value="onAgentSwitch" />
+                  <AgentSelector :model-value="selectedAgent" :agents="resolvedAgents" :disabled="sending || isBusy" size="small" class="toolbar-agent-selector" @update:model-value="onAgentSwitch" />
                   <button class="attach-btn" title="添加图片" @click="onFileSelect">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                   </button>
@@ -680,7 +712,7 @@ const headerSubtitle = computed(() => {
               <div v-if="view === 'no-session'" class="chat-action-row">
                 <span class="action-hint">Enter 发送 / Shift+Enter 换行</span>
                 <div class="chat-input-actions">
-                  <AgentSelector :model-value="selectedAgent" size="small" class="toolbar-agent-selector" @update:model-value="onAgentSwitch" />
+                  <AgentSelector :model-value="selectedAgent" :agents="resolvedAgents" size="small" class="toolbar-agent-selector" @update:model-value="onAgentSwitch" />
                   <button class="send-btn" :disabled="!isOpenCodeMode || (!inputText.trim() && attachments.length === 0)" @click="sendMessage">
                     <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.5l13 5-13 5V8.5l8-1.5-8-1.5V1.5z"/></svg>
                   </button>
