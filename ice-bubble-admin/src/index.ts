@@ -63,6 +63,12 @@ interface ModuleConfig {
   baseUrl: string;
   enabled: boolean;
   pollInterval?: number;
+  /** 当模块为 collector 类型时，配置数据同步参数 */
+  sync?: {
+    enabled?: boolean;
+    pollInterval?: number;
+    batchSize?: number;
+  };
 }
 
 interface DataSyncConfig {
@@ -367,34 +373,75 @@ export async function startAdmin(): Promise<void> {
     const attachmentStorage = new AttachmentStorage(attachmentsDir, dbManager.getConnection());
     logger.info('[Admin] Attachment storage initialized', { dir: attachmentsDir });
 
-    const dataSyncConfig = configData.dataSync || {};
-    const dataSync = new DataSync(
-      {
-        collectorBaseUrl: dataSyncConfig.collectorBaseUrl || 'http://localhost:13100',
-        moduleKey: dataSyncConfig.moduleKey || 'collector-openclaw',
-        platform: 'openclaw',
-        pollInterval: dataSyncConfig.pollInterval || 60000,
-        batchSize: dataSyncConfig.batchSize || 500,
-      },
-      dataRepository
-    );
-    dataSync.start();
-    logger.info('[Admin] 数据同步调度器初始化完成 (OpenClaw)');
+    // ── 配置驱动的数据同步：从 modules 自动发现 collector 并创建 DataSync ──
+    const dataSyncs: DataSync[] = [];
+    const createdModuleKeys = new Set<string>();
+    const legacyDataSyncConfigs = new Map<string, { collectorBaseUrl: string; moduleKey: string; platform: string; pollInterval: number; batchSize: number }>();
 
-    // 第二个 DataSync 实例：从 collector-opencode 同步数据
-    const opencodeSyncConfig = configData.dataSyncOpencode || {};
-    const opencodeSync = new DataSync(
-      {
-        collectorBaseUrl: opencodeSyncConfig.collectorBaseUrl || 'http://localhost:13101',
-        moduleKey: opencodeSyncConfig.moduleKey || 'collector-opencode',
+    // 1. 收集 legacy 配置作为 fallback
+    if (configData.dataSync) {
+      const ds = configData.dataSync;
+      legacyDataSyncConfigs.set(ds.moduleKey || 'collector-openclaw', {
+        collectorBaseUrl: ds.collectorBaseUrl || 'http://localhost:13100',
+        moduleKey: ds.moduleKey || 'collector-openclaw',
+        platform: 'openclaw',
+        pollInterval: ds.pollInterval || 60000,
+        batchSize: ds.batchSize || 500,
+      });
+    }
+    if (configData.dataSyncOpencode) {
+      const ds = configData.dataSyncOpencode;
+      legacyDataSyncConfigs.set(ds.moduleKey || 'collector-opencode', {
+        collectorBaseUrl: ds.collectorBaseUrl || 'http://localhost:13101',
+        moduleKey: ds.moduleKey || 'collector-opencode',
         platform: 'opencode',
-        pollInterval: opencodeSyncConfig.pollInterval || 30000,
-        batchSize: opencodeSyncConfig.batchSize || 500,
-      },
-      dataRepository
-    );
-    opencodeSync.start();
-    logger.info('[Admin] 数据同步调度器初始化完成 (OpenCode)');
+        pollInterval: ds.pollInterval || 30000,
+        batchSize: ds.batchSize || 500,
+      });
+    }
+
+    // 2. 遍历 modules，优先使用 sync 字段，fallback 到 legacy 配置
+    for (const mod of moduleConfigs) {
+      if (!mod.enabled || !mod.baseUrl) continue;
+      // 非 collector 类型模块跳过（moduleKey 以 collector- 开头或 sync 字段存在）
+      if (!mod.moduleKey.startsWith('collector-') && !mod.sync) continue;
+
+      let syncConfig: { collectorBaseUrl: string; moduleKey: string; platform: string; pollInterval: number; batchSize: number };
+
+      if (mod.sync) {
+        // 新配置路径：从 module 的 sync 字段读取
+        if (mod.sync.enabled === false) continue;
+        const platform = mod.moduleKey.replace(/^collector-/, '');
+        syncConfig = {
+          collectorBaseUrl: mod.baseUrl,
+          moduleKey: mod.moduleKey,
+          platform,
+          pollInterval: mod.sync.pollInterval || 30000,
+          batchSize: mod.sync.batchSize || 500,
+        };
+      } else {
+        // Fallback：从 legacy 配置匹配
+        const legacy = legacyDataSyncConfigs.get(mod.moduleKey);
+        if (!legacy) continue;
+        syncConfig = legacy;
+      }
+
+      const sync = new DataSync(syncConfig, dataRepository);
+      sync.start();
+      dataSyncs.push(sync);
+      createdModuleKeys.add(syncConfig.moduleKey);
+      logger.info(`[Admin] 数据同步调度器初始化完成 (${syncConfig.platform})`);
+    }
+
+    // 3. 兜底：如果 modules 中没有匹配到 legacy 配置，直接创建
+    for (const [key, syncConfig] of legacyDataSyncConfigs) {
+      if (createdModuleKeys.has(key)) continue;
+      const sync = new DataSync(syncConfig, dataRepository);
+      sync.start();
+      dataSyncs.push(sync);
+      createdModuleKeys.add(key);
+      logger.info(`[Admin] 数据同步调度器初始化完成 (${syncConfig.platform}, legacy)`);
+    }
 
     // 启动每日归档调度器（凌晨 3 点执行，保留 30 天数据）
     dataRepository.startArchiveScheduler(30, (count) => {
@@ -425,7 +472,7 @@ export async function startAdmin(): Promise<void> {
       db: dbManager.getConnection(),
       agentOverviewService: new AgentOverviewService(
         dataRepository,
-        new CollectorClient({ baseUrl: dataSyncConfig.collectorBaseUrl || 'http://localhost:13100' })
+        new CollectorClient({ baseUrl: moduleConfigs.find(m => m.moduleKey.startsWith('collector-') && m.enabled)?.baseUrl || 'http://localhost:13100' })
       ),
       gatewayProxy,
     }));
