@@ -148,7 +148,7 @@ export function createDataRouter(collector: SQLiteCollector): Router {
                     .map(a => ({ agent: a.agent!, count: a.count }));
 
             const now = new Date().toISOString();
-            const MAIN_AGENTS = ['build', 'plan'];
+            const MAIN_AGENTS = ['build'];
             const SUB_AGENTS = ['explore', 'Hephaestus (Deep Agent)', 'Sisyphus (Ultraworker)', 'Sisyphus-Junior'];
 
             const result = {

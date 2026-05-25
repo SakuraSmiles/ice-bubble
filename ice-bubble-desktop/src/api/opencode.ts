@@ -1,7 +1,7 @@
 import { request } from './client';
 
 export interface OpenCodeSendRequest {
-  agent: 'build' | 'plan';
+  agent: 'build';
   message: string;
   sessionId?: string;
 }

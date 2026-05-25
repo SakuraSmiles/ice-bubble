@@ -421,7 +421,7 @@ async function sendMessage() {
       openCodePanelRef.value?.addOptimisticMessage(text, 'user')
 
       const result = await sendOpenCodeChat({
-        agent: selectedAgent.value.agent as 'build' | 'plan',
+        agent: selectedAgent.value.agent as 'build',
         message: text,
         sessionId: openCodeSessionId.value,
       })

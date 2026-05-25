@@ -21,7 +21,6 @@ const emit = defineEmits<{
 const openclawOption: AgentOption = { platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw' };
 const opencodeOptions: AgentOption[] = [
   { platform: 'opencode', agent: 'build', label: 'build', emoji: '🔨', tag: 'OpenCode' },
-  { platform: 'opencode', agent: 'plan', label: 'plan', emoji: '📋', tag: 'OpenCode' },
 ];
 
 const isOpen = ref(false);
