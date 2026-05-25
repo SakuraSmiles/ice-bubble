@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 
 export interface AgentOption {
   platform: 'openclaw' | 'opencode';
@@ -19,12 +19,48 @@ const emit = defineEmits<{
   'update:modelValue': [value: AgentOption];
 }>();
 
+const rootRef = ref<HTMLElement | null>(null);
 const isOpen = ref(false);
+const dropdownPos = ref({ top: 0, left: 0 });
+
+function updatePosition() {
+  if (!rootRef.value) return;
+  const rect = rootRef.value.getBoundingClientRect();
+  dropdownPos.value = {
+    top: rect.bottom + 4,
+    left: rect.left,
+  };
+}
+
+function toggle() {
+  if (props.disabled) return;
+  isOpen.value = !isOpen.value;
+  if (isOpen.value) {
+    nextTick(updatePosition);
+  }
+}
+
+function close() {
+  isOpen.value = false;
+}
 
 function select(opt: AgentOption) {
   emit('update:modelValue', opt);
   isOpen.value = false;
 }
+
+function onDocClick(e: MouseEvent) {
+  if (isOpen.value && rootRef.value && !rootRef.value.contains(e.target as Node)) {
+    close();
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocClick, true);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick, true);
+});
 
 const groupedAgents = computed(() => {
   const groups: { platform: string; tag: string; items: AgentOption[] }[] = [];
@@ -44,131 +80,151 @@ const displayLabel = computed(() => {
   const v = props.modelValue;
   return v.label || v.agent || '选择 Agent';
 });
+
+const dropdownStyle = computed(() => ({
+  top: `${dropdownPos.value.top}px`,
+  left: `${dropdownPos.value.left}px`,
+}));
 </script>
 
 <template>
-  <el-dropdown trigger="click" :disabled="disabled" @command="select" @visible-change="(v: boolean) => isOpen = v" :popper-class="'agent-dropdown-popper'">
-    <button class="agent-selector-btn" :class="{ 'is-open': isOpen }">
-      <span class="agent-label">{{ displayLabel }}</span>
-      <svg class="agent-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none">
+  <div class="agent-selector" ref="rootRef">
+    <button
+      class="agent-btn"
+      :class="{ 'is-open': isOpen, 'is-disabled': disabled }"
+      :disabled="disabled"
+      @click="toggle"
+    >
+      <span class="agent-btn__label">{{ displayLabel }}</span>
+      <svg class="agent-btn__arrow" :class="{ 'is-open': isOpen }" width="10" height="10" viewBox="0 0 16 16" fill="none">
         <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
-    <template #dropdown>
-      <el-dropdown-menu>
-        <template v-for="(group, gi) in groupedAgents" :key="group.platform">
-          <el-dropdown-item :divided="gi > 0" disabled class="agent-group-header">
-            {{ group.tag }}
-          </el-dropdown-item>
-          <el-dropdown-item
-            v-for="opt in group.items"
-            :key="opt.platform + ':' + opt.agent"
-            :command="opt"
-            :class="{ 'is-active': modelValue.platform === opt.platform && modelValue.agent === opt.agent }"
-          >
-            <span class="opt-name">{{ opt.label }}</span>
-          </el-dropdown-item>
-        </template>
-      </el-dropdown-menu>
-    </template>
-  </el-dropdown>
+
+    <Teleport to="body">
+      <div v-if="isOpen" class="agent-dropdown-wrap">
+        <div class="agent-overlay" @click="close"></div>
+        <div class="agent-dropdown" :style="dropdownStyle" @click.stop>
+          <template v-for="(group, gi) in groupedAgents" :key="group.platform">
+            <div v-if="gi > 0" class="agent-divider"></div>
+            <div class="agent-group-label">{{ group.tag }}</div>
+            <div
+              v-for="opt in group.items"
+              :key="opt.platform + ':' + opt.agent"
+              class="agent-item"
+              :class="{ 'is-active': modelValue.platform === opt.platform && modelValue.agent === opt.agent }"
+              @click="select(opt)"
+            >
+              {{ opt.label }}
+            </div>
+          </template>
+        </div>
+      </div>
+    </Teleport>
+  </div>
 </template>
 
 <style scoped>
-/* ── trigger 按钮 ── */
-.agent-selector-btn {
+.agent-selector {
+  display: inline-flex;
+  position: relative;
+}
+
+.agent-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 34px;
   padding: 0 10px;
-  border: 1px solid var(--color-border, rgba(0,0,0,0.06));
+  border: 1px solid #d0d7de;
   border-radius: 8px;
   background: transparent;
-  color: var(--color-text-secondary, #57606a);
+  color: #57606a;
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.2s, background 0.2s;
   user-select: none;
   flex-shrink: 0;
   font-family: inherit;
   margin: 0;
   outline: none;
+  transition: color 0.15s, background 0.15s;
 }
-.agent-selector-btn:hover,
-.agent-selector-btn:focus-visible {
-  color: var(--color-text-primary, #24292f);
-  background: var(--color-bg-overlay, rgba(0,0,0,0.04));
+.agent-btn:hover {
+  color: #24292f;
+  background: rgba(0, 0, 0, 0.04);
 }
-.agent-selector-btn.is-open {
-  color: var(--color-text-primary, #24292f);
-  background: var(--color-bg-overlay, rgba(0,0,0,0.06));
+.agent-btn.is-open {
+  color: #24292f;
+  background: rgba(0, 0, 0, 0.06);
+}
+.agent-btn.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.agent-label {
+.agent-btn__label {
   font-weight: 500;
   white-space: nowrap;
 }
 
-.agent-arrow {
+.agent-btn__arrow {
   flex-shrink: 0;
   opacity: 0.4;
   transition: transform 0.2s;
 }
-.is-open .agent-arrow {
+.agent-btn__arrow.is-open {
   transform: rotate(180deg);
 }
 </style>
 
 <!-- 下拉菜单挂载在 body 上，不能 scoped -->
 <style>
-/* ── 重置 el-tooltip__trigger（el-dropdown 自动添加的类）── */
-.agent-selector-btn.el-tooltip__trigger {
-  color: inherit;
-  background: inherit;
+.agent-dropdown-wrap {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
 }
-
-/* ── popper 容器 ── */
-.agent-dropdown-popper {
+.agent-overlay {
+  position: fixed;
+  inset: 0;
 }
-.agent-dropdown-popper .el-dropdown-menu {
-  border: 1px solid var(--color-border, rgba(0,0,0,0.08));
-  border-radius: 8px;
-  padding: 0;
+.agent-dropdown {
+  position: fixed;
+  z-index: 9999;
   min-width: 140px;
-  background: var(--color-bg-elevated, var(--el-bg-color));
-  overflow: hidden;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 4px 0;
 }
-.agent-dropdown-popper .el-dropdown-menu__item {
-  color: var(--color-text-secondary, #57606a);
-  margin: 0;
-  padding: 8px 12px;
-  line-height: 1.4;
-  font-size: 13px;
+.agent-divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: #d0d7de;
 }
-.agent-dropdown-popper .el-dropdown-menu__item:hover {
-  color: var(--color-text-primary, #24292f);
-  background: var(--color-bg-overlay, rgba(0,0,0,0.04));
-}
-
-/* 分组标题 */
-.agent-dropdown-popper .agent-group-header {
+.agent-group-label {
+  padding: 8px 12px 4px;
   font-size: 11px;
-  color: var(--color-text-tertiary, #8b949e);
+  color: #8b949e;
   letter-spacing: 0.5px;
-  padding: 8px 10px 2px;
-  cursor: default;
   line-height: 1;
 }
-.agent-dropdown-popper .agent-group-header:hover {
-  background: transparent;
-  color: var(--color-text-tertiary, #8b949e);
+.agent-item {
+  padding: 6px 12px;
+  color: #57606a;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
 }
-
-/* 分隔线 */
-.agent-dropdown-popper .el-dropdown-menu__item--divided::before {
-  margin: 0 4px;
-  border-color: var(--color-border, rgba(0,0,0,0.05));
+.agent-item:hover {
+  color: #24292f;
+  background: rgba(0, 0, 0, 0.04);
+}
+.agent-item.is-active {
+  color: #24292f;
+  font-weight: 600;
 }
 </style>
