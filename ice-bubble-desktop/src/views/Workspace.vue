@@ -43,9 +43,9 @@ const fallbackAgents: AgentOption[] = [
 ]
 
 // 判断是否为 primary agent（可出现在聊天页 AgentSelector 中）
-// OpenCode 全为 primary，OpenClaw 仅 main 为 primary
+// OpenCode 仅 build，OpenClaw 仅 main
 function isPrimaryAgent(a: { agent_id: string; platform?: string }): boolean {
-  if (a.platform === 'opencode') return true
+  if (a.platform === 'opencode') return a.agent_id === 'opencode:build'
   if (a.platform === 'openclaw') return a.agent_id === 'main'
   return false
 }
