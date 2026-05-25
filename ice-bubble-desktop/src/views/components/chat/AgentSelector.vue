@@ -50,6 +50,7 @@ const displayLabel = computed(() => {
   <el-dropdown trigger="click" :disabled="disabled" @command="select" @visible-change="(v: boolean) => isOpen = v" :popper-class="'agent-dropdown-popper'">
     <button class="agent-selector-btn" :class="{ 'is-open': isOpen }">
       <span class="agent-label">{{ displayLabel }}</span>
+      <span class="agent-platform">{{ modelValue.tag }}</span>
       <svg class="agent-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none">
         <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
@@ -81,6 +82,7 @@ const displayLabel = computed(() => {
   align-items: center;
   gap: 4px;
   height: 34px;
+  min-width: 120px;
   padding: 0 8px 0 12px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 8px;
@@ -111,6 +113,12 @@ const displayLabel = computed(() => {
 .agent-label {
   font-weight: 500;
   white-space: nowrap;
+}
+.agent-platform {
+  font-size: 10px;
+  color: #999;
+  white-space: nowrap;
+  margin-left: 2px;
 }
 
 .agent-arrow {
