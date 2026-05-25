@@ -16,6 +16,7 @@ import { request } from '../api/client'
 import AppFooter from '../components/AppFooter.vue'
 import PageHeader from '../components/PageHeader.vue'
 import ChatTimeline from './components/ChatTimeline.vue'
+import OpenCodeChatPanel from './components/chat/OpenCodeChatPanel.vue'
 import SessionList from './components/SessionList.vue'
 import { Loading } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
@@ -283,6 +284,7 @@ chatInputStore.bind(inputContextKey, inputText)
 const sending = ref(false)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const timelineRef = ref<InstanceType<typeof ChatTimeline> | null>(null)
+const openCodePanelRef = ref<InstanceType<typeof OpenCodeChatPanel> | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const dragOver = ref(false)
 
@@ -290,6 +292,7 @@ const dragOver = ref(false)
 // Agent 处理状态（从 ChatTimeline 暴露）
 // ============================================================
 const isAgentProcessing = computed(() => {
+  if (isOpenCodeMode.value) return false
   const r = timelineRef.value as any
   const v = r?.isProcessing
   return typeof v === 'object' && v !== null && 'value' in v ? v.value : !!v
@@ -426,9 +429,9 @@ async function sendMessage() {
       if (view.value !== 'chat') view.value = 'chat'
 
       // 添加消息到本地时间线
-      timelineRef.value?.addOptimisticMessage(text, 'user')
+      openCodePanelRef.value?.addOptimisticMessage(text, 'user')
       nextTick(() => {
-        timelineRef.value?.addOptimisticMessage(result.content, 'agent')
+        openCodePanelRef.value?.addOptimisticMessage(result.content, 'agent')
       })
       return
     }
@@ -591,8 +594,15 @@ const headerSubtitle = computed(() => {
             </div>
           </div>
 
-          <!-- 消息时间线（同一 key 保持挂载，防止消息丢失） -->
+          <!-- OpenCode 模式：独立消息面板 -->
+          <OpenCodeChatPanel
+            v-if="isOpenCodeMode"
+            ref="openCodePanelRef"
+            :session-id="openCodeSessionId"
+          />
+          <!-- OpenClaw 模式：消息时间线 -->
           <ChatTimeline
+            v-else
             ref="timelineRef"
             :key="timelineKey"
             :session-key="timelineSessionKey"
