@@ -82,10 +82,10 @@ const displayLabel = computed(() => {
   gap: 6px;
   height: 34px;
   padding: 0 10px;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  border: 1px solid var(--color-border, rgba(0,0,0,0.06));
   border-radius: 8px;
   background: transparent;
-  color: var(--color-text-secondary, rgba(255, 255, 255, 0.65));
+  color: var(--color-text-secondary, #57606a);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
@@ -98,12 +98,12 @@ const displayLabel = computed(() => {
 }
 .agent-selector-btn:hover,
 .agent-selector-btn:focus-visible {
-  color: var(--color-text-primary, rgba(255, 255, 255, 0.85));
-  background: var(--color-bg-overlay, rgba(255, 255, 255, 0.06));
+  color: var(--color-text-primary, #24292f);
+  background: var(--color-bg-overlay, rgba(0,0,0,0.04));
 }
 .agent-selector-btn.is-open {
-  color: var(--color-text-primary, rgba(255, 255, 255, 0.85));
-  background: var(--color-bg-overlay, rgba(255, 255, 255, 0.1));
+  color: var(--color-text-primary, #24292f);
+  background: var(--color-bg-overlay, rgba(0,0,0,0.06));
 }
 
 .agent-label {
@@ -131,35 +131,35 @@ const displayLabel = computed(() => {
 
 /* ── popper 容器 ── */
 .agent-dropdown-popper {
-  --el-dropdown-menuItem-hover-fill: var(--color-bg-overlay, rgba(255, 255, 255, 0.06));
-  --el-border-color-light: var(--color-border, rgba(255, 255, 255, 0.08));
+  --el-dropdown-menuItem-hover-fill: var(--color-bg-overlay, rgba(0,0,0,0.04));
+  --el-border-color-light: var(--color-border, rgba(0,0,0,0.05));
 }
 .agent-dropdown-popper .el-dropdown-menu {
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--color-border, rgba(0,0,0,0.05));
   border-radius: 8px;
   padding: 4px;
   min-width: 140px;
   background: var(--color-bg-elevated, var(--el-bg-color));
 }
 .agent-dropdown-popper .el-dropdown-menu__item {
-  color: var(--color-text-secondary, rgba(255, 255, 255, 0.7));
+  color: var(--color-text-secondary, #57606a);
   border-radius: 5px;
   padding: 7px 12px;
   line-height: 1.4;
   font-size: 13px;
 }
 .agent-dropdown-popper .el-dropdown-menu__item:hover {
-  color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
+  color: var(--color-text-primary, #24292f);
 }
 .agent-dropdown-popper .el-dropdown-menu__item.is-active {
-  color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
-  background: var(--color-bg-selected, rgba(255, 255, 255, 0.08));
+  color: var(--color-text-primary, #24292f);
+  background: var(--color-bg-selected, rgba(0,0,0,0.05));
 }
 
 /* 分组标题 */
 .agent-dropdown-popper .agent-group-header {
   font-size: 11px;
-  color: var(--color-text-tertiary, rgba(255, 255, 255, 0.45));
+  color: var(--color-text-tertiary, #8b949e);
   letter-spacing: 0.5px;
   padding: 8px 10px 2px;
   cursor: default;
@@ -167,12 +167,12 @@ const displayLabel = computed(() => {
 }
 .agent-dropdown-popper .agent-group-header:hover {
   background: transparent;
-  color: var(--color-text-tertiary, rgba(255, 255, 255, 0.45));
+  color: var(--color-text-tertiary, #8b949e);
 }
 
 /* 分隔线 */
 .agent-dropdown-popper .el-dropdown-menu__item--divided::before {
   margin: 0 4px;
-  border-color: var(--color-border, rgba(255, 255, 255, 0.08));
+  border-color: var(--color-border, rgba(0,0,0,0.05));
 }
 </style>
