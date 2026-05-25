@@ -417,6 +417,9 @@ async function sendMessage() {
   try {
     // ===== OpenCode 分支 =====
     if (isOpenCode) {
+      // 先添加用户消息（立即显示，不等待 API）
+      openCodePanelRef.value?.addOptimisticMessage(text, 'user')
+
       const result = await sendOpenCodeChat({
         agent: selectedAgent.value.agent as 'build' | 'plan',
         message: text,
@@ -428,11 +431,8 @@ async function sendMessage() {
       // 如果是首次创建会话，切换视图
       if (view.value !== 'chat') view.value = 'chat'
 
-      // 添加消息到本地时间线
-      openCodePanelRef.value?.addOptimisticMessage(text, 'user')
-      nextTick(() => {
-        openCodePanelRef.value?.addOptimisticMessage(result.content, 'agent')
-      })
+      // 添加 agent 回复
+      openCodePanelRef.value?.addOptimisticMessage(result.content, 'agent')
       return
     }
 
