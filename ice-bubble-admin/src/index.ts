@@ -8,6 +8,7 @@ import express from 'express';
 import { config } from 'dotenv';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import rateLimit from 'express-rate-limit';
 import { logger } from './utils/index.js';
 import { ModuleScheduler } from './modules/module-scheduler.js';
 import { createModulesRouter } from './api/modules.js';
@@ -83,6 +84,11 @@ interface GatewayConfig {
   token?: string;
 }
 
+interface CorsConfig {
+  enabled?: boolean;
+  origins?: string[];
+}
+
 interface AppConfig {
   server?: ServerConfig;
   modules?: ModuleConfig[];
@@ -90,6 +96,7 @@ interface AppConfig {
   dataSyncOpencode?: DataSyncOpencodeConfig;
   auth?: { token?: string };
   gateway?: GatewayConfig;
+  cors?: CorsConfig;
 }
 
 let configData: AppConfig;
@@ -158,19 +165,65 @@ async function bootstrapModules(
  */
 export async function startAdmin(): Promise<void> {
     const app = express();
-    app.use(express.json());
+    app.use(express.json({ limit: '10mb' }));
+    app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-    // CORS middleware — 允许外部访问（开发/内网阶段）
-    app.use((_req, res, next) => {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+    // CORS middleware — 基于配置收紧 origin
+    const corsOrigins = configData.cors?.origins;
+    const corsOriginAllowed = corsOrigins && corsOrigins.length > 0;
+    app.use((req, res, next) => {
+      if (corsOriginAllowed && corsOrigins) {
+        const origin = req.headers.origin;
+        if (origin && corsOrigins.includes(origin)) {
+          res.setHeader('Access-Control-Allow-Origin', origin);
+        }
+      } else {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      }
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      if (_req.method === 'OPTIONS') {
+      if (req.method === 'OPTIONS') {
         res.status(200).end();
         return;
       }
       next();
     });
+
+    // 速率限制：未认证请求 60 req/min per IP
+    const getClientIp = (req: express.Request): string => {
+      return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+    };
+    const unauthLimiter = rateLimit({
+      windowMs: 60 * 1000,
+      max: 60,
+      keyGenerator: (req) => getClientIp(req),
+      handler: (_req, res) => {
+        res.setHeader('Retry-After', '60');
+        res.status(429).json({ error: 'Too Many Requests' });
+      },
+    });
+    // 速率限制：已认证请求 300 req/min per token
+    const authLimiter = rateLimit({
+      windowMs: 60 * 1000,
+      max: 300,
+      keyGenerator: (req) => {
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+          return `token:${authHeader.slice(7)}`;
+        }
+        return getClientIp(req);
+      },
+      skip: (req) => {
+        // 仅对无 Bearer Token 的请求跳过（由 unauthLimiter 处理）
+        return !req.headers.authorization?.startsWith('Bearer ');
+      },
+      handler: (_req, res) => {
+        res.setHeader('Retry-After', '60');
+        res.status(429).json({ error: 'Too Many Requests' });
+      },
+    });
+    app.use(unauthLimiter);
+    app.use(authLimiter);
 
     // Resolve auth token ONCE — avoid multiple getAuthToken() calls generating different tokens
     const authToken = getAuthToken(configData.auth?.token);
