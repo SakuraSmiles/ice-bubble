@@ -27,6 +27,8 @@ import { SSEManager } from './server/chat/sse-manager.js';
 
 import { ChatController } from './server/chat/controller.js';
 import { AttachmentStorage } from './server/chat/attachment-storage.js';
+import { OpenCodeHttpClient } from './server/chat/opencode-client.js';
+import { createOpenCodeChatRouter } from './api/opencode-chat.js';
 import { GatewayProxy } from './gateway/index.js';
 import { GatewayWsServer } from './gateway/ws-server.js';
 import { createChatProxyRouter, createSessionProxyRouter } from './api/chat-proxy.js';
@@ -96,6 +98,11 @@ interface CorsConfig {
   origins?: string[];
 }
 
+interface OpenCodeConfig {
+  serveUrl?: string;
+  enabled?: boolean;
+}
+
 interface AppConfig {
   server?: ServerConfig;
   modules?: ModuleConfig[];
@@ -104,6 +111,7 @@ interface AppConfig {
   auth?: { token?: string };
   gateway?: GatewayConfig;
   cors?: CorsConfig;
+  opencode?: OpenCodeConfig;
 }
 
 let configData: AppConfig;
@@ -461,6 +469,23 @@ export async function startAdmin(): Promise<void> {
         });
     }
 
+    // ── OpenCode Chat Client ──
+    const opencodeConfig = configData.opencode;
+    let opencodeClient: OpenCodeHttpClient | null = null;
+    if (opencodeConfig?.enabled !== false) {
+      const serveUrl = opencodeConfig?.serveUrl || 'http://localhost:4097';
+      opencodeClient = new OpenCodeHttpClient({ baseUrl: serveUrl });
+
+      const healthy = await opencodeClient.healthCheck().catch(() => false);
+      if (healthy) {
+        logger.info(`[Admin] OpenCode client connected at ${serveUrl}`);
+      } else {
+        logger.warn(`[Admin] OpenCode is not reachable at ${serveUrl} — routes will still be registered`);
+      }
+    } else {
+      logger.info('[Admin] OpenCode chat is disabled in config');
+    }
+
     // 注册 API 路由
     // IMPORTANT: Unified sessions route must be BEFORE data router,
     // because data router's /sessions/:key would match /sessions/unified
@@ -485,6 +510,12 @@ export async function startAdmin(): Promise<void> {
     app.use('/api', createSessionPreferencesRouter({ db: dbManager.getConnection() }));
     app.use('/api', createWorkspaceRouter());
     app.use('/api', createSettingsRouter());
+
+    // OpenCode chat routes (if client is available)
+    if (opencodeClient) {
+      app.use('/api/opencode', createOpenCodeChatRouter(opencodeClient));
+      logger.info('[Admin] OpenCode chat routes registered at /api/opencode');
+    }
 
     // ── Chat Gateway Integration (B7) ──
     // Uses the same GatewayProxy as WebSocket proxy (single connection to Gateway).
