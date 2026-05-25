@@ -144,7 +144,8 @@ const displayLabel = computed(() => {
 .agent-dropdown-popper .el-dropdown-menu__item {
   color: var(--color-text-secondary, #57606a);
   border-radius: 5px;
-  padding: 7px 12px;
+  margin: 2px 4px;
+  padding: 7px 8px;
   line-height: 1.4;
   font-size: 13px;
 }
