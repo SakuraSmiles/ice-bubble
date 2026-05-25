@@ -191,14 +191,7 @@ watch(selectedAgent, async (newAgent, oldAgent) => {
     router.push('/workspace/' + encodeURIComponent(agentSessionMap[key]));
     return;
   }
-  // OpenCode 模式：不需要 Gateway sessionKey，直接进入空聊天
-  if (newAgent.platform === 'opencode') {
-    // 无会话状态，显示空聊天
-    openCodeSessionId.value = undefined;
-    view.value = 'opencode-new';
-    return;
-  }
-  // OpenClaw 模式：加载该 agent 的最近一次会话
+  // OpenCode/OpenClaw 都尝试加载该 agent 的最近一次会话
   await loadRecentSession(newAgent);
 });
 
@@ -243,12 +236,6 @@ async function loadRecentSession(agent: AgentOption) {
 // /chat 路由自动跳转到 main agent 的 direct session
 async function autoRedirectChat() {
   const agent = selectedAgent.value;
-  // OpenCode 模式：直接进入空聊天
-  if (agent.platform === 'opencode') {
-    openCodeSessionId.value = undefined;
-    view.value = 'opencode-new';
-    return;
-  }
 
   const agentKey = getAgentKey(agent);
   // 1. 优先读缓存
@@ -265,7 +252,7 @@ async function autoRedirectChat() {
     }
   }
 
-  // 2. 无缓存 → 加载最近会话
+  // 2. 无缓存 → 加载最近会话（OpenCode/OpenClaw 统一处理）
   await loadRecentSession(agent);
 }
 
