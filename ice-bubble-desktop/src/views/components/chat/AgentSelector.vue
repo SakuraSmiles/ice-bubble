@@ -82,7 +82,7 @@ const displayLabel = computed(() => {
   align-items: center;
   gap: 4px;
   height: 34px;
-  min-width: 120px;
+  min-width: 150px;
   padding: 0 8px 0 12px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 8px;
