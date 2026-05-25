@@ -28,6 +28,7 @@ export interface TimelineMessage {
   streamRunId?: string;
   streamState?: 'thinking' | 'streaming' | 'complete' | 'error' | 'aborted';
   toolCalls?: ToolCallEntry[];
+  is_turn_failed?: boolean;
   attachments?: Array<{
     type: string;
     mimeType: string;

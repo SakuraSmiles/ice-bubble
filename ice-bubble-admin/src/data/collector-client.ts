@@ -55,11 +55,13 @@ export interface CollectorStats {
 
 export interface GetSessionsResponse {
     count: number;
+    max_time_updated?: number;
     sessions: CollectorSession[];
 }
 
 export interface GetMessagesResponse {
     count: number;
+    max_time_updated?: number;
     messages: CollectorMessage[];
 }
 

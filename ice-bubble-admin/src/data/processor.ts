@@ -10,7 +10,7 @@ import type { CollectorSession, CollectorMessage } from './collector-client.js';
 /**
  * 处理 session 行，添加溯源字段
  */
-export function processSession(row: CollectorSession, sourceModule: string): AdminSession {
+export function processSession(row: CollectorSession, sourceModule: string, platform: string): AdminSession {
   return {
     session_key: row.session_key,
     source_module: sourceModule,
@@ -28,6 +28,7 @@ export function processSession(row: CollectorSession, sourceModule: string): Adm
     model_provider: row.model_provider ?? null,
     spawned_by: row.spawned_by ?? null,
     spawn_depth: row.spawn_depth ?? null,
+    platform,
   };
 }
 
@@ -43,7 +44,7 @@ function isSubagentSystemContent(content: string | null): boolean {
  * 处理 message 行，添加溯源字段
  * 系统上下文消息（subagent 事件）标记 is_system_context=1，content 清空
  */
-export function processMessage(row: CollectorMessage, sourceModule: string): AdminMessage {
+export function processMessage(row: CollectorMessage, sourceModule: string, platform: string): AdminMessage {
   const rawContent = row.content ?? null;
   const systemContext = isSubagentSystemContent(rawContent);
 
@@ -80,5 +81,6 @@ export function processMessage(row: CollectorMessage, sourceModule: string): Adm
     source_created_at: row.created_at ?? null,
     ...(tool_name != null ? { tool_name } : {}),
     ...(tool_input != null ? { tool_input } : {}),
+    platform,
   };
 }

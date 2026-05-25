@@ -24,6 +24,8 @@ export interface SessionDTO {
   session_key: string;
   agent_id: string;
   agent_name: string | null;
+  /** 平台来源: 'openclaw' | 'opencode' */
+  platform?: string;
   channel: string;
   message_count: number;
   first_message_at: string | null;
@@ -132,6 +134,8 @@ export type AgentStatus = '失联' | '工作' | '工作中' | '活跃' | '休假
 export interface AgentDTO {
   agent_id: string;
   agent_name: string | null;
+  /** 平台来源: 'openclaw' | 'opencode' */
+  platform?: string;
   workspace: string | null;
   session_count: number;
   message_count: number;
@@ -345,7 +349,7 @@ export const api = {
   },
 
   // 会话
-  getSessions: (params?: { limit?: number; offset?: number }) => {
+  getSessions: (params?: { limit?: number; offset?: number; platform?: string }) => {
     const query = params ? '?' + new URLSearchParams(
       Object.entries(params).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {})
     ).toString() : '';

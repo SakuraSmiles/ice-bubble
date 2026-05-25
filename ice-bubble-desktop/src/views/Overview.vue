@@ -7,7 +7,6 @@ import {
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import { api, request } from '../api/client';
-import { gatewayClient } from '@/services/gateway-client';
 import type { ModuleDTO, TimelineResponseDTO } from '../api/client';
 // 子组件
 import StatusDropdown from './components/StatusDropdown.vue';
@@ -16,6 +15,10 @@ import RecentSessions from './components/RecentSessions.vue';
 // =========== 数据状态卡片 ===========
 
 // =========== 统计卡片 ===========
+
+const statsError = ref('');
+let statsFailCount = 0;
+let dataStatusFailCount = 0;
 
 interface StatsData {
   sessionCount: number;
@@ -30,10 +33,14 @@ const statsData = ref<StatsData | null>(null);
 async function fetchStats(): Promise<void> {
   try {
     const res = await request('/stats');
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(String(res.status));
     statsData.value = await res.json();
-  } catch {
-    // silent
+    statsFailCount = 0;
+  } catch (e) {
+    statsFailCount++;
+    if (statsFailCount >= 3) {
+      statsError.value = '统计数据获取失败，请检查 Admin 服务';
+    }
   }
 }
 
@@ -65,11 +72,15 @@ function extractDataStatus(data: TimelineResponseDTO): void {
 async function fetchDataStatus(): Promise<void> {
   try {
     const res = await request('/messages/timeline?limit=1');
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(String(res.status));
     const data: TimelineResponseDTO = await res.json();
     extractDataStatus(data);
+    dataStatusFailCount = 0;
   } catch {
-    // 静默忽略，等待下次轮询
+    dataStatusFailCount++;
+    if (dataStatusFailCount >= 3) {
+      statsError.value = '数据状态获取失败，请检查 Admin 服务';
+    }
   }
 }
 
@@ -89,22 +100,22 @@ let tickCounter = 0; // 每 tick 自增，用于内部分频
 
 function startPolling(): void {
   const interval = document.visibilityState === 'hidden' ? 30000 : 10000;
-  pollTimer = setInterval(() => {
+  pollTimer = setInterval(async () => {
     if (pollPending) return;
-    tickCounter++;
-    // 10s 任务（近似原 5s）：refreshData + refreshModules（每 tick）
     pollPending = true;
-    refreshData();
-    refreshModules().finally(() => { pollPending = false; });
-    // 30s 任务：fetchAgentOverview + fetchDataStatus + fetchStats（每 3 ticks）
+    tickCounter++;
+
+    const tasks: Promise<void>[] = [
+      refreshModules(),
+    ];
+
     if (tickCounter % 3 === 0) {
-      pollPending = true;
-      fetchAgentOverview();
-      pollPending = true;
-      fetchDataStatus().finally(() => { pollPending = false; });
-      pollPending = true;
-      fetchStats().finally(() => { pollPending = false; });
+      tasks.push(fetchDataStatus(), fetchStats());
     }
+
+    refreshData();
+    await Promise.allSettled(tasks);
+    pollPending = false;
   }, interval);
 }
 
@@ -132,22 +143,15 @@ async function refreshModules(): Promise<void> {
 
 // =========== 数据获取 ===========
 
-async function fetchAgentOverview() {
-  try {
-    await api.getAgents();
-  } catch (e) { console.error('获取 Agent 概览失败', e); }
-}
-
 async function fetchAll(isLoading: boolean = false) {
   if (isLoading) loading.value = true;
-  await Promise.all([refreshModules(), fetchAgentOverview()]);
+  await refreshModules();
   if (isLoading) loading.value = false;
 }
 
 const loading = ref(false);
 
 // =========== Gateway 事件取消订阅 ===========
-let unsubSessionMsg: (() => void) | null = null;
 
 onMounted(() => {
   refreshData();
@@ -156,26 +160,11 @@ onMounted(() => {
   fetchStats();
   startPolling();
   document.addEventListener('visibilitychange', onVisibilityChange);
-
-  // Gateway 实时事件：新消息到达时让 ChatTimeline 组件通过内部监听更新
-  // ChatTimeline（via RecentSessions）内部已监听 session.message 事件
-  // 这里只监听 sessions.changed 来触发 agent overview 的增量刷新
-  gatewayClient.on('sessions.changed', () => {
-    // 会话列表变化时刷新 agent 概览（不阻塞）
-    fetchAgentOverview();
-  });
-
-  // 监听 session.message 触发 agent 状态刷新
-  unsubSessionMsg = gatewayClient.on('session.message', () => {
-    // 新消息到达，刷新 agent 概览以更新 latest_message
-    fetchAgentOverview();
-  });
 });
 
 onUnmounted(() => {
   stopPolling();
   document.removeEventListener('visibilitychange', onVisibilityChange);
-  if (unsubSessionMsg) { unsubSessionMsg(); unsubSessionMsg = null; }
 });
 </script>
 
@@ -188,6 +177,12 @@ onUnmounted(() => {
         :data-status="dataStatus"
       />
     </PageHeader>
+
+    <!-- 错误警告 -->
+    <div v-if="statsError" class="stats-warning">
+      ⚠️ {{ statsError }}
+      <button @click="statsError = ''; statsFailCount = 0; dataStatusFailCount = 0; fetchStats(); fetchDataStatus();">重试</button>
+    </div>
 
     <!-- 统计卡片 -->
     <div class="stats-row">
@@ -300,5 +295,25 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
+.stats-warning {
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+  padding: 8px 16px;
+  border-radius: 4px;
+  margin: 8px 24px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.stats-warning button {
+  background: none;
+  border: 1px solid var(--el-color-warning);
+  color: var(--el-color-warning-dark-2);
+  padding: 2px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
 
 </style>

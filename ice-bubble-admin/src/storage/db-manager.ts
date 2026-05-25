@@ -1028,6 +1028,39 @@ export class DBManager {
         `);
         logger.info('Migration v24: added summary columns to admin_sessions');
         break;
+ case 26: {
+        // v26: 给 admin_tool_calls 表添加 platform 列
+        const tableInfo = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='admin_tool_calls'").get();
+        if (!tableInfo) {
+          logger.warn('Migration v26: admin_tool_calls table does not exist, skipping');
+          break;
+        }
+        const colInfo = this.db.prepare('PRAGMA table_info(admin_tool_calls)').all() as Array<{ name: string }>;
+        if (!colInfo.some(col => col.name === 'platform')) {
+          this.db.exec(`ALTER TABLE admin_tool_calls ADD COLUMN platform TEXT NOT NULL DEFAULT 'openclaw';`);
+          logger.info('Migration v26: added platform column to admin_tool_calls');
+        } else {
+          logger.info('Migration v26: platform column already exists in admin_tool_calls, skipping');
+        }
+        break;
+ }
+      case 25: {
+        // v25: 多平台支持 — 给 admin_sessions / admin_messages / admin_agents 添加 platform 列
+        const tables = ['admin_sessions', 'admin_messages', 'admin_agents'];
+        for (const table of tables) {
+          const colInfo = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+          if (!colInfo.some(col => col.name === 'platform')) {
+            this.db.exec(`ALTER TABLE ${table} ADD COLUMN platform TEXT NOT NULL DEFAULT 'openclaw';`);
+            logger.info(`Migration v25: added platform column to ${table}`);
+          } else {
+            logger.info(`Migration v25: platform column already exists in ${table}, skipping`);
+          }
+        }
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_sessions_platform ON admin_sessions(platform);`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_messages_platform ON admin_messages(platform);`);
+        logger.info('Migration v25: added platform indexes on admin_sessions and admin_messages');
+        break;
+ }
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

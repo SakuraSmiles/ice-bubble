@@ -17,19 +17,20 @@ export interface DataSyncConfig {
     collectorBaseUrl: string;
     /** 模块标识（用于 source 字段） */
     moduleKey: string;
+    /** 平台标识（用于 platform 字段区分数据来源） */
+    platform: string;
     /** 轮询间隔（毫秒） */
     pollInterval: number;
     /** 批量大小 */
     batchSize: number;
-
 }
 
 const DEFAULT_CONFIG: DataSyncConfig = {
     collectorBaseUrl: 'http://localhost:13100',
     moduleKey: 'unknown',
+    platform: 'openclaw',
     pollInterval: 60000,
     batchSize: 500,
-
 };
 
 export class DataSync {
@@ -38,14 +39,15 @@ export class DataSync {
     private repository: DataRepository;
     private timer: ReturnType<typeof setInterval> | null = null;
     private isRunning: boolean = false;
+    /** 同步进度 key 前缀，避免多实例共享同一个 sync_progress 记录 */
+    private readonly syncKeyPrefix: string;
 
 
     constructor(config: Partial<DataSyncConfig>, repository: DataRepository) {
         this.config = { ...DEFAULT_CONFIG, ...config };
         this.client = new CollectorClient({ baseUrl: this.config.collectorBaseUrl });
         this.repository = repository;
-
-
+        this.syncKeyPrefix = `${this.config.moduleKey}:`;
     }
 
     // ========== 生命周期 ==========
@@ -70,7 +72,7 @@ export class DataSync {
             });
         }, this.config.pollInterval);
 
-        logger.info(`[DataSync] Started (collector: ${this.config.collectorBaseUrl}, poll: ${this.config.pollInterval}ms)`);
+        logger.info(`[DataSync:${this.config.moduleKey}] Started (collector: ${this.config.collectorBaseUrl}, platform: ${this.config.platform}, poll: ${this.config.pollInterval}ms)`);
     }
 
     /**
@@ -82,27 +84,27 @@ export class DataSync {
             this.timer = null;
         }
         this.isRunning = false;
-        logger.info('[DataSync] Stopped');
+        logger.info(`[DataSync:${this.config.moduleKey}] Stopped`);
     }
 
     /**
      * 手动触发一次完整同步
      */
     async syncAll(): Promise<void> {
-        logger.info('[DataSync] Starting sync...');
+        logger.info(`[DataSync:${this.config.moduleKey}] Starting sync...`);
         const start = Date.now();
 
         try {
             await Promise.all([
-                this.syncSessions(this.config.moduleKey),
-                this.syncAgents(this.config.moduleKey),
-                this.syncMessages(this.config.moduleKey),
+                this.syncSessions(),
+                this.syncAgents(),
+                this.syncMessages(),
                 this.syncModelEvents(),
             ]);
 
-            logger.info(`[DataSync] Sync completed in ${Date.now() - start}ms`);
+            logger.info(`[DataSync:${this.config.moduleKey}] Sync completed in ${Date.now() - start}ms`);
         } catch (error) {
-            logger.error('[DataSync] Sync failed', { error });
+            logger.error(`[DataSync:${this.config.moduleKey}] Sync failed`, { error });
         }
     }
 
@@ -113,10 +115,9 @@ export class DataSync {
      *
      * 从 collector API 获取 sessions 列表，添加溯源字段后存入 admin 数据库
      */
-    private async syncSessions(sourceModule: string): Promise<void> {
+    private async syncSessions(): Promise<void> {
         try {
-            // 获取上次同步时间，用于增量查询
-            const lastSync = this.repository.getSyncProgress('admin_sessions');
+            const lastSync = this.repository.getSyncProgress(`${this.syncKeyPrefix}admin_sessions`);
             const since = lastSync?.last_sync_time ?? undefined;
 
             let totalSynced = 0;
@@ -129,14 +130,18 @@ export class DataSync {
                 if (data.sessions.length === 0) break;
 
                 // 添加溯源字段
-                const processed = data.sessions.map(row => processSession(row, sourceModule));
+                const processed = data.sessions.map(row => processSession(row, this.config.moduleKey, this.config.platform));
 
                 // 批量保存
                 this.repository.saveSessions(processed);
                 totalSynced += processed.length;
 
-                // 更新同步进度
-                this.repository.updateSyncProgress('admin_sessions');
+                // 使用实际数据时间戳更新游标
+                const maxTs = data.max_time_updated;
+                this.repository.updateSyncProgress(
+                    `${this.syncKeyPrefix}admin_sessions`,
+                    maxTs != null ? String(maxTs) : undefined,
+                );
 
                 // 如果返回数量少于请求数量，说明已经获取完毕
                 if (data.sessions.length < limit) break;
@@ -145,10 +150,10 @@ export class DataSync {
             }
 
             if (totalSynced > 0) {
-                logger.info(`[DataSync] Synced ${totalSynced} sessions`);
+                logger.info(`[DataSync:${this.config.moduleKey}] Synced ${totalSynced} sessions`);
             }
         } catch (error) {
-            logger.error('[DataSync] Failed to sync sessions', { error });
+            logger.error(`[DataSync:${this.config.moduleKey}] Failed to sync sessions`, { error });
         }
     }
 
@@ -157,14 +162,14 @@ export class DataSync {
      *
      * 从 Collector API 获取 openclaw.json 中的 agent 配置，与 sessions 聚合数据合并
      */
-    private async syncAgents(sourceModule: string): Promise<void> {
+    private async syncAgents(): Promise<void> {
         try {
             const collectorAgents = await this.client.getAgents();
-            this.repository.refreshAgents(collectorAgents, sourceModule);
-            this.repository.updateSyncProgress('admin_agents');
-            logger.info(`[DataSync] Agents refreshed (${collectorAgents.length} from collector, source=${sourceModule})`);
+            this.repository.refreshAgents(collectorAgents, this.config.moduleKey, this.config.platform);
+            this.repository.updateSyncProgress(`${this.syncKeyPrefix}admin_agents`);
+            logger.info(`[DataSync:${this.config.moduleKey}] Agents refreshed (${collectorAgents.length} from collector, source=${this.config.moduleKey})`);
         } catch (error) {
-            logger.error('[DataSync] Failed to sync agents', { error });
+            logger.error(`[DataSync:${this.config.moduleKey}] Failed to sync agents`, { error });
         }
     }
 
@@ -173,9 +178,9 @@ export class DataSync {
      *
      * 从 collector API 获取 messages 列表，添加溯源字段后存入 admin 数据库
      */
-    private async syncMessages(sourceModule: string): Promise<void> {
+    private async syncMessages(): Promise<void> {
         try {
-            const lastSync = this.repository.getSyncProgress('admin_messages');
+            const lastSync = this.repository.getSyncProgress(`${this.syncKeyPrefix}admin_messages`);
             const since = lastSync?.last_sync_time ?? undefined;
 
             let totalSynced = 0;
@@ -193,11 +198,17 @@ export class DataSync {
 
                 if (data.messages.length === 0) break;
 
-                const processed = data.messages.map(row => processMessage(row, sourceModule));
-                this.repository.saveMessages(processed);
-                totalSynced += processed.length;
+                const processed = data.messages.map(row => processMessage(row, this.config.moduleKey, this.config.platform));
+                const newlyInserted = this.repository.saveMessages(processed);
+                totalSynced += newlyInserted;
+                if (newlyInserted === 0 && offset > 0) break; // 安全退出：去重后无新增
 
-                this.repository.updateSyncProgress('admin_messages');
+                // 使用实际数据时间戳更新游标
+                const maxTs = data.max_time_updated;
+                this.repository.updateSyncProgress(
+                    `${this.syncKeyPrefix}admin_messages`,
+                    maxTs != null ? String(maxTs) : undefined,
+                );
 
                 allRawMessages.push(...data.messages);
 
@@ -231,7 +242,7 @@ export class DataSync {
             }
 
             if (totalSynced > 0) {
-                logger.info(`[DataSync] Synced ${totalSynced} messages, activity records: ${allActivityMap.size}`);
+                logger.info(`[DataSync:${this.config.moduleKey}] Synced ${totalSynced} messages, activity records: ${allActivityMap.size}`);
             }
 
             // 增量统计计算：仅对本次同步涉及的 sessions / agents 更新
@@ -249,7 +260,7 @@ export class DataSync {
 
 
         } catch (error) {
-            logger.error('[DataSync] Failed to sync messages', { error });
+            logger.error(`[DataSync:${this.config.moduleKey}] Failed to sync messages`, { error });
         }
     }
 
@@ -260,7 +271,7 @@ export class DataSync {
      */
     private async syncModelEvents(): Promise<void> {
         try {
-            const lastSync = this.repository.getSyncProgress('admin_model_events');
+            const lastSync = this.repository.getSyncProgress(`${this.syncKeyPrefix}admin_model_events`);
             const since = lastSync?.last_sync_time ?? undefined;
 
             let totalSynced = 0;
@@ -283,17 +294,17 @@ export class DataSync {
                 this.repository.saveModelEvents(processed);
                 totalSynced += processed.length;
 
-                this.repository.updateSyncProgress('admin_model_events');
+                this.repository.updateSyncProgress(`${this.syncKeyPrefix}admin_model_events`);
 
                 if (data.events.length < limit) break;
                 offset += limit;
             }
 
             if (totalSynced > 0) {
-                logger.info(`[DataSync] Synced ${totalSynced} model events`);
+                logger.info(`[DataSync:${this.config.moduleKey}] Synced ${totalSynced} model events`);
             }
         } catch (error) {
-            logger.error('[DataSync] Failed to sync model events', { error });
+            logger.error(`[DataSync:${this.config.moduleKey}] Failed to sync model events`, { error });
         }
     }
 

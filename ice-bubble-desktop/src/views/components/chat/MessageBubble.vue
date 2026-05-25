@@ -135,6 +135,12 @@ function previewImage(src: string) {
         <!-- 工具调用实时展示 -->
         <ToolCallBadge v-if="group.messages[0]?.toolCalls?.length" :tool-calls="group.messages[0].toolCalls" />
 
+        <div v-if="group.messages.some(m => m.is_turn_failed)" class="turn-failed-bubble">
+          <div class="turn-failed-icon">⚠️</div>
+          <div class="turn-failed-text">AI 回复生成失败</div>
+          <div class="turn-failed-hint">刷新页面可重新生成回复</div>
+        </div>
+        <template v-else>
         <div class="bubble-text" v-for="(item, mi) in messagesWithMedia" :key="mi">
           <MarkdownContent :content="item.displayContent" />
           <div v-if="item.mediaUrls.length > 0" class="media-gallery">
@@ -162,6 +168,7 @@ function previewImage(src: string) {
           <span v-if="item.message.streamState === 'streaming'" class="streaming-cursor">▊</span>
           <div v-if="item.message.streamState === 'aborted'" class="aborted-indicator">已停止生成</div>
         </div>
+        </template>
 
         <!-- 工具消息折叠 -->
         <details v-if="group.toolMsgs.length > 0 && group.messages[0]?.streamState !== 'streaming' && group.messages[0]?.streamState !== 'thinking'" class="tool-details">
@@ -424,6 +431,18 @@ function previewImage(src: string) {
   max-width: 320px;
   max-height: 320px;
 }
+
+/* turn-failed 气泡 */
+.turn-failed-bubble {
+  background: var(--el-color-danger-light-9, #fef0f0);
+  border: 1px solid var(--el-color-danger-light-7, #fbc4c4);
+  border-radius: 8px;
+  padding: 12px 16px;
+  text-align: center;
+}
+.turn-failed-icon { font-size: 20px; margin-bottom: 4px; }
+.turn-failed-text { color: var(--el-color-danger, #f56c6c); font-size: 13px; font-weight: 500; }
+.turn-failed-hint { color: var(--el-color-text-secondary, #909399); font-size: 12px; margin-top: 4px; opacity: 0.7; }
 
 /* 图片占位文字 */
 .image-placeholder-text {

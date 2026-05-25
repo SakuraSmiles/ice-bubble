@@ -140,7 +140,7 @@ function getDisplayStatus(mod: Module): { label: string; type: string } {
     case 'running': return { label: '运行中', type: 'success' };
     case 'error': return { label: '异常', type: 'danger' };
     case 'stopped': return { label: '已停止', type: 'warning' };
-    default: return { label: '运行中', type: 'success' }; // 默认为运行中
+    default: return { label: '连接中...', type: 'warning' };
   }
 }
 
@@ -581,8 +581,10 @@ onUnmounted(() => {
 
 .module-card {
   width: 360px;
-  cursor: pointer;
   transition: box-shadow 200ms ease, transform 200ms ease;
+}
+.info-rows {
+  cursor: pointer;
 }
 .module-card:hover {
   box-shadow: var(--ib-card-hover-shadow);

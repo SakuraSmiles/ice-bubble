@@ -315,8 +315,9 @@ export function createDataRouter(config: DataRouterConfig): Router {
     const offset = parseInt(String(req.query.offset ?? '0'));
     const agent_id = req.query.agent_id ? String(req.query.agent_id) : undefined;
     const channel = req.query.channel ? String(req.query.channel) : undefined;
+    const platform = req.query.platform ? String(req.query.platform) : undefined;
 
-    const result = repository.getSessions({ limit, offset, agent_id, channel });
+    const result = repository.getSessions({ limit, offset, agent_id, channel, platform });
 
     // Build agent name lookup map
     const agents = repository.getAgents();
@@ -718,6 +719,7 @@ export function createDataRouter(config: DataRouterConfig): Router {
       FROM admin_sessions
       WHERE session_key NOT LIKE '%.trajectory'
         AND session_key NOT LIKE '%.checkpoint'
+        AND session_key NOT LIKE 'agent:daily-reporter:%'
         AND message_count > 1
         AND last_message_at >= datetime('now', '-7 days')
         AND (summary IS NULL OR last_message_at > summary_updated_at)

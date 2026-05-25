@@ -42,6 +42,11 @@ export function useChatData(getSessionKey: () => string | undefined) {
     return Math.abs(hash);
   }
 
+  function isAssistantTurnFailed(content: string | null): boolean {
+    if (!content) return false;
+    return /\[assistant turn failed[^\]]*\]/i.test(content);
+  }
+
   function isSystemNoise(content: string | null | undefined): boolean {
     if (!content) return true;
     const trimmed = content.trim();
@@ -196,6 +201,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
       content_summary: null,
       is_cron: false,
       is_system_noise: false,
+      is_turn_failed: isAssistantTurnFailed(content),
       is_system_context: 0,
       source_channel: 'webchat',
       model: model || null,
@@ -333,6 +339,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
       const newMsgs = data.messages.map(m => ({
         ...m, id: `admin_${m.id}`,
         clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+        is_turn_failed: isAssistantTurnFailed(m.clean_content || m.content),
       })).filter(m => !knownIds.has(m.id)).filter(m => !isTimelineSystemNoise(m));
       if (newMsgs.length === 0) { hasMore.value = data.has_more; break; }
       newMsgs.forEach(m => knownIds.add(m.id));
@@ -384,6 +391,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
               ...m,
               id: `admin_${m.id}`,
               clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+              is_turn_failed: isAssistantTurnFailed(m.clean_content || m.content),
             }));
             return { msgs, has_more: data.has_more };
           }
@@ -447,6 +455,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
       const adminMsgs = data.messages.map(m => ({
         ...m, id: `admin_${m.id}`,
         clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+        is_turn_failed: isAssistantTurnFailed(m.clean_content || m.content),
       })).filter(m => !isTimelineSystemNoise(m));
 
       const idFiltered = adminMsgs.filter(m => !knownIds.has(m.id));

@@ -1,0 +1,42 @@
+{
+  "name": "@ice-bubble/collector-opencode",
+  "version": "0.1.0",
+  "description": "OpenCode 数据采集服务 - 从 OpenCode SQLite 数据库采集 Session 和 Message 数据",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/start.ts",
+    "build": "tsc",
+    "start": "node dist/start.js",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "rebuild": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "opencode",
+    "collector",
+    "sqlite",
+    "session",
+    "agent"
+  ],
+  "author": "ice-bubble team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.0",
+    "dotenv": "^16.4.0",
+    "express": "^5.2.1",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.11.0",
+    "rimraf": "^5.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  },
+  "type": "module"
+}

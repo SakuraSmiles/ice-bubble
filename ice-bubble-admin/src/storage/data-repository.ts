@@ -31,6 +31,7 @@ export interface AdminSession {
   model_provider: string | null;
   spawned_by: string | null;
   spawn_depth: number | null;
+  platform: string;
 }
 
 export interface AdminMessage {
@@ -50,6 +51,7 @@ export interface AdminMessage {
   timestamp: string;
   created_at: string;
   source_created_at: string | null;
+  platform?: string;
 }
 
 /**
@@ -88,6 +90,7 @@ export interface AdminAgent {
   model: string | null;
   avatar: string | null;
   source: string; // 采集器/平台来源，如 'openclaw'
+  platform?: string;
   updated_at: string;
 }
 
@@ -187,8 +190,8 @@ export class DataRepository {
       INSERT INTO admin_sessions (
         session_key, source_module, agent_id, channel, message_count,
         first_message_at, last_message_at, created_at, updated_at, source_created_at,
-        label, session_status, model, model_provider, spawned_by, spawn_depth
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        label, session_status, model, model_provider, spawned_by, spawn_depth, platform
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_key) DO UPDATE SET
         source_module = excluded.source_module,
         agent_id = excluded.agent_id,
@@ -202,7 +205,8 @@ export class DataRepository {
         model = excluded.model,
         model_provider = excluded.model_provider,
         spawned_by = excluded.spawned_by,
-        spawn_depth = excluded.spawn_depth
+        spawn_depth = excluded.spawn_depth,
+        platform = excluded.platform
     `);
 
     const now = new Date().toISOString();
@@ -224,7 +228,8 @@ export class DataRepository {
           row.model ?? null,
           row.model_provider ?? null,
           row.spawned_by ?? null,
-          row.spawn_depth ?? 0
+          row.spawn_depth ?? 0,
+          row.platform ?? 'openclaw'
         );
       }
     });
@@ -240,6 +245,7 @@ export class DataRepository {
     offset?: number;
     agent_id?: string;
     channel?: string;
+    platform?: string;
   } = {}): { sessions: AdminSession[]; total: number } {
     const limit = params.limit ?? 50;
     const offset = params.offset ?? 0;
@@ -254,6 +260,10 @@ export class DataRepository {
     if (params.channel) {
       conditions.push('channel = ?');
       values.push(params.channel);
+    }
+    if (params.platform) {
+      conditions.push('platform = ?');
+      values.push(params.platform);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -292,6 +302,12 @@ export class DataRepository {
    * @returns 匹配的 SQLite session key 数组（可能为空）
    */
   resolveSessionKey(sessionKey: string): string[] {
+    // 0. ses_xxx 格式（OpenCode 等）：直接精确匹配
+    if (sessionKey.startsWith('ses_')) {
+      const direct = this.db.prepare('SELECT session_key FROM admin_sessions WHERE session_key = ?').get(sessionKey);
+      return direct ? [sessionKey] : [];
+    }
+
     // 1. 先尝试直接匹配
     const direct = this.db.prepare('SELECT session_key FROM admin_sessions WHERE session_key = ?').get(sessionKey);
     if (direct) return [sessionKey];
@@ -628,8 +644,8 @@ export class DataRepository {
         INSERT OR IGNORE INTO admin_messages (
           source_id, source_module, session_key, message_type, content,
           model, tokens_input, tokens_output, cost_total, cost_input, cost_output,
-          is_system_context, timestamp, created_at, source_created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          is_system_context, timestamp, created_at, source_created_at, platform
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const newlyInsertedContent: boolean[] = [];
@@ -651,7 +667,8 @@ export class DataRepository {
             row.is_system_context ?? 0,
             row.timestamp,
             now,
-            row.source_created_at ?? null
+            row.source_created_at ?? null,
+            row.platform ?? 'openclaw'
           );
           const isNew = result.changes > 0;
           newlyInsertedContent.push(isNew);
@@ -921,13 +938,13 @@ export class DataRepository {
         m.content,
         m.timestamp,
         m.model,
-        COALESCE(s.agent_id, SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1, INSTR(SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1), ':') - 1)) as agent_id,
+        COALESCE(s.agent_id, CASE WHEN m.session_key LIKE 'ses_%' THEN NULL ELSE SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1, INSTR(SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1), ':') - 1) END) as agent_id,
         COALESCE(a.agent_name, a2.agent_name) as agent_name,
         COALESCE(a.avatar, a2.avatar) as avatar
       FROM admin_messages m
       LEFT JOIN admin_sessions s ON m.session_key = s.session_key
       LEFT JOIN admin_agents a ON s.agent_id = a.agent_id
-      LEFT JOIN admin_agents a2 ON a2.agent_id = COALESCE(s.agent_id, SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1, INSTR(SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1), ':') - 1))
+      LEFT JOIN admin_agents a2 ON a2.agent_id = COALESCE(s.agent_id, CASE WHEN m.session_key LIKE 'ses_%' THEN NULL ELSE SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1, INSTR(SUBSTR(m.session_key, INSTR(m.session_key, ':') + 1), ':') - 1) END)
       ${contentWhereClause}
       ORDER BY m.timestamp DESC
       LIMIT ?
@@ -1019,13 +1036,13 @@ export class DataRepository {
           t.content,
           t.created_at as timestamp,
           t.model,
-          COALESCE(s.agent_id, SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1, INSTR(SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1), ':') - 1)) as agent_id,
+          COALESCE(s.agent_id, CASE WHEN t.session_key LIKE 'ses_%' THEN NULL ELSE SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1, INSTR(SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1), ':') - 1) END) as agent_id,
           COALESCE(a.agent_name, a2.agent_name) as agent_name,
           COALESCE(a.avatar, a2.avatar) as avatar
         FROM admin_tool_calls t
         LEFT JOIN admin_sessions s ON t.session_key = s.session_key
         LEFT JOIN admin_agents a ON s.agent_id = a.agent_id
-        LEFT JOIN admin_agents a2 ON a2.agent_id = COALESCE(s.agent_id, SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1, INSTR(SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1), ':') - 1))
+        LEFT JOIN admin_agents a2 ON a2.agent_id = COALESCE(s.agent_id, CASE WHEN t.session_key LIKE 'ses_%' THEN NULL ELSE SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1, INSTR(SUBSTR(t.session_key, INSTR(t.session_key, ':') + 1), ':') - 1) END)
         ${toolWhereClause}
         ORDER BY t.created_at DESC
       `;
@@ -1202,7 +1219,7 @@ export class DataRepository {
    * @param collectorAgents - 从 Collector API 获取的 agent 配置列表（来自 openclaw.json）
    * @param sourceModule - 模块标识，用于设置 source 字段（如 collector 注册时的 module_key）
    */
-  refreshAgents(collectorAgents: CollectorAgent[], sourceModule: string = 'unknown'): void {
+  refreshAgents(collectorAgents: CollectorAgent[], sourceModule: string = 'unknown', platform: string = 'openclaw'): void {
     if (collectorAgents.length === 0) {
       logger.info('[DataRepository] No collector agents to refresh');
       return;
@@ -1256,8 +1273,8 @@ export class DataRepository {
     // 同步时不应覆盖。ON CONFLICT UPDATE 时显式保留已有 avatar，
     // INSERT 时 avatar 默认为 NULL（SQLite TEXT 列默认值）。
     const upsert = this.db.prepare(`
-      INSERT INTO admin_agents (agent_id, agent_name, workspace, session_count, message_count, first_active_at, last_active_at, model, source, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO admin_agents (agent_id, agent_name, workspace, session_count, message_count, first_active_at, last_active_at, model, source, platform, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(agent_id) DO UPDATE SET
         agent_name = excluded.agent_name,
         workspace = excluded.workspace,
@@ -1267,6 +1284,7 @@ export class DataRepository {
         last_active_at = excluded.last_active_at,
         model = excluded.model,
         source = excluded.source,
+        platform = excluded.platform,
         updated_at = excluded.updated_at,
         avatar = admin_agents.avatar
     `);
@@ -1286,7 +1304,8 @@ export class DataRepository {
             stats?.first_active_at ?? null,
             stats?.last_active_at ?? null,
             model,
-            sourceModule
+            sourceModule,
+            platform
           );
         }
       });
@@ -1551,16 +1570,27 @@ export class DataRepository {
 
   /**
    * 更新同步进度
+   * @param tableName 同步表名
+   * @param lastDataTimestamp 实际数据时间戳（毫秒数或 ISO 字符串）。
+   *   传入时语义为「数据中最大的时间点」，而非同步执行时间。
+   *   不传时回退到 CURRENT_TIMESTAMP（兼容旧逻辑）。
    */
-  updateSyncProgress(tableName: string): void {
+  updateSyncProgress(tableName: string, lastDataTimestamp?: string | number): void {
+    // 统一转为 ISO 字符串存储（parseSince 能处理毫秒数和 ISO 两种格式）
+    const tsValue = lastDataTimestamp != null
+      ? (typeof lastDataTimestamp === 'number'
+          ? new Date(lastDataTimestamp < 1e12 ? lastDataTimestamp * 1000 : lastDataTimestamp).toISOString()
+          : lastDataTimestamp)
+      : null;
+
     const stmt = this.db.prepare(`
       INSERT INTO sync_progress (table_name, last_sync_time, updated_at)
-      VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES (?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
       ON CONFLICT(table_name) DO UPDATE SET
-        last_sync_time = CURRENT_TIMESTAMP,
+        last_sync_time = COALESCE(excluded.last_sync_time, CURRENT_TIMESTAMP),
         updated_at = CURRENT_TIMESTAMP
     `);
-    stmt.run(tableName);
+    stmt.run(tableName, tsValue);
   }
 
   // ========== Agent Activity (Heatmap) ==========

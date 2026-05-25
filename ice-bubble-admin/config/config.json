@@ -1,66 +1,74 @@
 {
-  "server": {
-    "port": 13000,
-    "host": "localhost"
-  },
-  "auth": {
-    "token": "e926d9e48798d6e6cc41863fca9ebb206657c081c889936f"
-  },
-  "cors": {
-    "enabled": true,
-    "origins": [
-      "http://localhost:3000"
-    ]
-  },
-  "logging": {
-    "level": "info",
-    "format": "pretty"
-  },
-  "database": {
-    "path": "../data/admin.db",
-    "walMode": true,
-    "foreignKeys": true,
-    "performance": {
-      "cacheSize": -64000,
-      "mmapSize": 268435456,
-      "pageSize": 4096,
-      "busyTimeout": 5000
-    }
-  },
-  "cleanup": {
-    "enabled": true,
-    "healthDaysToKeep": 30,
-    "eventDaysToKeep": 90,
-    "statsDaysToKeep": 365,
-    "schedule": "0 2 * * *"
-  },
-  "modules": [
-    {
-      "moduleKey": "collector-openclaw",
-      "name": "OpenClaw数据采集",
-      "baseUrl": "http://localhost:13100",
-      "enabled": true,
-      "pollInterval": 30000,
-      "registeredTime": "2026-04-10T16:22:15.365Z"
+    "server": {
+        "port": 13000,
+        "host": "localhost"
     },
-    {
-      "moduleKey": "task",
-      "name": "任务管理",
-      "baseUrl": "http://localhost:13102",
-      "enabled": false,
-      "pollInterval": 30000,
-      "registeredTime": "2026-04-23T11:52:00.000Z"
+    "auth": {
+        "token": "e926d9e48798d6e6cc41863fca9ebb206657c081c889936f"
+    },
+    "cors": {
+        "enabled": true,
+        "origins": [
+            "http://localhost:3000"
+        ]
+    },
+    "logging": {
+        "level": "info",
+        "format": "pretty"
+    },
+    "database": {
+        "path": "../data/admin.db",
+        "walMode": true,
+        "foreignKeys": true,
+        "performance": {
+            "cacheSize": -64000,
+            "mmapSize": 268435456,
+            "pageSize": 4096,
+            "busyTimeout": 5000
+        }
+    },
+    "cleanup": {
+        "enabled": true,
+        "healthDaysToKeep": 30,
+        "eventDaysToKeep": 90,
+        "statsDaysToKeep": 365,
+        "schedule": "0 2 * * *"
+    },
+    "modules": [
+        {
+            "moduleKey": "collector-openclaw",
+            "name": "OpenClaw数据采集",
+            "baseUrl": "http://localhost:13100",
+            "enabled": true,
+            "pollInterval": 30000,
+            "registeredTime": "2026-04-10T16:22:15.365Z"
+        },
+        {
+            "moduleKey": "task",
+            "name": "任务管理",
+            "baseUrl": "http://localhost:13102",
+            "enabled": false,
+            "pollInterval": 30000,
+            "registeredTime": "2026-04-23T11:52:00.000Z"
+        },
+        {
+            "moduleKey": "collector-opencode",
+            "name": "OpenCode数据采集",
+            "baseUrl": "http://localhost:13101",
+            "enabled": true,
+            "pollInterval": 30000,
+            "registeredTime": "2026-05-24T04:26:00.000Z"
+        }
+    ],
+    "dataSync": {
+        "collectorBaseUrl": "http://localhost:13100",
+        "pollInterval": 60000,
+        "batchSize": 500,
+        "taskApiBaseUrl": "http://localhost:13102",
+        "subagentParserEnabled": true
+    },
+    "gateway": {
+        "url": "ws://127.0.0.1:18789",
+        "token": "1a25db77ba80e41a3f4f54811fc92dba9525dce96f5a1c18"
     }
-  ],
-  "dataSync": {
-    "collectorBaseUrl": "http://localhost:13100",
-    "pollInterval": 60000,
-    "batchSize": 500,
-    "taskApiBaseUrl": "http://localhost:13102",
-    "subagentParserEnabled": true
-  },
-  "gateway": {
-    "url": "ws://127.0.0.1:18789",
-    "token": "1a25db77ba80e41a3f4f54811fc92dba9525dce96f5a1c18"
-  }
 }

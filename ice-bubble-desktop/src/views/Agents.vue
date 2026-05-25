@@ -372,6 +372,13 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
             </div>
             <div class="agent-name">
               <span class="name-text">{{ agent.agent_name || agent.agent_id }}</span>
+              <el-tag
+                v-if="agent.platform && agent.platform !== 'openclaw'"
+                size="small"
+                effect="dark"
+                class="platform-tag"
+                :class="'platform-' + agent.platform"
+              >{{ agent.platform }}</el-tag>
             </div>
             <div class="agent-model">
               <span class="model-value">{{ agent.model || '-' }}</span>
@@ -589,6 +596,24 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   font-weight: 600;
   font-size: 14px;
   color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.platform-tag {
+  font-size: 10px;
+  height: 18px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-weight: 500;
+}
+
+.platform-opencode {
+  background: #e65100;
+  border-color: #e65100;
+  color: #fff;
 }
 
 .agent-status {

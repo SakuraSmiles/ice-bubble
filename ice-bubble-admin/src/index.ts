@@ -66,6 +66,14 @@ interface ModuleConfig {
 interface DataSyncConfig {
   collectorBaseUrl?: string;
   moduleKey?: string;
+  platform?: string;
+  pollInterval?: number;
+  batchSize?: number;
+}
+
+interface DataSyncOpencodeConfig {
+  collectorBaseUrl?: string;
+  moduleKey?: string;
   pollInterval?: number;
   batchSize?: number;
 }
@@ -79,6 +87,7 @@ interface AppConfig {
   server?: ServerConfig;
   modules?: ModuleConfig[];
   dataSync?: DataSyncConfig;
+  dataSyncOpencode?: DataSyncOpencodeConfig;
   auth?: { token?: string };
   gateway?: GatewayConfig;
 }
@@ -272,7 +281,7 @@ export async function startAdmin(): Promise<void> {
     const dbPath = process.env.ADMIN_DB_PATH || join(__dirname, '..', '..', 'data', 'admin.db');
     const dbManager = new DBManager();
     await dbManager.init({ dbPath });
-    await dbManager.migrate(24);  // 执行数据库迁移（v24: session summary columns）
+    await dbManager.migrate(25);  // 执行数据库迁移（v25: platform 多平台支持）
     const repository = new ModuleRepository(dbManager.getConnection());
     logger.info('[Admin] 数据库初始化完成');
 
@@ -309,13 +318,29 @@ export async function startAdmin(): Promise<void> {
       {
         collectorBaseUrl: dataSyncConfig.collectorBaseUrl || 'http://localhost:13100',
         moduleKey: dataSyncConfig.moduleKey || 'collector-openclaw',
+        platform: 'openclaw',
         pollInterval: dataSyncConfig.pollInterval || 60000,
         batchSize: dataSyncConfig.batchSize || 500,
       },
       dataRepository
     );
     dataSync.start();
-    logger.info('[Admin] 数据同步调度器初始化完成');
+    logger.info('[Admin] 数据同步调度器初始化完成 (OpenClaw)');
+
+    // 第二个 DataSync 实例：从 collector-opencode 同步数据
+    const opencodeSyncConfig = configData.dataSyncOpencode || {};
+    const opencodeSync = new DataSync(
+      {
+        collectorBaseUrl: opencodeSyncConfig.collectorBaseUrl || 'http://localhost:13101',
+        moduleKey: opencodeSyncConfig.moduleKey || 'collector-opencode',
+        platform: 'opencode',
+        pollInterval: opencodeSyncConfig.pollInterval || 30000,
+        batchSize: opencodeSyncConfig.batchSize || 500,
+      },
+      dataRepository
+    );
+    opencodeSync.start();
+    logger.info('[Admin] 数据同步调度器初始化完成 (OpenCode)');
 
     // 启动每日归档调度器（凌晨 3 点执行，保留 30 天数据）
     dataRepository.startArchiveScheduler(30, (count) => {

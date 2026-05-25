@@ -19,6 +19,7 @@ const prefsStore = useSessionPreferencesStore();
 const allSessions = ref<SessionDTO[]>([]);
 const loading = ref(false);
 const refreshSpin = ref(false);
+const fetchError = ref('');
 
 let unsubSessionsChanged: (() => void) | null = null;
 
@@ -26,9 +27,14 @@ async function fetchAllSessions() {
   loading.value = true;
   refreshSpin.value = true;
   try {
-    const data = await api.getUnifiedSessions({ limit: 200, offset: 0 });
+    const params: { limit: number; offset: number; platform?: string } = { limit: 200, offset: 0 };
+    if (filterPlatform.value) {
+      params.platform = filterPlatform.value;
+    }
+    const data = await api.getSessions(params);
     allSessions.value = data.sessions || [];
   } catch (e) {
+    fetchError.value = '加载会话列表失败，请检查 Admin 服务连接';
     console.error('Failed to load sessions:', e);
   } finally {
     loading.value = false;
@@ -42,6 +48,7 @@ const filterKeyword = ref('');
 const filterTimeRange = ref('all');
 const filterStatus = ref('');
 const filterMark = ref('all');
+const filterPlatform = ref('');
 const showAdvancedFilter = ref(false);
 
 // ====== 客户端过滤 ======
@@ -108,9 +115,13 @@ const filteredSessions = computed(() => {
 const currentPage = ref(1);
 const pageSize = ref(20);
 
-// 过滤条件变化时重置到第 1 页
+// 只有平台切换需要服务端重新获取数据，其他筛选均为客户端过滤
 watch([filterAgent, filterKeyword, filterTimeRange, filterStatus, filterMark], () => {
   currentPage.value = 1;
+});
+watch([filterPlatform], () => {
+  currentPage.value = 1;
+  fetchAllSessions();
 });
 
 // ====== 排序（时间倒序）======
@@ -243,6 +254,11 @@ onUnmounted(() => {
       </el-button>
     </PageHeader>
 
+    <div v-if="fetchError" class="fetch-error-bar">
+      ⚠️ {{ fetchError }}
+      <button @click="fetchError = ''; fetchAllSessions()">重试</button>
+    </div>
+
     <div v-loading="loading" class="content-wrapper">
       <EmptyState
         v-if="pagedSessions.length === 0 && !loading"
@@ -257,6 +273,12 @@ onUnmounted(() => {
         <!-- 过滤栏 -->
         <div class="filter-bar">
           <div class="filter-row">
+            <el-radio-group v-model="filterPlatform" class="filter-item filter-platform" size="small">
+              <el-radio-button value="">全部</el-radio-button>
+              <el-radio-button value="openclaw">OpenClaw</el-radio-button>
+              <el-radio-button value="opencode">OpenCode</el-radio-button>
+            </el-radio-group>
+
             <el-select
               v-model="filterAgent"
               placeholder="全部 Agent"
@@ -340,7 +362,16 @@ onUnmounted(() => {
                   <template v-else>{{ (s.agent_id || '?').charAt(0).toUpperCase() }}</template>
                 </div>
                 <div class="session-card-info">
-                  <div class="session-card-title" v-html="highlightText(formatTitle(s), filterKeyword)" />
+                  <div class="session-card-title">
+                    <span v-html="highlightText(formatTitle(s), filterKeyword)" />
+                    <el-tag
+                      v-if="(s as any).platform && (s as any).platform !== 'openclaw'"
+                      size="small"
+                      effect="dark"
+                      class="session-platform-tag"
+                      :class="'platform-' + (s as any).platform"
+                    >{{ (s as any).platform }}</el-tag>
+                  </div>
                   <div class="session-card-time">
                     {{ formatTime(s.last_message_at || s.updated_at) }}
                     <span v-if="s.message_count" class="msg-count">· {{ s.message_count }} 条消息</span>
@@ -442,6 +473,10 @@ onUnmounted(() => {
   width: 160px;
 }
 
+.filter-platform {
+  flex-shrink: 0;
+}
+
 .filter-keyword {
   width: 220px;
 }
@@ -541,6 +576,24 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-platform-tag {
+  font-size: 10px;
+  height: 18px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+
+.platform-opencode {
+  background: #e65100;
+  border-color: #e65100;
+  color: #fff;
 }
 
 .session-card-time {
@@ -623,6 +676,27 @@ onUnmounted(() => {
   to {
     transform: rotate(360deg);
   }
+}
+
+.fetch-error-bar {
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+  padding: 8px 16px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.fetch-error-bar button {
+  background: none;
+  border: 1px solid var(--el-color-warning);
+  color: var(--el-color-warning-dark-2);
+  padding: 2px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
 }
 
 @media (max-width: 768px) {
