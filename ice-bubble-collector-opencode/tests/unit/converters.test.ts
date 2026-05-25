@@ -248,6 +248,35 @@ describe('convertMessages', () => {
     expect(toolMsg!.tools![0].name).toBe('read_file');
     expect(toolMsg!.tools![0].result).toBe('file content here');
   });
+
+  it('应该正确配对跨消息的 pending tool call（bug 回归）', () => {
+    // assistant 发起 tool call（status=running，无 output）→ pending
+    const assistantMsg = createMockMessage('assistant', { id: 'msg_a1' });
+    const toolPart = createToolPart('read_file', 'call_001', {}, {
+      status: 'running',
+      input: { path: '/tmp/test' },
+      output: null as any,
+    });
+
+    // 下一条 user message 包含配对的 tool result
+    const userMsg = createMockMessage('user', { id: 'msg_u2' });
+    const resultPart = createToolPart('read_file', 'call_001', {}, {
+      status: 'completed',
+      input: { path: '/tmp/test' },
+      output: 'paired result content',
+    });
+
+    const results = convertMessages([
+      { message: assistantMsg, parts: [toolPart] },
+      { message: userMsg, parts: [resultPart] },
+    ]);
+
+    // 已配对的 tool 消息必须在 results 中（不能丢失）
+    const toolMsgs = results.filter(r => r.messageType === 'tool');
+    expect(toolMsgs).toHaveLength(1);
+    expect(toolMsgs[0].tools![0].name).toBe('read_file');
+    expect(toolMsgs[0].tools![0].result).toBe('paired result content');
+  });
 });
 
 // ==================== ID 格式测试 ====================

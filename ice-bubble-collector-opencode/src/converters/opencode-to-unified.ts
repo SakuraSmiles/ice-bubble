@@ -198,8 +198,9 @@ function convertUserMessageParts(
 ): UnifiedMessage[] {
     const results: UnifiedMessage[] = [];
 
-    // 配对 pending tool calls
-    pairPendingToolCalls(parts, ctx);
+    // 配对 pending tool calls，将已配对的消息加入结果
+    const pairedTools = pairPendingToolCalls(parts, ctx);
+    results.push(...pairedTools);
 
     // 提取 user message 的 text 内容
     const textParts = parts.filter(p => {
@@ -257,7 +258,8 @@ function convertUserMessageParts(
  * 所以配对逻辑改为：遍历 parts 查找 tool part，
  * 如果其 callID 在 pendingToolCalls 中，直接配对。
  */
-function pairPendingToolCalls(parts: OpenCodePart[], ctx: ConvertContext): void {
+function pairPendingToolCalls(parts: OpenCodePart[], ctx: ConvertContext): UnifiedMessage[] {
+    const paired: UnifiedMessage[] = [];
     for (const _part of parts) {
         const data = safeParseJson<PartData>(_part.data);
         if (!data || data.type !== 'tool') continue;
@@ -278,8 +280,10 @@ function pairPendingToolCalls(parts: OpenCodePart[], ctx: ConvertContext): void 
                 }
             }
             ctx.pendingToolCalls.delete(toolData.callID);
+            paired.push(pending);
         }
     }
+    return paired;
 }
 
 // ==================== Assistant Message 转换 ====================
