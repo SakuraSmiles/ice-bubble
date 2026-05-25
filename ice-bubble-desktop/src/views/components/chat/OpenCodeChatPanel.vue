@@ -9,7 +9,7 @@
 import { ref, watch, nextTick, onMounted } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
 import MarkdownContent from '../../../components/MarkdownContent.vue'
-import { api } from '../../../api/client'
+import { fetchJson } from '../../../api/client'
 
 export interface ChatMessage {
   role: 'user' | 'agent'
@@ -33,11 +33,13 @@ async function loadHistory() {
   if (!props.sessionId) return
   loading.value = true
   try {
-    const data = await api.getSessionMessages(props.sessionId, { limit: 50 })
+    const data = await fetchJson<{ messages: Array<{ message_type: string; content: string; timestamp: string }> }>(
+      `/messages?session_key=${encodeURIComponent(props.sessionId)}&limit=50`
+    )
     messages.value = (data.messages || []).map(m => ({
-      role: m.role === 'user' ? 'user' : 'agent',
+      role: m.message_type === 'user' ? 'user' : 'agent' as 'user' | 'agent',
       content: m.content || '',
-      timestamp: new Date(m.created_at).getTime(),
+      timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
     }))
   } catch (e) {
     console.error('[OpenCodeChatPanel] 加载历史消息失败', e)
