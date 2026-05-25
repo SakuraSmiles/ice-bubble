@@ -372,13 +372,6 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
             </div>
             <div class="agent-name">
               <span class="name-text">{{ agent.agent_name || agent.agent_id }}</span>
-              <el-tag
-                v-if="agent.platform && agent.platform !== 'openclaw'"
-                size="small"
-                effect="dark"
-                class="platform-tag"
-                :class="'platform-' + agent.platform"
-              >{{ agent.platform }}</el-tag>
             </div>
             <div class="agent-model">
               <span class="model-value">{{ agent.model || '-' }}</span>
@@ -389,7 +382,7 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
           <div class="agent-middle">
           <!-- 中间统计 -->
           <div class="agent-stats">
-            <div class="agent-workspace">
+            <div class="agent-workspace" v-if="agent.workspace">
               <span class="workspace-value">{{ truncatePath(agent.workspace) }}</span>
             </div>
             <div class="stat-row">
@@ -429,8 +422,8 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
             </div>
             </div>
             <div class="source-row">
-              <span class="source-label">来源</span>
-              <span class="source-value">{{ agent.source }}</span>
+              <span class="source-label">平台</span>
+              <span class="source-value">{{ agent.platform === 'opencode' ? 'OpenCode' : 'OpenClaw' }}</span>
             </div>
           </div>
 
@@ -599,21 +592,6 @@ const subtitle = computed(() => `${totalAgents.value} 个成员，${totalSession
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.platform-tag {
-  font-size: 10px;
-  height: 18px;
-  line-height: 18px;
-  padding: 0 6px;
-  border-radius: 9px;
-  font-weight: 500;
-}
-
-.platform-opencode {
-  background: #e65100;
-  border-color: #e65100;
-  color: #fff;
 }
 
 .agent-status {
