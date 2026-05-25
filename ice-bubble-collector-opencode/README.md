@@ -100,7 +100,7 @@ OpenCode 的数据库包含以下核心表：
 | GET | /api/data/messages | 消息列表（支持 session_key / since / 分页过滤） |
 | GET | /api/data/stats | 数据统计（会话数、消息数、Agent 数） |
 | GET | /api/data/agents | Agent 列表 |
-| GET | /api/data/events | 空实现（OpenCode 无 events 概念） |
+| GET | /api/data/events | 空实现（OpenCode 无 events 概念，保留端点以对齐 collector-openclaw API） |
 
 ### 元数据接口
 
@@ -208,6 +208,7 @@ npm run build && npm run start
 
 | 环境变量 | 说明 | 默认值 |
 |---------|------|--------|
+| `ICE_AUTH_TOKEN` | Bearer Token 认证令牌 | 无（可选） |
 | `OPENCODE_DB_PATH` | OpenCode 数据库路径 | `~/.local/share/opencode/opencode.db` |
 | `COLLECTOR_PORT` | HTTP API 端口 | `13101` |
 | `POLL_INTERVAL_MS` | 轮询间隔（毫秒） | `30000` |
@@ -250,6 +251,7 @@ ice-bubble-collector-opencode/
 │   │       └── meta.ts              #   ★ 模块状态接口
 │   │
 │   ├── collectors/                  # 采集层
+│   │   ├── index.ts                 #   采集器导出
 │   │   └── sqlite-collector.ts      #   ★ SQLite 数据库采集器
 │   │
 │   ├── converters/                  # 转换层
@@ -261,12 +263,13 @@ ice-bubble-collector-opencode/
 │   │   └── opencode.ts              #   OpenCode 原始类型
 │   │
 │   ├── utils/                       # 工具函数
+│   │   ├── index.ts                 #   工具函数导出
 │   │   ├── config-loader.ts         #   配置加载器
 │   │   ├── db-reader.ts             #   SQLite 数据库只读访问
 │   │   └── logger.ts                #   Winston 日志封装
 │   │
-│   └── strategies/                  # 策略层
-│       └── index.ts                 #   策略导出
+│   └── strategies/                  # 策略层（预留）
+│       └── index.ts                 #   策略导出（预留）
 │
 ├── package.json                     # NPM 项目配置
 ├── tsconfig.json                    # TypeScript 编译配置

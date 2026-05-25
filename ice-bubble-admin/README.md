@@ -74,7 +74,7 @@
 │  └─────────────────────┘   └─────────────────────┘        │
 │           │                        │                       │
 │    SQLite (只读)           OpenCode DB (只读)               │
-│    .jsonl 文件               opencode.db                    │
+│    .jsonl 文件               opencode.db (SQLite)            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,39 +111,49 @@ npm run start
     "host": "localhost"
   },
   "auth": {
-    "enabled": false,
-    "token": null
+    "token": "your-secret-token"
   },
   "cors": {
     "enabled": true,
-    "origins": ["http://localhost:1420"]
+    "origins": ["http://localhost:3000"]
   },
   "database": {
-    "path": "../data/admin.db"
+    "path": "../data/admin.db",
+    "walMode": true,
+    "foreignKeys": true,
+    "performance": {
+      "cacheSize": -64000,
+      "mmapSize": 268435456,
+      "pageSize": 4096,
+      "busyTimeout": 5000
+    }
   },
   "logging": {
     "level": "info",
-    "file": "../data/admin.log"
+    "format": "pretty"
   },
   "cleanup": {
-    "enabled": false,
-    "retentionDays": 90
+    "enabled": true,
+    "healthDaysToKeep": 30,
+    "eventDaysToKeep": 90,
+    "statsDaysToKeep": 365,
+    "schedule": "0 2 * * *"
   },
   "gateway": {
-    "enabled": false,
-    "url": null
+    "url": "ws://127.0.0.1:18789",
+    "token": "your-gateway-token"
   },
   "modules": [
     {
       "moduleKey": "collector-openclaw",
-      "name": "OpenClaw采集器",
+      "name": "OpenClaw数据采集",
       "baseUrl": "http://localhost:13100",
       "enabled": true,
       "pollInterval": 30000
     },
     {
       "moduleKey": "collector-opencode",
-      "name": "OpenCode采集器",
+      "name": "OpenCode数据采集",
       "baseUrl": "http://localhost:13101",
       "enabled": true,
       "pollInterval": 30000
@@ -152,10 +162,27 @@ npm run start
   "dataSync": {
     "collectorBaseUrl": "http://localhost:13100",
     "pollInterval": 60000,
+    "batchSize": 500,
+    "taskApiBaseUrl": "http://localhost:13102",
+    "subagentParserEnabled": true
+  },
+  "dataSyncOpencode": {
+    "collectorBaseUrl": "http://localhost:13101",
+    "pollInterval": 30000,
     "batchSize": 500
   }
 }
 ```
+
+### 配置说明
+
+| 配置项 | 说明 |
+|--------|------|
+| `auth.token` | Bearer Token 认证令牌。未设置时自动生成随机令牌，启动时日志输出。实际只检查 `auth.token`，没有 `enabled` 字段 |
+| `cors.origins` | CORS 允许的来源列表 |
+| `dataSync` | OpenClaw Collector 的数据同步配置（兼容保留，仍指向 `collector-openclaw`） |
+| `dataSyncOpencode` | OpenCode Collector 的数据同步配置（双 Collector 架构关键配置） |
+| `gateway` | OpenClaw Gateway 连接配置，用于 WebSocket 代理和 Chat SSE |
 
 ---
 
@@ -182,8 +209,12 @@ npm run start
 | GET | /api/sessions | 获取会话列表 |
 | GET | /api/sessions/:key | 获取会话详情 |
 | GET | /api/sessions/:key/messages | 获取会话消息列表 |
-| GET | /api/sessions/unified | 获取统一会话列表（结合 Gateway 实时状态） |
 | GET | /api/sessions/grouped | 获取分组会话列表 |
+| GET | /api/sessions/timeline | 获取会话时间线 |
+| GET | /api/sessions/flows | 获取会话流程图数据 |
+| GET | /api/sessions/pending-summary | 获取待生成摘要的会话 |
+| PUT | /api/sessions/summary | 更新会话摘要 |
+| GET | /api/sessions/unified | 获取统一会话列表（结合 Gateway 实时状态） |
 | GET | /api/messages | 获取消息列表 |
 | GET | /api/messages/timeline | 获取时间线消息（群聊风格，支持过滤） |
 | POST | /api/messages/deduplicate | 消息去重 |
@@ -251,8 +282,43 @@ npm run start
 | POST | /api/chat/send | 发送聊天消息 |
 | POST | /api/chat/abort | 中止当前回复 |
 | GET | /api/chat/stream | SSE 聊天流 |
+| GET | /api/chat/history | 聊天历史 |
+| GET | /api/chat/sessions | 聊天 Sessions |
 
-### API 响应示例
+### Resources API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/resources/avatars/:filename | Agent 头像（无需认证，浏览器 `<img>` 无法发送 Authorization） |
+
+> 注：头像上传端点 `PUT /api/agents/:id/avatar` 在 Agents API 中列出。
+
+### Attachments API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/attachments/query | 查询附件（支持 `?session_key=...` 过滤） |
+| GET | /api/attachments/:filename | 附件文件（无需认证，浏览器 `<img>` 无法发送 Authorization） |
+
+### Media API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/media/batch | 批量媒体查询 |
+| GET | /api/media/file/:id | 媒体文件下载（无需认证） |
+
+### Gateway 代理路由
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| * | /api/gateway/* | Gateway HTTP 代理（转发至 OpenClaw Gateway） |
+| WS | /ws | WebSocket 连接（Gateway 实时通信） |
+
+### Health API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /health | 健康检查（返回 `{ status: "ok", version: "..." }`） |
 
 **GET /api/stats**
 ```json
@@ -288,26 +354,59 @@ npm run start
 
 ```
 src/
-├── index.ts                 # 入口文件
-├── app.ts                   # 应用主文件
+├── index.ts                 # 入口文件（应用启动、路由注册、服务初始化）
 ├── api/
+│   ├── chat-proxy.ts        # Chat / Gateway HTTP 代理路由
+│   ├── data.ts              # 数据管理 REST API（sessions/messages/agents/stats）
+│   ├── media.ts             # 媒体查询与文件下载路由
 │   ├── modules.ts           # 模块管理 REST API
-│   └── data.ts             # 数据管理 REST API
+│   ├── resources.ts         # 资源路由（头像等）
+│   ├── session-groups.ts    # 会话分组 REST API
+│   ├── session-preferences.ts  # 会话偏好设置 REST API
+│   ├── sessions-unified.ts  # 统一会话列表（结合 Gateway 实时状态）
+│   ├── settings.ts          # 系统设置 REST API
+│   ├── tasks.ts             # 子任务管理 REST API
+│   └── workspace.ts         # 工作区 REST API
+├── gateway/
+│   ├── gateway-proxy.ts     # Gateway WebSocket 代理客户端
+│   ├── index.ts             # GatewayProxy 导出
+│   └── ws-server.ts         # WebSocket 服务器（/ws 端点）
 ├── modules/
 │   └── module-scheduler.ts  # 模块调度器
+├── server/
+│   ├── chat/
+│   │   ├── controller.ts    # Chat SSE 控制器
+│   │   ├── sse-manager.ts   # SSE 连接管理
+│   │   ├── session-cache.ts # Chat Session 缓存
+│   │   └── attachment-storage.ts  # 附件存储管理
+│   └── gateway/
+│       ├── connection.ts    # Gateway 连接管理
+│       └── rpc.ts           # Gateway RPC 适配器
+├── services/
+│   └── workspace-service.ts # 工作区服务
 ├── data/
+│   ├── agent-overview.ts    # Agent 概览聚合统计服务
 │   ├── collector-client.ts  # Collector HTTP 客户端
 │   ├── data-sync.ts         # 数据同步调度器
 │   └── processor.ts         # 数据处理（溯源字段）
 ├── storage/
+│   ├── index.ts             # 存储层导出
 │   ├── db-manager.ts        # 数据库管理器
 │   ├── module-repository.ts # 模块存储仓库
 │   └── data-repository.ts   # 数据存储仓库
 ├── types/
 │   └── module.ts            # 模块类型定义
 └── utils/
-    └── logger.ts            # 日志工具
+    ├── auth-middleware.ts   # Bearer Token 认证中间件
+    ├── detect-channel.ts    # Channel 检测工具
+    ├── detect-cron.ts       # Cron 检测工具
+    ├── detect-system-noise.ts  # 系统噪声检测
+    ├── index.ts             # 工具函数导出
+    ├── logger.ts            # 日志工具
+    └── message-meta.ts      # 消息元数据工具
 ```
+
+> `app.ts` 已废弃（仅保留注释），入口文件为 `index.ts`。
 
 ---
 

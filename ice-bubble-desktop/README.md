@@ -12,6 +12,7 @@
 > @ice-bubble/desktop  
 > ice-bubble 桌面端展示应用 — 调用 admin API 进行数据可视化
 
+
 </div>
 
 ---
@@ -112,7 +113,7 @@ npm install
 npm run dev
 ```
 
-### 生产模式
+### Tauri 开发/生产模式
 
 ```bash
 # Tauri 开发模式
@@ -132,29 +133,47 @@ npm run build
 
 ```json
 {
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "ice-bubble-desktop",
-  "version": "1.0.0",
+  "version": "1.5.1",
+  "identifier": "com.icebubble.desktop",
   "build": {
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [{
       "title": "ice-bubble-desktop",
       "width": 1200,
-      "height": 800
-    }]
+      "height": 800,
+      "resizable": true,
+      "fullscreen": false,
+      "minWidth": 800,
+      "minHeight": 600
+    }],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
   }
 }
 ```
 
 ### Admin API 地址
 
-在代码中配置 `src/config/index.ts`：
-
-```typescript
-export const ADMIN_API_BASE = 'http://localhost:13000';
-```
+Desktop 通过 Setup 页面（`/setup`）动态配置 Admin API 地址和 Auth Token，使用 Tauri Store 或 localStorage 持久化，不依赖代码中的硬编码配置。
 
 ---
 
@@ -168,8 +187,10 @@ export const ADMIN_API_BASE = 'http://localhost:13000';
 | 成员列表 | /agents | Agent 列表和状态 |
 | 全部会话 | /sessions | 所有会话列表（支持 OpenClaw / OpenCode 平台区分） |
 | 任务管理 | /tasks | 任务列表和管理 |
+| 聊天 | /chat | 聊天界面（嵌套在工作区 Layout 中，实际加载 Workspace.vue） |
 | 工作区 | /workspace/:key | 单个 Agent 的工作区视图 |
-| 聊天 | /chat | 对话界面 |
+| 系统设置 | /settings | 系统设置页面 |
+| 日志查看 | /logs | 日志查看页面 |
 
 ---
 
@@ -196,6 +217,11 @@ desktop 通过 Vite proxy（开发）或 Tauri（生产）直连 admin 服务：
 | GET | /api/agents/with-activity | admin | 带活跃数据的成员列表 |
 | GET | /api/agents/token-summary | admin | Token 统计汇总 |
 | GET | /api/subagent-tasks | admin | 任务列表 |
+| GET | /api/sessions/unified | admin | 统一会话列表（结合 Gateway 实时状态） |
+| GET/POST/PATCH/DELETE | /api/session-groups | admin | 会话分组管理 |
+| GET/PUT | /api/session-preferences | admin | 会话偏好设置 |
+| PUT | /api/sessions/summary | admin | 更新会话摘要 |
+| WS | /ws | admin | Gateway WebSocket 实时通信 |
 
 ---
 
@@ -205,22 +231,93 @@ desktop 通过 Vite proxy（开发）或 Tauri（生产）直连 admin 服务：
 src/
 ├── main.ts                 # Vue 入口
 ├── App.vue                 # 根组件
+├── version.ts              # 版本信息
+├── vite-env.d.ts           # Vite 类型声明
 ├── config/
 │   └── index.ts           # 统一配置
 ├── api/
-│   └── client.ts          # API 调用封装
+│   ├── client.ts          # API 调用封装
+│   ├── client.test.ts     # API 客户端测试
+│   └── chat.ts            # Chat API 封装
+├── composables/
+│   ├── useGitStatus.ts    # Git 状态 Hook
+│   ├── useLogger.ts       # 日志 Hook
+│   └── useNow.ts          # 实时时间 Hook
 ├── views/
-│   ├── Overview.vue       # 概览页
-│   ├── Modules.vue        # 模块管理页
-│   ├── Sessions.vue       # 会话记录页
-│   ├── Agents.vue         # 成员列表页
-│   ├── AllSessions.vue    # 全部会话页
-│   ├── Tasks.vue          # 任务管理页
-│   ├── Setup.vue          # 初始设置页
-│   ├── Workspace.vue      # 工作区页
-│   └── Chat.vue           # 聊天页
-└── components/
-    └── ...
+│   ├── useChat.ts          # Chat 组合式函数
+│   ├── Layout.vue          # 主布局组件
+│   ├── Overview.vue        # 概览页
+│   ├── Modules.vue         # 模块管理页
+│   ├── AllSessions.vue     # 全部会话页（非 Sessions.vue）
+│   ├── Agents.vue          # 成员列表页
+│   ├── Tasks.vue           # 任务管理页
+│   ├── Workspace.vue       # 工作区页（也用于 /chat 路由）
+│   ├── Setup.vue           # 初始设置页
+│   ├── Settings.vue        # 系统设置页
+│   ├── Logs.vue            # 日志查看页
+│   ├── NotFound.vue        # 404 页面
+│   └── components/         # 视图级子组件
+│       ├── AgentTaskTree.vue
+│       ├── AgentTodoList.vue
+│       ├── ChatTimeline.vue
+│       ├── LoadingSkeleton.vue
+│       ├── MessageBubble.vue
+│       ├── MessageInput.vue
+│       ├── NewChatDialog.vue
+│       ├── ParentTaskProgress.vue
+│       ├── RecentSessions.vue
+│       ├── SessionList.vue
+│       ├── SessionSelector.vue
+│       ├── SessionTimeline.vue
+│       ├── StatusDropdown.vue
+│       ├── SubSessionList.vue
+│       ├── SystemHealth.vue
+│       ├── TaskList.vue
+│       └── chat/            # Chat 相关组件
+│           ├── MessageBubble.vue
+│           ├── ToolCallBadge.vue
+│           ├── media-parser.ts
+│           ├── session-cache.ts
+│           ├── types.ts
+│           ├── useChatData.ts
+│           └── useGatewayStream.ts
+├── stores/
+│   ├── chatStore.ts        # 聊天状态管理
+│   ├── chat-input.ts       # 聊天输入状态
+│   ├── sessionGroupStore.ts      # 会话分组状态
+│   ├── sessionPreferencesStore.ts  # 会话偏好状态
+│   └── workspaceStore.ts   # 工作区状态
+├── services/
+│   └── gateway-client.ts   # Gateway WebSocket 客户端
+├── components/             # 全局共享组件
+│   ├── AddWorkspaceDialog.vue
+│   ├── AppFooter.vue
+│   ├── ChatPanel.vue
+│   ├── ConnectionAlert.vue
+│   ├── EmptyState.vue
+│   ├── FileTree.vue
+│   ├── GlobalSearch.vue
+│   ├── MarkdownContent.vue
+│   ├── PageHeader.vue
+│   ├── SessionList.vue
+│   ├── VirtualScroller.vue
+│   └── WorkspacePanel.vue
+├── utils/
+│   ├── adminConnection.ts  # Admin 连接检测
+│   ├── adminConnection.test.ts
+│   ├── format.ts           # 格式化工具
+│   ├── markdown.ts         # Markdown 工具
+│   ├── monitor.ts          # 服务监控
+│   └── validators.ts       # 校验工具
+└── assets/                 # 静态资源
+    ├── fonts.css
+    ├── interactions.css
+    └── fonts/               # 字体文件
+        ├── Eurostile-ExtendedTwo.otf
+        ├── Exo2-Regular.woff2
+        ├── Montserrat-Regular.woff2
+        ├── NotoSansSC-Regular.woff2
+        └── Orbitron-Regular.woff2
 
 src-tauri/
 ├── Cargo.toml             # Rust 依赖

@@ -14,7 +14,7 @@
 
 **模块版本**
 
-> admin `1.2.1` · collector-openclaw `1.1.2` · collector-opencode `0.1.0` · desktop `1.3.1`
+> admin `1.4.1` · collector-openclaw `1.1.2` · collector-opencode `0.1.0` · desktop `1.5.1`
 
 </div>
 
@@ -30,8 +30,8 @@ ice-bubble 采用模块化结构，提供 OpenClaw 的功能扩展。
 
 | 层级 | 模块 | 版本 | 说明 |
 |------|------|------|------|
-| **VIEW LAYER** | **ice-bubble-desktop** | `1.3.1` | 桌面端展示应用（Tauri + Vue3 + Element Plus），面向最终用户 |
-| **BIZ LAYER** | **ice-bubble-admin** | `1.2.1` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
+| **VIEW LAYER** | **ice-bubble-desktop** | `1.5.1` | 桌面端展示应用（Tauri + Vue3 + Element Plus），面向最终用户 |
+| **BIZ LAYER** | **ice-bubble-admin** | `1.4.1` | 核心业务逻辑（API 服务、模块管理、数据同步），整体内聚 |
 | **DATA LAYER** | **ice-bubble-collector-openclaw** | `1.1.2` | OpenClaw 数据采集器，封装输入输出，暴露标准接口，可水平扩展 |
 | **DATA LAYER** | **ice-bubble-collector-opencode** | `0.1.0` | OpenCode 数据采集器，从 OpenCode SQLite 数据库采集 Session 和 Message 数据 |
 
@@ -119,11 +119,12 @@ ice-bubble/
 ```
 
 > 注：原 task 服务（13102）已废弃，功能由 subagent sessions 替代，相关配置保留但已禁用。
+> `ice-bubble-collector-opencode` 未加入根目录 npm workspaces，独立管理依赖。
 
 ### 启动命令
 
 ```bash
-# 根目录没有统一的 dev 脚本，请分别启动各子模块：
+# 根目录提供快捷启动命令，也可分别进入各子模块启动：
 
 # 1. 数据采集层（OpenClaw）
 cd ice-bubble-collector-openclaw && npm run dev
@@ -138,7 +139,9 @@ cd ice-bubble-admin && npm run dev
 cd ice-bubble-desktop && npm run dev
 ```
 
-> 生产模式使用 `npm run tauri dev` 启动 Desktop（Tauri 窗口）。
+> 根目录还提供 `npm run start:admin`、`npm run start:collector`、`npm run start:desktop` 快捷命令用于生产启动。
+
+> 生产模式使用 `npm run tauri build` 构建 Desktop 安装包（Tauri 窗口）。`npm run tauri dev` 为 Tauri 开发模式（含热重载）。
 
 ### 认证配置
 
@@ -196,6 +199,8 @@ systemctl --user status ice-bubble-admin.service
 |---------|------|------|
 | `ice-bubble-collector.service` | OpenClaw 数据采集器 | 13100 |
 | `ice-bubble-admin.service` | 核心业务逻辑（依赖 collector） | 13000 |
+
+> `collector-opencode` 暂无独立 systemd 服务文件，如需长期运行建议参照 `ice-bubble-collector.service` 模板创建，端口改为 `13101`。
 
 ### 常见操作
 
