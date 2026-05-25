@@ -19,6 +19,7 @@ interface SessionItem {
 
 const props = defineProps<{
   agentId: string;
+  platform?: string;
 }>();
 
 const emit = defineEmits<{
@@ -99,7 +100,7 @@ async function fetchSessions() {
   loading.value = true;
   error.value = '';
   try {
-    const res = await request(`/sessions/unified?agentId=${encodeURIComponent(props.agentId)}&limit=100`);
+    const res = await request(`/sessions/unified?agentId=${encodeURIComponent(props.agentId)}&platform=${encodeURIComponent(props.platform || 'openclaw')}&limit=100`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     sessions.value = (data.sessions || []).map((s: any) => ({

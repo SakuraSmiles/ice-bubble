@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick, inject } from 'vue';
+import { ref, reactive, watch, computed, nextTick, inject } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useChatInputStore } from '@/stores/chat-input';
 import { gatewayClient } from '@/services/gateway-client';
@@ -10,7 +10,8 @@ import ChatTimeline from './components/ChatTimeline.vue';
 import SessionList from './components/SessionList.vue';
 
 import { Loading } from '@element-plus/icons-vue';
-import { getMainSessionKey, setMainSessionKey } from './components/chat/session-cache';
+import { ElMessageBox } from 'element-plus';
+import { getMainSessionKey } from './components/chat/session-cache';
 import AgentSelector from './components/chat/AgentSelector.vue';
 import type { AgentOption } from './components/chat/AgentSelector.vue';
 import { sendOpenCodeChat } from '../api/opencode';
@@ -32,7 +33,7 @@ const agentId = computed(() => {
 });
 
 // 视图状态：list 或 chat（无 UUID 时强制显示 list）
-const view = ref<'list' | 'chat' | 'loading'>('list');
+const view = ref<'list' | 'chat' | 'loading' | 'no-session' | 'opencode-new'>('list');
 const inputText = ref('');
 
 // 聊天输入缓存
@@ -47,6 +48,31 @@ const dragOver = ref(false);
 // ===== Agent 选择 =====
 const selectedAgent = ref<AgentOption>({ platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw' });
 const openCodeSessionId = ref<string | undefined>();
+
+// 每个 agent 维护自己的 sessionKey（URL 路由 key）
+const agentSessionMap = reactive<Record<string, string>>({});
+
+function getAgentKey(agent: AgentOption): string {
+  return `${agent.platform}:${agent.agent}`;
+}
+
+// 从 URL 参数或缓存初始化 selectedAgent
+function initAgentFromQuery() {
+  const q = route.query;
+  const platform = q.platform as string;
+  const agent = q.agent as string;
+  if (platform === 'opencode' && (agent === 'build' || agent === 'plan')) {
+    const opt: AgentOption = { platform: 'opencode', agent, label: agent, emoji: agent === 'build' ? '🔨' : '📋', tag: 'OpenCode' };
+    selectedAgent.value = opt;
+  } else if (platform === 'openclaw' && agent === 'main') {
+    selectedAgent.value = { platform: 'openclaw', agent: 'main', label: '虾头', emoji: '🦐', tag: 'OpenClaw' };
+  }
+  // 如果 URL 有 key 参数，缓存到 agentSessionMap
+  if (rawKey.value) {
+    agentSessionMap[getAgentKey(selectedAgent.value)] = rawKey.value;
+  }
+}
+initAgentFromQuery();
 
 // Agent 处理状态
 const isAgentProcessing = computed(() => {
@@ -144,14 +170,45 @@ function onDrop(e: DragEvent) {
 }
 
 const canSend = computed(() => {
-  return !!sessionKey.value;
+  return !!sessionKey.value || selectedAgent.value.platform === 'opencode';
+});
+
+// 切换 Agent 时：加载对应会话上下文
+watch(selectedAgent, async (newAgent, oldAgent) => {
+  // 切换保护：如果正在接收流式消息，弹出确认
+  if (isBusy.value && oldAgent) {
+    try {
+      await ElMessageBox.confirm('当前会话正在生成回复，确定切换吗？', '提示', { type: 'warning', confirmButtonText: '确定切换', cancelButtonText: '取消' });
+    } catch {
+      // 用户取消，恢复旧 agent
+      selectedAgent.value = oldAgent;
+      return;
+    }
+  }
+  const key = getAgentKey(newAgent);
+  // 如果该 agent 已有缓存的 sessionKey，导航到对应会话
+  if (agentSessionMap[key]) {
+    router.push('/workspace/' + encodeURIComponent(agentSessionMap[key]));
+    return;
+  }
+  // OpenCode 模式：不需要 Gateway sessionKey，直接进入空聊天
+  if (newAgent.platform === 'opencode') {
+    // 无会话状态，显示空聊天
+    openCodeSessionId.value = undefined;
+    view.value = 'opencode-new';
+    return;
+  }
+  // OpenClaw 模式：加载该 agent 的最近一次会话
+  await loadRecentSession(newAgent);
 });
 
 watch(sessionKey, async (key) => {
   if (key) {
+    // 缓存到 agentSessionMap
+    agentSessionMap[getAgentKey(selectedAgent.value)] = key;
     view.value = 'chat';
   } else if (route.path === '/chat') {
-    // /chat 路由无 key：轻量查找 main agent 的 direct session 并自动跳转
+    // /chat 路由无 key：轻量查找当前 agent 的 direct session 并自动跳转
     view.value = 'loading';
     autoRedirectChat();
   } else {
@@ -159,43 +216,69 @@ watch(sessionKey, async (key) => {
   }
 }, { immediate: true });
 
-// /chat 路由自动跳转到 main agent 的 direct session
-async function autoRedirectChat() {
-  // 1. 优先读缓存
-  const cached = getMainSessionKey();
-  if (cached) {
-    router.replace('/workspace/' + encodeURIComponent(cached));
-    return;
-  }
-
-  // 2. 无缓存 → 查 Gateway
+// 加载指定 agent 的最近一次会话
+async function loadRecentSession(agent: AgentOption) {
   try {
-    const res = await request('/gateway/sessions');
+    const res = await request(`/sessions/unified?agentId=${encodeURIComponent(agent.agent)}&limit=1`);
     if (!res.ok) return;
     const data = await res.json();
     const sessions = (data.sessions || []) as any[];
-    const mainDirect = sessions
-      .filter((s: any) => {
-        const m = s.key.match(/^agent:([^:]+)/);
-        return m && m[1] === 'main' && s.key.includes(':direct:');
-      })
-      .sort((a: any, b: any) => {
-        const ta = new Date(a.updatedAt || 0).getTime();
-        const tb = new Date(b.updatedAt || 0).getTime();
+    if (sessions.length > 0) {
+      const latest = sessions.sort((a: any, b: any) => {
+        const ta = new Date(a.last_message_at || a.updated_at || 0).getTime();
+        const tb = new Date(b.last_message_at || b.updated_at || 0).getTime();
         return tb - ta;
       })[0];
-    if (mainDirect) {
-      setMainSessionKey(mainDirect.key);
-      router.replace('/workspace/' + encodeURIComponent(mainDirect.key));
-      return;
+      const sk = latest.session_key || latest.key;
+      if (sk) {
+        router.push('/workspace/' + encodeURIComponent(sk));
+        return;
+      }
     }
   } catch { /* ignore */ }
-  // 3. 找不到则跳转到全部会话
-  router.replace('/sessions');
+  // 无会话 → 显示空聊天
+  view.value = 'no-session';
+}
+
+// /chat 路由自动跳转到 main agent 的 direct session
+async function autoRedirectChat() {
+  const agent = selectedAgent.value;
+  // OpenCode 模式：直接进入空聊天
+  if (agent.platform === 'opencode') {
+    openCodeSessionId.value = undefined;
+    view.value = 'opencode-new';
+    return;
+  }
+
+  const agentKey = getAgentKey(agent);
+  // 1. 优先读缓存
+  if (agentSessionMap[agentKey]) {
+    router.replace('/workspace/' + encodeURIComponent(agentSessionMap[agentKey]));
+    return;
+  }
+  if (agent.agent === 'main') {
+    const cached = getMainSessionKey();
+    if (cached) {
+      agentSessionMap[agentKey] = cached;
+      router.replace('/workspace/' + encodeURIComponent(cached));
+      return;
+    }
+  }
+
+  // 2. 无缓存 → 加载最近会话
+  await loadRecentSession(agent);
 }
 
 // =========== Session 选择 ===========
 function onSessionSelect(sessionKeyStr: string) {
+  // 从 sessionKey 中提取 agent，自动切换
+  const m = sessionKeyStr.match(/^agent:([^:]+)/);
+  if (m) {
+    const extractedAgent = m[1];
+    if (extractedAgent !== selectedAgent.value.agent || selectedAgent.value.platform !== 'openclaw') {
+      selectedAgent.value = { platform: 'openclaw', agent: extractedAgent, label: extractedAgent, emoji: '🦐', tag: 'OpenClaw' };
+    }
+  }
   router.push('/workspace/' + encodeURIComponent(sessionKeyStr));
 }
 
@@ -250,6 +333,12 @@ async function sendMessage() {
         sessionId: openCodeSessionId.value,
       });
       openCodeSessionId.value = result.sessionId;
+      // 保存 OpenCode sessionId 到 agentSessionMap
+      agentSessionMap[getAgentKey(selectedAgent.value)] = result.sessionId;
+      // 切换到 opencode-new 视图（如果是首次发送）
+      if (view.value !== 'chat') {
+        view.value = 'opencode-new';
+      }
       // 添加用户消息到本地消息列表
       timelineRef.value?.addOptimisticMessage(text, 'user');
       // 添加 agent 回复到本地消息列表
@@ -358,9 +447,11 @@ function onResizeDragEnd() {
 
 <template>
   <div class="workspace-page">
-    <PageHeader v-if="view === 'chat'" title="聊天" />
+    <PageHeader v-if="view === 'chat'" title="聊天" :subtitle="selectedAgent.emoji + ' ' + selectedAgent.label + ' ' + selectedAgent.tag" />
 
-    <PageHeader v-else-if="view === 'list'" :title="(agentId || 'Agent') + ' — 会话列表'" />
+    <PageHeader v-else-if="view === 'no-session' || view === 'opencode-new'" :title="selectedAgent.label + ' — 新对话'" />
+
+    <PageHeader v-else-if="view === 'list'" :title="selectedAgent.emoji + ' ' + selectedAgent.label + ' — 会话列表'" />
 
     <!-- 加载中状态（无白色容器） -->
     <div v-if="view === 'loading'" class="loading-state">
@@ -370,74 +461,76 @@ function onResizeDragEnd() {
 
     <div v-else class="workspace-body">
       <!-- Session 列表视图 -->
-      <SessionList v-if="view === 'list'" :agent-id="agentId" @select="onSessionSelect" />
+      <SessionList v-if="view === 'list'" :agent-id="selectedAgent.platform === 'openclaw' ? selectedAgent.agent : agentId" :platform="selectedAgent.platform" @select="onSessionSelect" />
 
-      <!-- 聊天视图 -->
-      <template v-else>
+      <!-- 聊天视图（有 sessionKey） -->
+      <template v-else-if="view === 'chat'">
         <div class="workspace-content">
           <ChatTimeline ref="timelineRef" :key="sessionKey" :session-key="sessionKey" />
-        <!-- Agent 选择器 -->
-        <div class="agent-selector-bar" v-if="canSend">
-          <AgentSelector v-model="selectedAgent" :disabled="sending || isBusy" />
-        </div>
-        <div class="chat-input-bar" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop" :class="{ 'drag-over': dragOver }">
-          <input ref="fileInputRef" type="file" accept="image/*" multiple class="file-input-hidden" @change="onFileChange" />
-          <div v-if="attachments.length > 0" class="attachment-preview-bar">
-            <div v-for="att in attachments" :key="att.id" class="attachment-preview-item">
-              <img :src="att.preview" :alt="att.file.name" />
-              <button class="attachment-remove" @click="removeAttachment(att.id)">&times;</button>
+          <div class="chat-input-bar" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop" :class="{ 'drag-over': dragOver }">
+            <input ref="fileInputRef" type="file" accept="image/*" multiple class="file-input-hidden" @change="onFileChange" />
+            <div v-if="attachments.length > 0" class="attachment-preview-bar">
+              <div v-for="att in attachments" :key="att.id" class="attachment-preview-item">
+                <img :src="att.preview" :alt="att.file.name" />
+                <button class="attachment-remove" @click="removeAttachment(att.id)">&times;</button>
+              </div>
+            </div>
+            <div class="resize-handle" @mousedown="onResizeDragStart"></div>
+            <div class="chat-input-card" :class="{ 'is-processing': isBusy || aborting }">
+              <div class="chat-textarea-zone" :style="{ height: textareaHeight + 'px' }">
+                <textarea ref="inputRef" v-model="inputText" class="chat-input" :placeholder="isAgentProcessing ? '追加消息到当前回复…' : (canSend ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '此会话已完成，不可发送消息')" :disabled="!canSend" @keydown="onKeyDown" @input="autoResize" @paste="onPaste" />
+              </div>
+              <div v-if="canSend" class="chat-action-row">
+                <span class="action-hint">Enter 发送 / Shift+Enter 换行</span>
+                <div class="chat-input-actions">
+                  <AgentSelector v-model="selectedAgent" :disabled="sending || isBusy" size="small" class="toolbar-agent-selector" />
+                  <button class="attach-btn" title="添加图片" @click="onFileSelect">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  </button>
+                  <button v-if="(isBusy && !sending) || aborting" class="abort-btn" :class="{ 'abort-btn--done': aborting }" title="停止生成 (Esc)" @click="handleAbort">
+                    <svg v-if="!aborting" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="2" /></svg>
+                    <svg v-else width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3L13 4.5" /></svg>
+                  </button>
+                  <button v-else-if="canSteer" class="steer-btn" title="追加消息" @click="sendMessage">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+                  </button>
+                  <button v-else class="send-btn" :disabled="sending || (!inputText.trim() && attachments.length === 0)" @click="sendMessage">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.5l13 5-13 5V8.5l8-1.5-8-1.5V1.5z"/></svg>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-          <!-- 拖拽手柄：在卡片上方外部 -->
-          <div class="resize-handle" @mousedown="onResizeDragStart"></div>
-          <!-- 输入卡片：文本区 + 操作栏 -->
-          <div class="chat-input-card" :class="{ 'is-processing': isBusy || aborting }">
-            <div class="chat-textarea-zone" :style="{ height: textareaHeight + 'px' }">
-              <textarea
-                ref="inputRef"
-                v-model="inputText"
-                class="chat-input"
-                :placeholder="isAgentProcessing ? '追加消息到当前回复…' : (canSend ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '此会话已完成，不可发送消息')"
-                :disabled="!canSend"
-                @keydown="onKeyDown"
-                @input="autoResize"
-                @paste="onPaste"
-              />
-            </div>
-            <div v-if="canSend" class="chat-action-row">
-              <span class="action-hint">Enter 发送 / Shift+Enter 换行</span>
-              <div class="chat-input-actions">
-                <button class="attach-btn" title="添加图片" @click="onFileSelect">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
-                  </svg>
-                </button>
-                <!-- 中止按钮（Agent 处理中显示） -->
-                <button v-if="(isBusy && !sending) || aborting" class="abort-btn" :class="{ 'abort-btn--done': aborting }" title="停止生成 (Esc)" @click="handleAbort">
-                  <svg v-if="!aborting" width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-                    <rect x="3" y="3" width="10" height="10" rx="2" />
-                  </svg>
-                  <svg v-else width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 8.5l3 3L13 4.5" />
-                  </svg>
-                </button>
-                <!-- 追加按钮（steer，Agent 处理中且有输入） -->
-                <button v-else-if="canSteer" class="steer-btn" title="追加消息" @click="sendMessage">
-                  <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
-                  </svg>
-                </button>
-                <!-- 发送按钮（空闲时显示） -->
-                <button v-else class="send-btn" :disabled="sending || (!inputText.trim() && attachments.length === 0)" @click="sendMessage">
-                  <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M1.5 1.5l13 5-13 5V8.5l8-1.5-8-1.5V1.5z"/>
-                  </svg>
-                </button>
+        </div><!-- /workspace-content -->
+      </template>
+
+      <!-- 无会话 / OpenCode 新对话 -->
+      <template v-else-if="view === 'no-session' || view === 'opencode-new'">
+        <div class="workspace-content">
+          <div class="empty-chat-state">
+            <div class="empty-chat-emoji">{{ selectedAgent.emoji }}</div>
+            <div class="empty-chat-title">{{ selectedAgent.label }} — {{ selectedAgent.tag }}</div>
+            <div class="empty-chat-hint">{{ view === 'no-session' ? '暂无会话，发送消息开始新对话' : '发送消息开始新对话' }}</div>
+          </div>
+          <div class="chat-input-bar" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop" :class="{ 'drag-over': dragOver }">
+            <input ref="fileInputRef" type="file" accept="image/*" multiple class="file-input-hidden" @change="onFileChange" />
+            <div class="resize-handle" @mousedown="onResizeDragStart"></div>
+            <div class="chat-input-card">
+              <div class="chat-textarea-zone" :style="{ height: textareaHeight + 'px' }">
+                <textarea ref="inputRef" v-model="inputText" class="chat-input" placeholder="输入消息开始新对话… (Enter 发送, Shift+Enter 换行)" @keydown="onKeyDown" @input="autoResize" @paste="onPaste" />
+              </div>
+              <div class="chat-action-row">
+                <span class="action-hint">Enter 发送 / Shift+Enter 换行</span>
+                <div class="chat-input-actions">
+                  <AgentSelector v-model="selectedAgent" size="small" class="toolbar-agent-selector" />
+                  <button class="send-btn" :disabled="!inputText.trim() && attachments.length === 0" @click="sendMessage">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.5l13 5-13 5V8.5l8-1.5-8-1.5V1.5z"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div><!-- /workspace-content -->
       </template>
     </div>
 
@@ -464,6 +557,29 @@ function onResizeDragEnd() {
   font-size: 13px;
 }
 
+.empty-chat-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--color-text-tertiary);
+}
+.empty-chat-emoji {
+  font-size: 48px;
+  opacity: 0.6;
+}
+.empty-chat-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.empty-chat-hint {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
 .workspace-body {
   flex: 1;
   min-height: 0;
@@ -483,15 +599,6 @@ function onResizeDragEnd() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-/* ===== Agent 选择栏 ===== */
-.agent-selector-bar {
-  display: flex;
-  align-items: center;
-  padding: 6px 16px 0;
-  flex-shrink: 0;
-  background: var(--color-bg-canvas);
 }
 
 /* ===== 输入框区域 ===== */

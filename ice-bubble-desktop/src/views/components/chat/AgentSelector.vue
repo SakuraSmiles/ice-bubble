@@ -74,17 +74,18 @@ const currentLabel = computed(() => {
 .agent-selector-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-  line-height: 1.4;
+  gap: 3px;
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  line-height: 1.3;
   cursor: pointer;
   transition: all 0.2s;
   user-select: none;
+  height: 26px;
 }
 .agent-selector-btn:hover {
   background: rgba(255, 255, 255, 0.08);
