@@ -7,31 +7,38 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     },
     "./message": {
       "types": "./dist/message.d.ts",
-      "import": "./dist/message.js"
+      "import": "./dist/message.js",
+      "require": "./dist/message.js"
     },
     "./session": {
       "types": "./dist/session.d.ts",
-      "import": "./dist/session.js"
+      "import": "./dist/session.js",
+      "require": "./dist/session.js"
     },
     "./agent": {
       "types": "./dist/agent.d.ts",
-      "import": "./dist/agent.js"
+      "import": "./dist/agent.js",
+      "require": "./dist/agent.js"
     },
     "./collector": {
       "types": "./dist/collector.d.ts",
-      "import": "./dist/collector.js"
+      "import": "./dist/collector.js",
+      "require": "./dist/collector.js"
     },
     "./api": {
       "types": "./dist/api.d.ts",
-      "import": "./dist/api.js"
+      "import": "./dist/api.js",
+      "require": "./dist/api.js"
     },
     "./logger": {
       "types": "./dist/logger.d.ts",
-      "import": "./dist/logger.js"
+      "import": "./dist/logger.js",
+      "require": "./dist/logger.js"
     }
   },
   "scripts": {
