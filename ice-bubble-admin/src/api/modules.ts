@@ -150,7 +150,7 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
 
     if (key === 'admin') {
       // admin 自检
-      const { VERSION } = await import('../index.js');
+      const { VERSION } = await import('../config.js');
       version = VERSION;
       const adminStatus = scheduler.getAdminStatus();
       status = {

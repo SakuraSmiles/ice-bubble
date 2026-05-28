@@ -454,6 +454,7 @@ async function sendMessage() {
 
   sending.value = true
   const hasAttachments = attachments.value.length > 0
+  let optimisticId = ''  // P0 optimistic update
 
   // 构建附件 payload
   const attachmentPayloads = attachments.value.map(att => {
@@ -489,16 +490,19 @@ async function sendMessage() {
     }
 
     // ===== OpenClaw 分支 =====
+    // Optimistic update: 先在 UI 上显示用户消息，再发送请求
+    optimisticId = `optimistic_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+    timelineRef.value?.addOptimisticMessage(
+      hasAttachments && !text ? '' : text,
+      'user',
+      attachmentDataUrls,
+      optimisticId,
+    )
     if (gatewayConnected.value) {
       await gatewayClient.sendMessage(
         activeSessionKey.value,
         text || '(图片)',
         attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
-      )
-      timelineRef.value?.addOptimisticMessage(
-        hasAttachments && !text ? '' : text,
-        'user',
-        attachmentDataUrls,
       )
     } else {
       const res = await request('/chat/send', {
@@ -512,14 +516,13 @@ async function sendMessage() {
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
-      timelineRef.value?.addOptimisticMessage(
-        hasAttachments && !text ? '' : text,
-        'user',
-        attachmentDataUrls,
-      )
     }
   } catch (e) {
     inputText.value = text
+    // 标记 optimistic 消息为失败（仅 OpenClaw 分支）
+    if (!isOpenCode) {
+      timelineRef.value?.markMessageFailed(optimisticId)
+    }
     console.error('发送失败', e)
   } finally {
     sending.value = false

@@ -113,9 +113,11 @@ defineExpose({
   isProcessing: gwStream.isProcessing,
   activeRunId: gwStream.activeRunId,
   getMessages: () => chatData.messages.value,
-  addOptimisticMessage(content: string, role: string = 'user', attachmentDataUrls?: string[]) {
+  addOptimisticMessage(content: string, role: string = 'user', attachmentDataUrls?: string[], optimisticId?: string) {
     const msg = {
-      id: `gw_${Date.now()}`,
+      id: optimisticId || `gw_${Date.now()}`,
+      _optimistic: optimisticId ? true : undefined,
+      _sendFailed: false,
       session_key: props.sessionKey || '',
       agent_id: role === 'user' ? 'user' : 'assistant',
       agent_name: role === 'user' ? 'You' : '',
@@ -140,6 +142,12 @@ defineExpose({
     chatData.knownIds.add(msg.id);
     chatData.messages.value = [...chatData.messages.value, msg];
     nextTick(() => chatData.scrollToBottom(false));
+  },
+  markMessageFailed(msgId: string) {
+    const idx = chatData.messages.value.findIndex(m => m.id === msgId);
+    if (idx >= 0) {
+      chatData.messages.value[idx] = { ...chatData.messages.value[idx], _sendFailed: true } as any;
+    }
   },
 });
 </script>

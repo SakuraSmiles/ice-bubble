@@ -6,7 +6,7 @@
  * @module ModuleScheduler
  */
 
-import { VERSION as _ADMIN_VERSION } from '../index.js';
+import { VERSION as _ADMIN_VERSION } from '../config.js';
 
 export interface ModuleEndpointConfig {
   moduleKey: string;

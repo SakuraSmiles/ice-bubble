@@ -1,0 +1,48 @@
+{
+  "name": "@ice-bubble/types",
+  "version": "1.0.0",
+  "description": "ice-bubble 共享类型定义",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./message": {
+      "types": "./dist/message.d.ts",
+      "import": "./dist/message.js"
+    },
+    "./session": {
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js"
+    },
+    "./agent": {
+      "types": "./dist/agent.d.ts",
+      "import": "./dist/agent.js"
+    },
+    "./collector": {
+      "types": "./dist/collector.d.ts",
+      "import": "./dist/collector.js"
+    },
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.js"
+    },
+    "./logger": {
+      "types": "./dist/logger.d.ts",
+      "import": "./dist/logger.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "rebuild": "npm run clean && npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module"
+}

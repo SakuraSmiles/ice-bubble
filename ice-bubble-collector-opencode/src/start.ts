@@ -65,8 +65,18 @@ async function start() {
         startLogger.info(`\n收到 ${signal} 信号，正在关闭...`);
         await collector.stop();
         if (httpServer) {
+            if (typeof (httpServer as unknown as { closeAllConnections?: () => void }).closeAllConnections === 'function') {
+                (httpServer as unknown as { closeAllConnections: () => void }).closeAllConnections();
+            }
             await new Promise<void>((resolve) => {
-                httpServer.close(() => resolve());
+                const timer = setTimeout(() => {
+                    startLogger.warn('HTTP Server 关闭超时 (5s)，强制退出');
+                    resolve();
+                }, 5000);
+                httpServer.close(() => {
+                    clearTimeout(timer);
+                    resolve();
+                });
             });
         }
         startLogger.info('✅ 采集器已关闭');

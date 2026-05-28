@@ -8,6 +8,7 @@
  */
 
 import 'dotenv/config';
+import http from 'node:http';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -88,9 +89,11 @@ async function start() {
 
   // ==================== 5. 启动 HTTP API ====================
 
+  let httpServer: http.Server | null = null;
   if (config.api.enabled) {
     const { startApiServer } = await import('./api/server.js');
-    await startApiServer(config.api, collector);
+    const { server } = await startApiServer(config.api, collector);
+    httpServer = server;
     startLogger.info('✅ HTTP API 已启动\n');
   }
 
@@ -104,6 +107,21 @@ async function start() {
   
   const shutdown = async (signal: string) => {
     startLogger.info(`\n收到 ${signal} 信号，正在关闭...`);
+    if (httpServer) {
+      if (typeof (httpServer as unknown as { closeAllConnections?: () => void }).closeAllConnections === 'function') {
+        (httpServer as unknown as { closeAllConnections: () => void }).closeAllConnections();
+      }
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          startLogger.warn('HTTP Server 关闭超时 (5s)，强制退出');
+          resolve();
+        }, 5000);
+        httpServer!.close(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    }
     await collector.stop();
     startLogger.info('✅ 采集器已关闭');
     process.exit(0);

@@ -6,6 +6,7 @@
  * @module api/server
  */
 
+import http from 'node:http';
 import express from 'express';
 import { Logger } from '../utils/logger.js';
 import { createMetaRouter, markStartTime } from './routes/meta.js';
@@ -82,7 +83,7 @@ export async function createApiServer(
 export async function startApiServer(
     config: ApiServerConfig,
     collector: SQLiteCollector,
-): Promise<{ app: express.Application; server: ReturnType<express.Application['listen']> }> {
+): Promise<{ app: express.Application; server: http.Server }> {
     if (!config.enabled) {
         serverLogger.info('HTTP API 已禁用');
         const app = await createApiServer(config, collector);
@@ -91,8 +92,9 @@ export async function startApiServer(
 
     const app = await createApiServer(config, collector);
 
-    const httpServer = await new Promise<ReturnType<express.Application['listen']>>((resolve, reject) => {
-        const srv = app.listen(config.port, config.host, () => {
+    const httpServer = await new Promise<http.Server>((resolve, reject) => {
+        const srv = http.createServer(app);
+        srv.listen({ port: config.port, host: config.host, reuseAddr: true }, () => {
             serverLogger.info(`HTTP API 已启动`, {
                 地址: `http://${config.host}:${config.port}`,
             });

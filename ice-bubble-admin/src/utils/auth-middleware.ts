@@ -15,7 +15,7 @@ import { randomBytes } from 'crypto';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import type { Request, Response, NextFunction } from 'express';
-import { logger } from './index.js';
+import { defaultLogger as logger } from './logger.js';
 
 
 /**

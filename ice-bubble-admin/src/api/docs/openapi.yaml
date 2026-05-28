@@ -1,0 +1,1546 @@
+openapi: 3.0.3
+info:
+  title: ice-bubble Admin API
+  description: ice-bubble 管理后台 REST API 文档
+  version: 1.4.1
+  contact:
+    name: ice-bubble team
+
+servers:
+  - url: http://localhost:13000
+    description: 本地开发
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Bearer Token 认证（配置在 auth.token 或 ICE_AUTH_TOKEN）
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+    Agent:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        agent_name:
+          type: string
+        avatar:
+          type: string
+          nullable: true
+        status:
+          type: string
+          description: 统一状态（在线/忙碌/离线）
+        openclaw_status:
+          type: string
+        latest_message:
+          type: string
+          nullable: true
+        task_enhancement:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [idle, working]
+            pending_count:
+              type: integer
+            source:
+              type: string
+
+    Session:
+      type: object
+      properties:
+        session_key:
+          type: string
+        agent_id:
+          type: string
+          nullable: true
+        agent_name:
+          type: string
+          nullable: true
+        avatar:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        channel:
+          type: string
+          nullable: true
+        message_count:
+          type: integer
+        first_message:
+          type: string
+          nullable: true
+        last_message:
+          type: string
+          nullable: true
+        last_message_at:
+          type: string
+          format: date-time
+          nullable: true
+        first_message_at:
+          type: string
+          format: date-time
+          nullable: true
+        session_status:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        model_provider:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          nullable: true
+        updated_at:
+          type: string
+          nullable: true
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        session_key:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        created_at:
+          type: string
+        model:
+          type: string
+          nullable: true
+        agent_id:
+          type: string
+          nullable: true
+        agent_name:
+          type: string
+          nullable: true
+        avatar:
+          type: string
+          nullable: true
+        message_type:
+          type: string
+          nullable: true
+
+    Module:
+      type: object
+      properties:
+        moduleKey:
+          type: string
+        name:
+          type: string
+        baseUrl:
+          type: string
+        enabled:
+          type: boolean
+        pollInterval:
+          type: integer
+        registeredTime:
+          type: string
+        version:
+          type: string
+        status:
+          type: object
+          properties:
+            state:
+              type: string
+              enum: [running, stopped, error]
+            lastPollTime:
+              type: string
+              nullable: true
+            lastError:
+              type: string
+              nullable: true
+            latencyMs:
+              type: integer
+              nullable: true
+            runtime:
+              type: object
+              nullable: true
+              properties:
+                startTime:
+                  type: string
+                  nullable: true
+                uptimeSeconds:
+                  type: integer
+                  nullable: true
+                messagesCollected:
+                  type: integer
+                  nullable: true
+                errorsCount:
+                  type: integer
+                  nullable: true
+
+    MediaItem:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+        mimeType:
+          type: string
+        fileName:
+          type: string
+        size:
+          type: integer
+        source:
+          type: string
+          enum: [admin, gateway]
+
+    SessionGroup:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        icon:
+          type: string
+          nullable: true
+        sort_order:
+          type: integer
+        created_at:
+          type: string
+        updated_at:
+          type: string
+          nullable: true
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              group_id:
+                type: integer
+              session_key:
+                type: string
+              sort_order:
+                type: integer
+
+    SubagentTask:
+      type: object
+      properties:
+        session_key:
+          type: string
+        label:
+          type: string
+          nullable: true
+        agent_id:
+          type: string
+        session_status:
+          type: string
+          nullable: true
+        spawned_by:
+          type: string
+          nullable: true
+        spawn_depth:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+        last_message_at:
+          type: string
+          nullable: true
+        message_count:
+          type: integer
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        uptime:
+          type: integer
+          description: 运行秒数
+        memory:
+          type: object
+          properties:
+            rss:
+              type: string
+            heapUsed:
+              type: string
+            heapTotal:
+              type: string
+        dependencies:
+          type: object
+          additionalProperties:
+            type: object
+
+tags:
+  - name: Auth
+    description: 认证
+  - name: Stats
+    description: 统计
+  - name: Sessions
+    description: 会话管理
+  - name: Messages
+    description: 消息
+  - name: Agents
+    description: Agent 管理
+  - name: Modules
+    description: 模块管理
+  - name: Media
+    description: 附件/媒体
+  - name: Chat
+    description: 聊天
+  - name: OpenCode
+    description: OpenCode 聊天
+  - name: Session Groups
+    description: 会话分组
+  - name: Session Preferences
+    description: 会话偏好
+  - name: Subagent Tasks
+    description: 子 Agent 任务
+  - name: Settings
+    description: 系统配置
+  - name: Workspace
+    description: 文件工作区
+  - name: Health
+    description: 健康检查
+
+paths:
+  # ── Auth (no auth required) ──
+  /api/auth/status:
+    get:
+      tags: [Auth]
+      summary: 获取认证状态
+      description: 无需认证。返回 token 是否已配置及是否为自动生成。
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  needsToken:
+                    type: boolean
+                  tokenHint:
+                    type: string
+
+  /api/auth/verify:
+    post:
+      tags: [Auth]
+      summary: 验证 Token
+      description: 无需认证。提交 Bearer Token 进行校验。
+      security: []
+      parameters:
+        - name: Authorization
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Token 有效
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+        '401':
+          description: Token 无效或缺失
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Stats ──
+  /api/stats:
+    get:
+      tags: [Stats]
+      summary: 获取统计概览
+      responses:
+        '200':
+          description: 统计数据
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalSessions:
+                    type: integer
+                  totalMessages:
+                    type: integer
+                  totalAgents:
+                    type: integer
+                  uptime:
+                    type: number
+                    description: 运行小时数
+
+  # ── Sessions ──
+  /api/sessions:
+    get:
+      tags: [Sessions]
+      summary: 会话列表（Admin SQLite）
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: agent_id
+          in: query
+          schema: { type: string }
+        - name: channel
+          in: query
+          schema: { type: string }
+        - name: platform
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: 会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  total:
+                    type: integer
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+
+  /api/sessions/unified:
+    get:
+      tags: [Sessions]
+      summary: 统一会话列表（Gateway + Admin 合并）
+      description: 合并 Gateway 实时会话与 Admin SQLite 丰富数据（agent_name, avatar, last_message）。
+      parameters:
+        - name: agentId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 200, maximum: 1000 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: 统一会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+                  total:
+                    type: integer
+        '502':
+          description: Gateway 不可用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/sessions/grouped:
+    get:
+      tags: [Sessions]
+      summary: 按 Agent 分组的会话
+      parameters:
+        - name: limitPerAgent
+          in: query
+          schema: { type: integer, default: 5, maximum: 20 }
+      responses:
+        '200':
+          description: 分组会话
+
+  /api/sessions/timeline:
+    get:
+      tags: [Sessions]
+      summary: 会话时间线（按日期分组的树状视图）
+      parameters:
+        - name: agent_id
+          in: query
+          schema: { type: string }
+        - name: days
+          in: query
+          schema: { type: integer, default: 7, maximum: 90 }
+      responses:
+        '200':
+          description: 时间线数据
+
+  /api/sessions/flows:
+    get:
+      tags: [Sessions]
+      summary: 智能会话流（合并相邻会话，gap < 20min）
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 7, maximum: 90 }
+      responses:
+        '200':
+          description: 会话流数据
+
+  /api/sessions/pending-summary:
+    get:
+      tags: [Sessions]
+      summary: 需要 AI 总结的会话
+      responses:
+        '200':
+          description: 待总结会话列表
+
+  /api/sessions/summary:
+    put:
+      tags: [Sessions]
+      summary: 批量更新会话摘要
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [updates]
+              properties:
+                updates:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      session_key:
+                        type: string
+                      summary_type:
+                        type: string
+                        enum: [single, segmented]
+                      summary:
+                        type: string
+                      segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            index:
+                              type: integer
+                            text:
+                              type: string
+                      last_summarized_msg_id:
+                        type: integer
+      responses:
+        '200':
+          description: 更新结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: integer
+
+  /api/sessions/{key}:
+    get:
+      tags: [Sessions]
+      summary: 获取单个会话详情
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 会话详情
+        '404':
+          description: 会话不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/sessions/{key}/messages:
+    get:
+      tags: [Sessions]
+      summary: 获取会话消息
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: 消息列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  total:
+                    type: integer
+
+  # ── Messages ──
+  /api/messages:
+    get:
+      tags: [Messages]
+      summary: 消息列表
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: session_key
+          in: query
+          schema: { type: string }
+        - name: archived
+          in: query
+          description: "true 查询归档数据"
+          schema: { type: string }
+      responses:
+        '200':
+          description: 消息列表
+
+  /api/messages/timeline:
+    get:
+      tags: [Messages]
+      summary: 群聊风格消息时间线
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: before
+          in: query
+          schema: { type: string }
+          description: 游标时间戳，返回此时间之前的消息
+        - name: since
+          in: query
+          schema: { type: string }
+          description: 时间戳，返回此时间之后的消息（增量轮询）
+        - name: agent_ids
+          in: query
+          schema: { type: string }
+          description: 逗号分隔的 agent_id
+        - name: message_types
+          in: query
+          schema: { type: string }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: exclude_system_noise
+          in: query
+          schema: { type: string }
+        - name: exclude_cron
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: 时间线数据
+
+  /api/messages/deduplicate:
+    post:
+      tags: [Messages]
+      summary: 消息去重
+      responses:
+        '200':
+          description: 去重结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+
+  # ── Agents ──
+  /api/agents:
+    get:
+      tags: [Agents]
+      summary: Agent 列表
+      responses:
+        '200':
+          description: Agent 列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  agents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Agent'
+
+  /api/agents/overview:
+    get:
+      tags: [Agents]
+      summary: Agent 概览（状态、当前任务、今日消息数）
+      responses:
+        '200':
+          description: Agent 概览
+        '503':
+          description: 概览服务未初始化
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/agents/with-activity:
+    get:
+      tags: [Agents]
+      summary: Agent 列表 + 活动热力图
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 90, maximum: 365 }
+      responses:
+        '200':
+          description: Agent + 活动数据
+
+  /api/agents/token-summary:
+    get:
+      tags: [Agents]
+      summary: Token 统计
+      parameters:
+        - name: agentId
+          in: query
+          schema: { type: string }
+        - name: date
+          in: query
+          schema: { type: string }
+          description: YYYY-MM-DD
+      responses:
+        '200':
+          description: Token 统计数据
+
+  /api/agents/token-summary/rebuild:
+    post:
+      tags: [Agents]
+      summary: 重建 Token 统计表
+      responses:
+        '200':
+          description: 重建结果
+
+  /api/agents/activity/rebuild:
+    post:
+      tags: [Agents]
+      summary: 重建 Agent 活动表
+      responses:
+        '200':
+          description: 重建结果
+
+  /api/agents/{id}/avatar:
+    get:
+      tags: [Agents]
+      summary: 获取 Agent 头像
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 头像数据
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  avatar:
+                    type: string
+    put:
+      tags: [Agents]
+      summary: 更新 Agent 头像
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                avatar:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/agents/{id}/activity:
+    get:
+      tags: [Agents]
+      summary: 单 Agent 活动热力图
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: days
+          in: query
+          schema: { type: integer, default: 90, maximum: 365 }
+      responses:
+        '200':
+          description: 活动数据
+
+  # ── Modules ──
+  /api/modules:
+    get:
+      tags: [Modules]
+      summary: 模块列表
+      responses:
+        '200':
+          description: 模块列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  modules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Module'
+    post:
+      tags: [Modules]
+      summary: 新增模块
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [moduleKey, name, baseUrl]
+              properties:
+                moduleKey:
+                  type: string
+                name:
+                  type: string
+                baseUrl:
+                  type: string
+                enabled:
+                  type: boolean
+                  default: true
+                pollInterval:
+                  type: integer
+                  default: 30000
+      responses:
+        '201':
+          description: 模块创建成功
+        '400':
+          description: 参数错误
+        '409':
+          description: 模块已存在
+
+  /api/modules/test-connection:
+    post:
+      tags: [Modules]
+      summary: 测试模块连接
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseUrl]
+              properties:
+                baseUrl:
+                  type: string
+      responses:
+        '200':
+          description: 连接成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  moduleKey:
+                    type: string
+                  moduleType:
+                    type: string
+                  status:
+                    type: string
+                  version:
+                    type: string
+
+  /api/modules/{key}:
+    get:
+      tags: [Modules]
+      summary: 获取单个模块
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 模块详情
+        '404':
+          description: 模块不存在
+    put:
+      tags: [Modules]
+      summary: 更新模块
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                baseUrl:
+                  type: string
+                enabled:
+                  type: boolean
+                pollInterval:
+                  type: integer
+      responses:
+        '200':
+          description: 更新成功
+        '403':
+          description: 禁止更新 admin
+        '404':
+          description: 模块不存在
+    delete:
+      tags: [Modules]
+      summary: 删除模块
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 删除成功
+        '403':
+          description: 禁止删除 admin
+        '404':
+          description: 模块不存在
+
+  /api/modules/{key}/status:
+    get:
+      tags: [Modules]
+      summary: 手动触发模块状态更新
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 模块状态
+        '404':
+          description: 获取状态失败
+
+  /api/modules/{key}/config:
+    get:
+      tags: [Modules]
+      summary: 获取模块运行时配置
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 模块配置
+        '404':
+          description: 模块不存在
+
+  # ── Media ──
+  /api/media/{id}:
+    get:
+      tags: [Media]
+      summary: 查询单个 Media 元数据
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Media 元数据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaItem'
+        '404':
+          description: Media 不存在
+
+  /api/media/batch:
+    get:
+      tags: [Media]
+      summary: 批量查询 Media 元数据
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema:
+            type: string
+            description: 逗号分隔的 media ID（最多 50 个）
+      responses:
+        '200':
+          description: Media 列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MediaItem'
+
+  # ── Chat ──
+  /api/chat/send:
+    post:
+      tags: [Chat]
+      summary: 发送聊天消息
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionKey, message]
+              properties:
+                sessionKey:
+                  type: string
+                message:
+                  type: string
+      responses:
+        '200':
+          description: 发送结果
+
+  /api/chat/abort:
+    post:
+      tags: [Chat]
+      summary: 中止当前回复
+      responses:
+        '200':
+          description: 中止成功
+
+  /api/chat/stream:
+    get:
+      tags: [Chat]
+      summary: SSE 聊天流
+      description: Server-Sent Events 流式响应
+      responses:
+        '200':
+          description: SSE 流
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/chat/history:
+    get:
+      tags: [Chat]
+      summary: Gateway 聊天历史（HTTP 备用通道）
+      parameters:
+        - name: sessionKey
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: before
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: 聊天历史
+        '502':
+          description: Gateway 不可用
+
+  /api/gateway/sessions:
+    get:
+      tags: [Chat]
+      summary: Gateway 会话列表（HTTP 备用通道）
+      responses:
+        '200':
+          description: Gateway 会话列表
+        '502':
+          description: Gateway 不可用
+
+  # ── OpenCode ──
+  /api/opencode/chat/send:
+    post:
+      tags: [OpenCode]
+      summary: 发送消息到 OpenCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                agent:
+                  type: string
+                message:
+                  type: string
+                sessionId:
+                  type: string
+      responses:
+        '200':
+          description: OpenCode 回复
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  sessionId:
+                    type: string
+                  content:
+                    type: string
+                  tokens:
+                    type: object
+                    properties:
+                      input:
+                        type: integer
+                      output:
+                        type: integer
+                      total:
+                        type: integer
+                  model:
+                    type: string
+                  agent:
+                    type: string
+        '400':
+          description: 缺少 message 字段
+        '502':
+          description: OpenCode 请求失败
+        '503':
+          description: OpenCode 不可达
+
+  /api/opencode/chat/abort:
+    post:
+      tags: [OpenCode]
+      summary: 中止 OpenCode 回复（占位）
+      description: 当前非流式模式不需要，预留接口
+      responses:
+        '200':
+          description: 中止成功
+
+  /api/opencode/chat/health:
+    get:
+      tags: [OpenCode]
+      summary: OpenCode 连接状态
+      responses:
+        '200':
+          description: 连接状态
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [connected, disconnected]
+                  opencodeUrl:
+                    type: string
+                  message:
+                    type: string
+
+  # ── Session Groups ──
+  /api/session-groups:
+    get:
+      tags: [Session Groups]
+      summary: 获取所有会话分组
+      responses:
+        '200':
+          description: 分组列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SessionGroup'
+    post:
+      tags: [Session Groups]
+      summary: 创建会话分组
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                icon:
+                  type: string
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group:
+                    type: object
+                  members:
+                    type: array
+
+  /api/session-groups/{id}:
+    patch:
+      tags: [Session Groups]
+      summary: 更新会话分组
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                icon:
+                  type: string
+                sort_order:
+                  type: integer
+      responses:
+        '200':
+          description: 更新成功
+    delete:
+      tags: [Session Groups]
+      summary: 删除会话分组
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: 删除成功
+        '404':
+          description: 分组不存在
+
+  /api/session-groups/{id}/members:
+    post:
+      tags: [Session Groups]
+      summary: 向分组添加成员
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_key]
+              properties:
+                session_key:
+                  type: string
+                sort_order:
+                  type: integer
+                  default: 0
+      responses:
+        '201':
+          description: 成员添加成功
+
+  /api/session-groups/{id}/members/{sessionKey}:
+    delete:
+      tags: [Session Groups]
+      summary: 从分组移除成员
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: sessionKey
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 移除成功
+        '404':
+          description: 成员不存在
+
+  # ── Session Preferences ──
+  /api/session-preferences:
+    get:
+      tags: [Session Preferences]
+      summary: 获取会话偏好（置顶/隐藏）
+      responses:
+        '200':
+          description: 偏好设置
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pinned:
+                    type: array
+                    items:
+                      type: string
+                  hidden:
+                    type: array
+                    items:
+                      type: string
+    put:
+      tags: [Session Preferences]
+      summary: 更新会话偏好
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pinned, hidden]
+              properties:
+                pinned:
+                  type: array
+                  items:
+                    type: string
+                hidden:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: 更新成功
+
+  # ── Subagent Tasks ──
+  /api/subagent-tasks:
+    get:
+      tags: [Subagent Tasks]
+      summary: 子 Agent 任务列表
+      parameters:
+        - name: agent_id
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: 任务列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  total:
+                    type: integer
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SubagentTask'
+
+  # ── Settings ──
+  /api/settings:
+    get:
+      tags: [Settings]
+      summary: 读取配置（敏感字段已隐藏）
+      responses:
+        '200':
+          description: 配置信息
+    put:
+      tags: [Settings]
+      summary: 保存配置（白名单字段合并写入）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                server:
+                  type: object
+                  properties:
+                    port:
+                      type: integer
+                    host:
+                      type: string
+                logging:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                    format:
+                      type: string
+                cleanup:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    healthDaysToKeep:
+                      type: integer
+                gateway:
+                  type: object
+                  properties:
+                    url:
+                      type: string
+                cors:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    origins:
+                      type: array
+                      items:
+                        type: string
+                dataSync:
+                  type: object
+                  properties:
+                    collectorBaseUrl:
+                      type: string
+                    pollInterval:
+                      type: integer
+                    batchSize:
+                      type: integer
+      responses:
+        '200':
+          description: 保存结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  changed:
+                    type: boolean
+
+  # ── Workspace ──
+  /api/workspace/tree:
+    get:
+      tags: [Workspace]
+      summary: 获取目录树（含 git 状态）
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+        - name: depth
+          in: query
+          schema: { type: integer, default: 1, maximum: 10 }
+      responses:
+        '200':
+          description: 目录树
+        '400':
+          description: 路径不合法
+        '404':
+          description: 路径不存在
+
+  /api/workspace/git-status:
+    get:
+      tags: [Workspace]
+      summary: 获取 git 状态统计
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Git 状态
+
+  /api/workspace/scan:
+    get:
+      tags: [Workspace]
+      summary: 扫描一级子目录
+      parameters:
+        - name: base
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 目录列表
+
+  # ── Health ──
+  /health:
+    get:
+      tags: [Health]
+      summary: 健康检查（无 auth）
+      description: 返回系统状态、数据库、collector 可达性、内存使用。
+      security: []
+      responses:
+        '200':
+          description: 健康状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'

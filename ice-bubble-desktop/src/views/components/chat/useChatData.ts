@@ -7,6 +7,7 @@ import { API_BASE } from '../../../config';
 import type { TimelineMessage, TimelineResponse, GatewayMessage, GatewayContentBlock, GatewayToolCallBlock, GatewayHistoryResponse, MediaBatchResponse, MediaBatchItem } from './types';
 
 import { parseMediaAttached, stripMediaAttachedMarkers, detectInlineImages } from './media-parser';
+import { messageCache } from '@/stores/message-cache';
 
 export function useChatData(getSessionKey: () => string | undefined) {
   const messages = ref<TimelineMessage[]>([]);
@@ -356,6 +357,24 @@ export function useChatData(getSessionKey: () => string | undefined) {
   }
 
   async function loadLatest() {
+    const sessionKey = getSessionKey();
+
+    // P1: 有 sessionKey 时先查缓存
+    if (sessionKey) {
+      const cached = messageCache.get(sessionKey);
+      if (cached) {
+        messages.value = cached.messages;
+        knownIds = new Set(cached.knownIds);
+        hasMore.value = cached.hasMore;
+        adminPageCursor = cached.adminPageCursor;
+        agentAvatar.value = cached.agentAvatar;
+        loading.value = false;
+        // 后台静默刷新，保证数据新鲜度
+        refreshInBackground(sessionKey);
+        return;
+      }
+    }
+
     loading.value = true;
     knownIds.clear();
     resetAdminCursor();
@@ -428,6 +447,58 @@ export function useChatData(getSessionKey: () => string | undefined) {
       loading.value = false;
       await nextTick();
       scrollToBottom(false);
+      // P1: 加载完成后写入缓存
+      const sk = getSessionKey();
+      if (sk) {
+        messageCache.set(sk, {
+          messages: messages.value,
+          knownIds: [...knownIds],
+          hasMore: hasMore.value,
+          adminPageCursor,
+          agentAvatar: agentAvatar.value,
+          cachedAt: Date.now(),
+        });
+      }
+    }
+  }
+
+  /**
+   * P1: 缓存命中后，后台静默刷新最近消息，保证数据新鲜度。
+   * 不改变 loading 状态，不阻塞 UI。
+   */
+  async function refreshInBackground(sessionKey: string) {
+    try {
+      const res = await request(`/chat/history?sessionKey=${encodeURIComponent(sessionKey)}&limit=10`);
+      if (!res.ok) return;
+      const result = await res.json() as GatewayHistoryResponse | GatewayMessage[];
+      const rawMsgs = Array.isArray(result) ? result : ((result as GatewayHistoryResponse)?.messages ?? (result as GatewayHistoryResponse)?.history ?? []);
+      const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
+      const newMsgs = gatewayMsgsToTimeline(arr);
+      if (newMsgs.length === 0) return;
+
+      // 合并新消息到已有列表
+      let changed = false;
+      for (const m of newMsgs) {
+        if (!knownIds.has(m.id)) {
+          knownIds.add(m.id);
+          messages.value = [...messages.value, m].sort(
+            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+          );
+          changed = true;
+        }
+      }
+      if (changed) {
+        messageCache.set(sessionKey, {
+          messages: messages.value,
+          knownIds: [...knownIds],
+          hasMore: hasMore.value,
+          adminPageCursor,
+          agentAvatar: agentAvatar.value,
+          cachedAt: Date.now(),
+        });
+      }
+    } catch {
+ // 静默失败，不影响 UI
     }
   }
 

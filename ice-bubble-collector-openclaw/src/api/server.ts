@@ -13,6 +13,7 @@
  * @module api/server
  */
 
+import http from 'node:http';
 import express from 'express';
 import type { FileCollector } from '../collectors/FileCollector.js';
 import { Logger } from '../utils/logger.js';
@@ -205,34 +206,32 @@ export async function createApiServer(
 export async function startApiServer(
     config: ApiServerConfig,
     collector: FileCollector,
-): Promise<express.Application> {
+): Promise<{ app: express.Application; server: http.Server }> {
     if (!config.enabled) {
         serverLogger.info('HTTP API 已禁用 (config.api.enabled=false)');
-        // 返回一个空 app 但不监听端口
-        return await createApiServer(config, collector);
+        const app = await createApiServer(config, collector);
+        return { app, server: null as unknown as http.Server };
     }
 
     const app = await createApiServer(config, collector);
 
-    await new Promise<void>((resolve, reject) => {
-        const server = app.listen(config.port, config.host, () => {
+    const httpServer = await new Promise<http.Server>((resolve, reject) => {
+        const srv = http.createServer(app);
+        srv.listen({ port: config.port, host: config.host, reuseAddr: true }, () => {
             serverLogger.info(`HTTP API 已启动`, {
                 地址: `http://${config.host}:${config.port}`,
                 接口: '/api/meta/status',
             });
-            resolve();
+            resolve(srv);
         });
 
-        server.on('error', (err: NodeJS.ErrnoException) => {
+        srv.on('error', (err: NodeJS.ErrnoException) => {
             if (err.code === 'EADDRINUSE') {
                 serverLogger.error(`端口 ${config.port} 已被占用`);
             }
             reject(err);
         });
-
-        // 将 server 引用挂到 app 上，方便后续关闭
-        (app as unknown as Record<string, unknown>)._httpServer = server;
     });
 
-    return app;
+    return { app, server: httpServer };
 }
