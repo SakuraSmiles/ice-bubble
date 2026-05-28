@@ -54,4 +54,5 @@ temp/
 
 # Backups
 backups/
+backup-*/
 *.backup
