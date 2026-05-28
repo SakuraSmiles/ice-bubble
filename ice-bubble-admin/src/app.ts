@@ -11,6 +11,7 @@
  */
 
 import express, { Request, Response, NextFunction } from 'express';
+import rateLimit from 'express-rate-limit';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { AppConfig } from './config.js';
@@ -49,11 +50,7 @@ export function createApp(configData: AppConfig, authToken: string) {
     return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
   };
 
-  // 用 require + 类型断言解决 monorepo 类型冲突
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const rateLimit = require('express-rate-limit');
-
-  const unauthLimiter = rateLimit.default({
+  const unauthLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 120,
     keyGenerator: (req: express.Request) => getClientIp(req),
@@ -61,9 +58,9 @@ export function createApp(configData: AppConfig, authToken: string) {
       res.setHeader('Retry-After', '60');
       res.status(429).json({ error: 'Too Many Requests' });
     },
-  }) as unknown as express.RequestHandler;
+  });
 
-  const authLimiter = rateLimit.default({
+  const authLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 300,
     keyGenerator: (req: express.Request) => {
@@ -80,7 +77,7 @@ export function createApp(configData: AppConfig, authToken: string) {
       res.setHeader('Retry-After', '60');
       res.status(429).json({ error: 'Too Many Requests' });
     },
-  }) as unknown as express.RequestHandler;
+  });
 
   app.use(unauthLimiter);
   app.use(authLimiter);
@@ -142,7 +139,8 @@ export function createApp(configData: AppConfig, authToken: string) {
   });
 
   // Attachment static files — no auth required
-  const attachmentsDirEarly = process.env.ATTACHMENTS_DIR || join(process.env.HOME || '/root', '.local', 'share', 'ice-bubble', 'data', 'attachments');
+  const IB_DATA_DIR = process.env.IB_DATA_DIR || join(process.env.HOME || '/root', '.local', 'share', 'ice-bubble');
+  const attachmentsDirEarly = process.env.ATTACHMENTS_DIR || join(IB_DATA_DIR, 'data', 'attachments');
   if (!existsSync(attachmentsDirEarly)) {
     mkdirSync(attachmentsDirEarly, { recursive: true });
   }

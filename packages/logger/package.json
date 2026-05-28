@@ -1,6 +1,6 @@
 {
   "name": "@ice-bubble/logger",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "ice-bubble 统一结构化日志包（基于 Pino）",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

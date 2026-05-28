@@ -31,17 +31,31 @@ class DailyFileStream implements DestinationStream {
       try { fs.closeSync(this._fd); } catch { /* ignore */ }
     }
 
-    fs.mkdirSync(this._dir, { recursive: true });
-    const filePath = path.join(this._dir, `${this._baseName}.${today}.log`);
-    this._fd = fs.openSync(filePath, 'a');
-    this._currentDate = today;
+    try {
+      fs.mkdirSync(this._dir, { recursive: true });
+      const filePath = path.join(this._dir, `${this._baseName}.${today}.log`);
+      this._fd = fs.openSync(filePath, 'a');
+      this._currentDate = today;
+    } catch (e) {
+      this._fd = null;
+      throw e;
+    }
   }
 
   write(data: string): void {
     this.ensureOpen();
     if (this._fd !== null) {
-      fs.appendFileSync(this._fd, data);
+      fs.writeSync(this._fd, data);
     }
+  }
+
+  close(): void {
+    try {
+      if (this._fd !== null) {
+        fs.closeSync(this._fd);
+        this._fd = null;
+      }
+    } catch { /* ignore */ }
   }
 }
 
@@ -66,6 +80,16 @@ class LevelFilterStream implements DestinationStream {
   }
 }
 
+const _fileStreams: DailyFileStream[] = [];
+let _exitRegistered = false;
+function registerExitHandler(): void {
+  if (_exitRegistered) return;
+  _exitRegistered = true;
+  process.on('exit', () => {
+    for (const s of _fileStreams) s.close();
+  });
+}
+
 function buildStreams(config: LoggerConfig): DestinationStream | undefined {
   const { console: c, file: f, name } = config;
 
@@ -87,9 +111,14 @@ function buildStreams(config: LoggerConfig): DestinationStream | undefined {
 
   if (f.enabled) {
     // 常规日志
-    streams.push(new DailyFileStream(f.dir, name));
+    const normalStream = new DailyFileStream(f.dir, name);
+    _fileStreams.push(normalStream);
+    streams.push(normalStream);
     // 错误日志（error >= 50, fatal >= 60）
-    streams.push(new LevelFilterStream(new DailyFileStream(f.dir, `${name}-errors`), 50));
+    const errorStream = new DailyFileStream(f.dir, `${name}-errors`);
+    _fileStreams.push(errorStream);
+    streams.push(new LevelFilterStream(errorStream, 50));
+    registerExitHandler();
   }
 
   if (streams.length === 1) return streams[0];

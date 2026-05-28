@@ -381,7 +381,6 @@ export function useChatData(getSessionKey: () => string | undefined) {
 
     try {
       // 并行请求 Gateway history 和 Admin timeline
-      const sessionKey = getSessionKey();
 
       const gatewayPromise = (async (): Promise<TimelineMessage[]> => {
         if (!sessionKey) return [];
