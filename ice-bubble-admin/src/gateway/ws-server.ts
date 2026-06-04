@@ -5,8 +5,8 @@
 
 import type { WebSocket as WsSocket, Server as WsServer } from "ws";
 import { WebSocketServer } from "ws";
-import type { Server as HttpServer } from "http";
-import type { IncomingMessage } from "http";
+import type { Server as HttpServer, IncomingMessage } from "http";
+import type { Duplex } from "stream";
 import type { GatewayProxy } from "./gateway-proxy.js";
 import { validateToken } from "../utils/auth-middleware.js";
 import { logger } from "../utils/index.js";
@@ -87,6 +87,8 @@ export class GatewayWsServer {
     req: ClientRequest;
     enqueuedAt: number;
   }> = [];
+  private upgradeHandler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => void) | null = null;
+  private httpServer: HttpServer | null = null;
 
   constructor(proxy: GatewayProxy, authToken: string, attachmentStorage?: AttachmentStorage) {
     this.proxy = proxy;
@@ -96,10 +98,11 @@ export class GatewayWsServer {
 
   /** 挂载 WebSocket 服务器到 HTTP server，路径 /ws */
   start(server: HttpServer): void {
+    this.httpServer = server;
     this.wss = new WebSocketServer({ noServer: true });
 
     // Handle upgrade manually so we can filter by path and authenticate
-    server.on("upgrade", (req: IncomingMessage, socket, head) => {
+    this.upgradeHandler = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
       const url = new URL(req.url || "/", `http://${req.headers.host}`);
       if (url.pathname !== "/ws") {
         // Non-/ws upgrade requests are intentionally ignored
@@ -121,7 +124,8 @@ export class GatewayWsServer {
       this.wss!.handleUpgrade(req, socket, head, (ws) => {
         this.wss!.emit("connection", ws, req);
       });
-    });
+    };
+    server.on("upgrade", this.upgradeHandler);
 
     this.wss.on("connection", (ws: WsSocket) => this.onClientConnect(ws));
 
@@ -201,6 +205,13 @@ export class GatewayWsServer {
       this.heartbeatTimer = null;
     }
 
+    // P1-2: 移除 upgrade handler，防止多次 start/stop 累积
+    if (this.upgradeHandler && this.httpServer) {
+      this.httpServer.off("upgrade", this.upgradeHandler);
+      this.upgradeHandler = null;
+    }
+    this.httpServer = null;
+
     // Close WebSocket server
     if (this.wss) {
       this.wss.close();
@@ -253,6 +264,8 @@ export class GatewayWsServer {
 
   private onClientDisconnect(ws: WsSocket): void {
     this.clients.delete(ws);
+    // P1-1: 清理 pendingQueue 中该 ws 的条目，避免对已断开 socket 发送
+    this.pendingQueue = this.pendingQueue.filter(item => item.ws !== ws);
     logger.info(`[WsServer] Client disconnected (${this.clients.size} remaining)`);
   }
 

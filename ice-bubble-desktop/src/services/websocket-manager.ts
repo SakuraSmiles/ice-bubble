@@ -44,6 +44,8 @@ export class WebSocketManager {
   // ── 内部状态 ──
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null
+  private countdownInterval: ReturnType<typeof setInterval> | null = null
+  private flushing = false
   private intentionalClose = false
   private listeners = new Map<string, Set<EventCallback>>()
   private stateChangeListeners = new Set<(state: ConnectionState) => void>()
@@ -332,9 +334,12 @@ export class WebSocketManager {
 
     // 倒计时：每秒更新 nextRetryIn
     const startTime = Date.now()
-    const countdownInterval = setInterval(() => {
+    this.countdownInterval = setInterval(() => {
       if (this.state.value !== 'RECONNECTING' || this.retryInfo.value === null) {
-        clearInterval(countdownInterval)
+        if (this.countdownInterval) {
+          clearInterval(this.countdownInterval)
+          this.countdownInterval = null
+        }
         return
       }
       const elapsed = Date.now() - startTime
@@ -346,7 +351,10 @@ export class WebSocketManager {
     }, 1000)
 
     this.reconnectTimer = setTimeout(() => {
-      clearInterval(countdownInterval)
+      if (this.countdownInterval) {
+        clearInterval(this.countdownInterval)
+        this.countdownInterval = null
+      }
       if (this.state.value !== 'RECONNECTING' || this.intentionalClose || this.destroyCalled) return
       this.attemptConnection()
     }, delay)
@@ -356,26 +364,32 @@ export class WebSocketManager {
    * 刷新队列中的消息
    */
   private async flushQueue(): Promise<void> {
-    while (this.messageQueue.status.value.size > 0 && this.state.value === 'CONNECTED') {
-      const msg = this.messageQueue.dequeue()
-      if (!msg) break
+    if (this.flushing) return
+    this.flushing = true
+    try {
+      while (this.messageQueue.status.value.size > 0 && this.state.value === 'CONNECTED') {
+        const msg = this.messageQueue.dequeue()
+        if (!msg) break
 
-      try {
-        const result = await this.client.request(msg.method, msg.params)
-        msg.resolve(result)
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err))
-        const requeued = this.messageQueue.requeue(msg)
-        if (!requeued) {
-          console.warn(`[WSManager] 消息最终失败: ${msg.method}`, error)
-          const cbs = this.listeners.get('queue.error')
-          if (cbs) for (const cb of cbs) { try { cb({ method: msg.method, error }) } catch { /* ignore */ } }
+        try {
+          const result = await this.client.request(msg.method, msg.params)
+          msg.resolve(result)
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err))
+          const requeued = this.messageQueue.requeue(msg)
+          if (!requeued) {
+            console.warn(`[WSManager] 消息最终失败: ${msg.method}`, error)
+            const cbs = this.listeners.get('queue.error')
+            if (cbs) for (const cb of cbs) { try { cb({ method: msg.method, error }) } catch { /* ignore */ } }
+          }
+          // 重连过程中发送失败 → 终止刷新，等待再次重连
+          if (this.state.value !== 'CONNECTED') break
         }
-        // 重连过程中发送失败 → 终止刷新，等待再次重连
-        if (this.state.value !== 'CONNECTED') break
       }
+      this.syncQueueStatus()
+    } finally {
+      this.flushing = false
     }
-    this.syncQueueStatus()
   }
 
   /**
@@ -457,6 +471,11 @@ export class WebSocketManager {
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
+    }
+    // P1-4: 同时清理倒计时 interval，防止泄漏
+    if (this.countdownInterval !== null) {
+      clearInterval(this.countdownInterval)
+      this.countdownInterval = null
     }
   }
 

@@ -103,6 +103,7 @@ export class GatewayProxy {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private negotiatedProtocol: number | null = null;
+  private recentDisconnects: number[] = [];
   constructor(opts: GatewayProxyOptions = {}) {
     this.gatewayUrl = opts.gatewayUrl || process.env.GATEWAY_URL || DEFAULT_GATEWAY_URL;
     this.authToken = resolveAuthToken(opts.authToken);
@@ -384,6 +385,11 @@ export class GatewayProxy {
 
     if (this.closed) return;
 
+    // P1-5: 记录断连时间，用于 flapping 检测
+    const now = Date.now();
+    this.recentDisconnects.push(now);
+    this.recentDisconnects = this.recentDisconnects.filter(t => now - t < 5000);
+
     // Reject pending requests
     for (const [, entry] of this.pending) {
       clearTimeout(entry.timer);
@@ -409,10 +415,17 @@ export class GatewayProxy {
     }
 
     this.reconnectAttempts++;
-    const delay = Math.min(
+    let delay = Math.min(
       BASE_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts - 1),
       MAX_RECONNECT_DELAY_MS
     );
+
+    // P1-5: flapping 检测 — 5s 内断连 ≥3 次，加大退避
+    const flapping = this.recentDisconnects.length >= 3;
+    if (flapping) {
+      delay = Math.min(delay * 3, MAX_RECONNECT_DELAY_MS);
+      logger.warn(`[GatewayProxy] Flapping detected (${this.recentDisconnects.length} disconnects in 5s), increased delay to ${delay}ms`);
+    }
 
     this.emit("reconnecting", { attempt: this.reconnectAttempts, delay });
 
