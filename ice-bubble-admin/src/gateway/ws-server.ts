@@ -24,6 +24,8 @@ interface ClientRequest {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const PENDING_QUEUE_MAX = 100;
+const PENDING_QUEUE_MAX_AGE_MS = 60_000; // 1 minute
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function isClientRequest(data: unknown): data is ClientRequest {
@@ -80,6 +82,11 @@ export class GatewayWsServer {
   private clients = new Set<WsSocket>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private cleanupFns: Array<() => void> = [];
+  private pendingQueue: Array<{
+    ws: WsSocket;
+    req: ClientRequest;
+    enqueuedAt: number;
+  }> = [];
 
   constructor(proxy: GatewayProxy, authToken: string, attachmentStorage?: AttachmentStorage) {
     this.proxy = proxy;
@@ -101,8 +108,11 @@ export class GatewayWsServer {
 
       // Authenticate: extract Bearer token from Authorization header or query param
       const providedToken = extractTokenFromRequest(req);
+      const tokenPreview = providedToken
+        ? `${providedToken.substring(0, 4)}...${providedToken.substring(providedToken.length - 4)}`
+        : "none";
       if (!validateToken(providedToken, this.authToken)) {
-        logger.info("[WsServer] Rejected unauthenticated WebSocket connection");
+        logger.info(`[WsServer] Rejected unauthenticated WebSocket connection (token=${tokenPreview})`);
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
@@ -133,6 +143,34 @@ export class GatewayWsServer {
     }
 
     // Start heartbeat timer
+    // Subscribe to Gateway connection status events and notify Desktop clients
+    const unsubConnected = this.proxy.on("connected", () => {
+      logger.info("[WsServer] Gateway connected — notifying Desktop clients");
+      this.broadcastFromGateway("gateway.status", { connected: true });
+      // Flush pending message queue
+      this.flushPendingQueue();
+    });
+    this.cleanupFns.push(unsubConnected);
+
+    const unsubDisconnected = this.proxy.on("disconnected", () => {
+      logger.info("[WsServer] Gateway disconnected — notifying Desktop clients");
+      this.broadcastFromGateway("gateway.status", { connected: false });
+    });
+    this.cleanupFns.push(unsubDisconnected);
+
+    const unsubReconnecting = this.proxy.on("reconnecting", (info: unknown) => {
+      this.broadcastFromGateway("gateway.status", { connected: false, reconnecting: true });
+      this.broadcastFromGateway("gateway.reconnecting", info);
+    });
+    this.cleanupFns.push(unsubReconnecting);
+
+    const unsubReconnectFailed = this.proxy.on("reconnect_failed", (_info: unknown) => {
+      logger.error("[WsServer] Gateway reconnect failed permanently — notifying clients");
+      this.broadcastFromGateway("gateway.status", { connected: false, permanent: true });
+    });
+    this.cleanupFns.push(unsubReconnectFailed);
+
+    logger.info("[WsServer] Subscribed to Gateway events for broadcast", { broadcastEvents });
     this.heartbeatTimer = setInterval(() => this.sendHeartbeats(), HEARTBEAT_INTERVAL_MS);
 
     logger.info("[WsServer] WebSocket server mounted on /ws");
@@ -144,6 +182,12 @@ export class GatewayWsServer {
       try { ws.close(); } catch { /* ignore */ }
     }
     this.clients.clear();
+
+    // Notify pending queue items that server is shutting down
+    for (const item of this.pendingQueue) {
+      try { item.ws.send(clientReply(item.req.id, false, undefined, "Server shutting down")); } catch { /* ignore */ }
+    }
+    this.pendingQueue = [];
 
     // Clean up subscriptions
     for (const fn of this.cleanupFns) {
@@ -215,16 +259,34 @@ export class GatewayWsServer {
   // ── Message handling ───────────────────────────────────────────────────
 
   private onClientMessage(ws: WsSocket, data: string): void {
-    logger.info("[WsServer] Received:", { data: data.substring(0, 200) });
+    const preview = data.substring(0, 200);
     let parsed: unknown;
     try {
       parsed = JSON.parse(data);
     } catch {
+      logger.warn("[WsServer] Received non-JSON message", { preview });
       return;
     }
 
+    const req = parsed as Record<string, unknown>;
+    const method = typeof req.method === "string" ? req.method : "?";
+    const id = req.id;
+
     if (!isClientRequest(parsed)) {
+      logger.warn("[WsServer] Invalid request format", { method, id, preview });
       ws.send(clientReply(-1, false, undefined, "Invalid request format"));
+      return;
+    }
+
+    // Handle heartbeat ping locally — do not forward to Gateway
+    if (method === "_ping") {
+      try {
+        ws.send(clientReply(id as number | string, true, {
+          pong: true,
+          ts: Date.now(),
+          gatewayStatus: this.proxy.isConnected ? "connected" : "disconnected",
+        }));
+      } catch { /* socket closed */ }
       return;
     }
 
@@ -235,7 +297,28 @@ export class GatewayWsServer {
 
   private forwardToGateway(ws: WsSocket, req: ClientRequest): void {
     if (!this.proxy.isConnected) {
-      try { ws.send(clientReply(req.id, false, undefined, "Gateway not connected")); } catch { /* socket closed */ }
+      // Queue message instead of rejecting, so it can be sent when Gateway reconnects
+      const now = Date.now();
+
+      // Expire old entries
+      this.pendingQueue = this.pendingQueue.filter(item => {
+        if (now - item.enqueuedAt > PENDING_QUEUE_MAX_AGE_MS) {
+          try { item.ws.send(clientReply(item.req.id, false, undefined, "Gateway reconnecting — message expired")); } catch { /* ignore */ }
+          return false;
+        }
+        return true;
+      });
+
+      // If queue full, drop oldest
+      if (this.pendingQueue.length >= PENDING_QUEUE_MAX) {
+        const dropped = this.pendingQueue.shift();
+        if (dropped) {
+          try { dropped.ws.send(clientReply(dropped.req.id, false, undefined, "Gateway reconnecting — queue full, message dropped")); } catch { /* ignore */ }
+        }
+      }
+
+      this.pendingQueue.push({ ws, req, enqueuedAt: now });
+      logger.info("[WsServer] Gateway not connected — queued request", { method: req.method, id: req.id, queueSize: this.pendingQueue.length });
       return;
     }
 
@@ -253,26 +336,45 @@ export class GatewayWsServer {
         }
       }
 
+      logger.info(`[WsServer] Forward to Gateway: ${req.method}#${req.id}`);
       void this.proxy.request(req.method, req.params).then(
-        (result) => { try { ws.send(clientReply(req.id, true, result)); } catch { /* socket closed */ } },
+        (result) => {
+          logger.info(`[WsServer] Gateway res: ${req.method}#${req.id} ok`);
+          try { ws.send(clientReply(req.id, true, result)); } catch { /* socket closed */ }
+        },
         (err) => {
           const msg = err instanceof Error ? err.message : String(err);
+          logger.warn(`[WsServer] Gateway err: ${req.method}#${req.id} ${msg}`);
           try { ws.send(clientReply(req.id, false, undefined, msg)); } catch { /* socket closed */ }
         },
       );
-    } catch {
-      /* proxy.request threw synchronously — ignore */
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error("[WsServer] Forward failed (sync)", { method: req.method, id: req.id, error: msg });
     }
   }
 
   private broadcastFromGateway(event: string, payload: unknown): void {
-    if (this.clients.size === 0) return;
+    if (this.clients.size === 0) { logger.debug(`[WsServer] Skip broadcast (no clients): ${event}`); return; }
 
+    logger.debug(`[WsServer] Broadcasting to ${this.clients.size} clients: ${event}`);
     const message = JSON.stringify({ type: "event", event, payload });
     for (const ws of this.clients) {
       if (ws.readyState === ws.OPEN) {
         ws.send(message);
       }
+    }
+  }
+
+  /** Flush the pending message queue after Gateway reconnects */
+  private flushPendingQueue(): void {
+    if (this.pendingQueue.length === 0) return;
+    logger.info("[WsServer] Flushing pending queue", { size: this.pendingQueue.length });
+    const queue = this.pendingQueue.splice(0); // take all
+    for (const item of queue) {
+      // Check ws is still alive
+      if (item.ws.readyState !== item.ws.OPEN) continue;
+      this.forwardToGateway(item.ws, item.req);
     }
   }
 

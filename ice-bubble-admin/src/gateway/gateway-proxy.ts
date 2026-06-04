@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
+import { logger } from '../utils/index.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,12 @@ const OPENCLAW_CONFIG_PATH = join(
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const BASE_RECONNECT_DELAY_MS = 1_000;
+const MAX_RECONNECT_ATTEMPTS = 50;
+
+/** Minimum protocol version this Admin client supports (backward compat) */
+const ADMIN_MIN_PROTOCOL = 3;
+/** Maximum protocol version this Admin client is willing to accept */
+const ADMIN_MAX_PROTOCOL = 99;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -95,6 +102,7 @@ export class GatewayProxy {
   private closed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
+  private negotiatedProtocol: number | null = null;
   constructor(opts: GatewayProxyOptions = {}) {
     this.gatewayUrl = opts.gatewayUrl || process.env.GATEWAY_URL || DEFAULT_GATEWAY_URL;
     this.authToken = resolveAuthToken(opts.authToken);
@@ -105,6 +113,11 @@ export class GatewayProxy {
   /** Whether the WebSocket is open and authenticated. */
   get isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /** The protocol version negotiated with the Gateway, or null if not yet connected */
+  get protocolVersion(): number | null {
+    return this.negotiatedProtocol;
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -273,6 +286,14 @@ export class GatewayProxy {
     this.pending.delete(String(msg.id));
 
     if (msg.ok) {
+      // 提取协商后的协议版本（仅 HelloOk 响应包含 protocol 字段）
+      if (msg.payload && typeof msg.payload === 'object' && 'protocol' in msg.payload) {
+        const payload = msg.payload as { protocol?: number };
+        if (typeof payload.protocol === 'number') {
+          this.negotiatedProtocol = payload.protocol;
+          logger.info(`[GatewayProxy] Negotiated protocol version: v${payload.protocol}`);
+        }
+      }
       entry.resolve(msg.payload);
     } else {
       const errMsg = msg.error?.message || `Request #${msg.id} failed`;
@@ -292,6 +313,8 @@ export class GatewayProxy {
     }
 
     // Forward all other events to listeners
+    const listenerCount = this.listeners.get(msg.event)?.size ?? 0;
+    logger.debug(`[GatewayProxy] Event from Gateway: ${msg.event} (listeners: ${listenerCount})`);
     this.emit(msg.event, msg.payload);
   }
 
@@ -330,8 +353,8 @@ export class GatewayProxy {
         id: connectId,
         method: "connect",
         params: {
-          minProtocol: 3,
-          maxProtocol: 3,
+          minProtocol: ADMIN_MIN_PROTOCOL,
+          maxProtocol: ADMIN_MAX_PROTOCOL,
           client: {
             id: "openclaw-control-ui",
             version: this.clientVersion,
@@ -374,6 +397,16 @@ export class GatewayProxy {
   private scheduleReconnect(): void {
     if (this.closed) return;
     if (this.reconnectTimer) return;
+
+    // Max attempts check
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      logger.error(`[GatewayProxy] Reconnect exhausted after ${this.reconnectAttempts} attempts`);
+      this.emit("reconnect_failed", {
+        attempts: this.reconnectAttempts,
+        maxAttempts: MAX_RECONNECT_ATTEMPTS,
+      });
+      return;
+    }
 
     this.reconnectAttempts++;
     const delay = Math.min(

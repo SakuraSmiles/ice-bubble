@@ -9,7 +9,8 @@ import { Loading } from '@element-plus/icons-vue';
 import { useChatData } from './chat/useChatData';
 import { useGatewayStream } from './chat/useGatewayStream';
 import MessageBubble from './chat/MessageBubble.vue';
-import { gatewayClient } from '@/services/gateway-client';
+import { wsManager, type WebSocketManager } from '@/services/websocket-manager';
+import { inject } from 'vue';
 
 const props = withDefaults(defineProps<{
   sessionKey?: string;
@@ -84,7 +85,7 @@ async function regenerate() {
 
   // 通过 Gateway 重新发送
   try {
-    await gatewayClient.sendMessage(props.sessionKey!, lastUserMsg.content || '');
+    await wsManager.clientRef.sendMessage(props.sessionKey!, lastUserMsg.content || '');
   } catch (e) {
     console.error('[ChatTimeline] regenerate failed', e);
   }
@@ -103,6 +104,14 @@ onMounted(async () => {
   await chatData.loadLatest();
   gwStream.subscribe();
   chatData.checkBottom();
+
+  // 重连成功后重新订阅事件
+  const unsub = wsManager.onStateChange((state) => {
+    if (state === 'CONNECTED') {
+      // 重连后事件订阅自动恢复（gatewayClient 事件系统保持不变）
+    }
+  });
+  // 清理将在 onUnmounted 中通过 gwStream.unsubscribe 处理
 });
 
 onUnmounted(() => {

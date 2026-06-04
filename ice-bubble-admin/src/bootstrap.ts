@@ -35,6 +35,8 @@ import { createSettingsRouter } from './api/settings.js';
 import { createMediaRouter, createMediaFileRouter } from './api/media.js';
 import { createHealthRouter } from './api/health.js';
 import { createDocsRouter } from './api/docs/index.js';
+import { OpenDesignProxy } from './proxy/opendesign-proxy.js';
+import { createOpenDesignRouter } from './api/opendesign-proxy-routes.js';
 
 // 加载环境变量（最早时机）
 config();
@@ -53,16 +55,31 @@ async function bootstrapModules(
 
   for (const cfg of configs) {
     try {
+      // 代理类模块（如 opendesign）不走 collector 轮询，直接注册为 running
+      const isProxyModule = cfg.moduleKey === 'opendesign' || !!(cfg as any).proxy?.type;
+
       // 1. 检查模块是否已存在，存在则不更新注册时间
       const existingCreatedAt = await repository.getModuleCreatedAt(cfg.moduleKey);
       if (!existingCreatedAt) {
         await repository.registerModule({
           moduleKey: cfg.moduleKey,
           moduleName: cfg.name,
-          moduleType: 'collector',
+          moduleType: isProxyModule ? 'proxy' : 'collector',
           status: 'running',
           version: 'unknown'
         });
+      }
+
+      if (isProxyModule) {
+        logger.info(`[Admin] 模块 ${cfg.moduleKey} (proxy) 跳过 collector 轮询`);
+        // 代理模块：清除旧的错误状态，标记为 running
+        await repository.saveModuleStatus(cfg.moduleKey, {
+          status: 'running',
+          lastPollTime: new Date().toISOString(),
+          lastError: undefined,
+          latencyMs: 0,
+        });
+        continue;
       }
 
       // 2. 尝试获取状态
@@ -222,7 +239,15 @@ export async function startAdmin(): Promise<void> {
   // ── GatewayProxy (初始化提前，供后续路由使用) ──
   let gatewayProxy: GatewayProxy | null = null;
   try {
-    gatewayProxy = new GatewayProxy();
+    const gatewayOpts: { gatewayUrl?: string; authToken?: string } = {};
+    if (configData.gateway?.url) {
+      gatewayOpts.gatewayUrl = configData.gateway.url;
+    }
+    if (configData.gateway?.token) {
+      gatewayOpts.authToken = configData.gateway.token;
+    }
+    gatewayProxy = new GatewayProxy(gatewayOpts);
+    logger.info('[Admin] GatewayProxy connecting...', { url: gatewayOpts.gatewayUrl || process.env.GATEWAY_URL || 'default' });
     await gatewayProxy.connect();
     logger.info('[Admin] GatewayProxy connected');
   } catch (err) {
@@ -246,6 +271,55 @@ export async function startAdmin(): Promise<void> {
     }
   } else {
     logger.info('[Admin] OpenCode chat is disabled in config');
+  }
+
+  // ── OpenDesign Proxy ──
+  let opendesignProxy: OpenDesignProxy | null = null;
+  const odModuleConfig = moduleConfigs.find(
+    m => m.moduleKey === 'opendesign' || m.proxy?.type === 'opendesign'
+  );
+  const odTopConfig = configData.opendesign;
+  const odEnabled = odTopConfig?.enabled !== false && (odModuleConfig?.enabled !== false);
+
+  if (odEnabled) {
+    const odBaseUrl =
+      odTopConfig?.baseUrl ||
+      odModuleConfig?.baseUrl ||
+      undefined;
+    const odAuthToken =
+      odTopConfig?.authToken ||
+      odModuleConfig?.proxy?.authToken ||
+      undefined;
+
+    opendesignProxy = new OpenDesignProxy({
+      baseUrl: odBaseUrl,
+      authToken: odAuthToken,
+      timeoutMs: odTopConfig?.timeoutMs || odModuleConfig?.proxy?.timeoutMs,
+      sseTimeoutMs: odTopConfig?.sseTimeoutMs || odModuleConfig?.proxy?.sseTimeoutMs,
+    });
+
+    opendesignProxy.startHealthMonitoring();
+
+    const healthResult = await opendesignProxy.healthCheck();
+    if (healthResult.healthy) {
+      logger.info(`[Admin] OpenDesign proxy connected at ${opendesignProxy.getBaseUrl()}`);
+    } else {
+      logger.warn(
+        `[Admin] OpenDesign daemon is not reachable at ${opendesignProxy.getBaseUrl()} — routes will still be registered`
+      );
+    }
+  } else {
+    logger.info('[Admin] OpenDesign proxy is disabled');
+  }
+
+  // ── OpenDesign Routes ──
+  if (opendesignProxy) {
+    const defaultAgentId =
+      odTopConfig?.defaultAgentId ||
+      odModuleConfig?.proxy?.defaultAgentId ||
+      undefined;
+    app.use('/api/design', createOpenDesignRouter(opendesignProxy, { defaultAgentId }));
+    logger.info(`[Admin] OpenDesign routes registered at /api/design${defaultAgentId ? ` (defaultAgentId=${defaultAgentId})` : ''}`);
   }
 
   // 注册 API 路由
@@ -283,7 +357,7 @@ export async function startAdmin(): Promise<void> {
   let chatController: ChatController | null = null;
   if (gatewayProxy) {
     gatewayRpc = new GatewayRpc(gatewayProxy);
-    sseManager = new SSEManager(gatewayRpc);
+    sseManager = new SSEManager();
     chatController = new ChatController(gatewayRpc, sseManager, attachmentStorage);
     logger.info('[Admin] GatewayRpc (chat SSE) initialized via GatewayProxy');
   } else {
