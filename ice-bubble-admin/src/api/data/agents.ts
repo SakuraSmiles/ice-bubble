@@ -57,6 +57,8 @@ export function createAgentsRouter(config: DataRouterConfig): Router {
    */
   router.get('/agents', async (_req: Request, res: Response) => {
     try {
+      // admin_agents.message_count = SUM(sessions.message_count)，包含所有消息类型
+      // 对比 token-summary 的 message_count 仅含 LLM 调用消息（见下方 token-summary 路由注释）
       let agents;
       if (agentOverviewService) {
         const fullAgents = repository.getAgents();
@@ -140,9 +142,18 @@ export function createAgentsRouter(config: DataRouterConfig): Router {
 
   /**
    * GET /api/agents/token-summary
-   * 获取指定日期的 token 统计
+   * 获取指定日期的 token 统计（仅含 LLM 调用消息）
+   *
    * Query: agentId - 可选，不传则返回所有 agent
    * Query: date - 可选，格式 YYYY-MM-DD，不传则返回所有日期
+   *
+   * ⚠️ message_count 语义说明（vs /api/agents 的 admin_agents.message_count）
+   * - token-summary: 仅统计 admin_messages 中有 token 消耗记录的消息
+   *   （tokens_input/tokens_output/cost_total 任一非空）
+   * - agents API: admin_agents.message_count = SUM(admin_sessions.message_count)
+   *   包含所有消息（user/assistant/system/tool_call），含心跳、噪声等
+   * - 因此 token-summary 的 message_count 通常远小于 agents 的 message_count
+   *   例如：main agent 4,688 (token) vs 55,617 (all messages)
    */
   router.get('/agents/token-summary', (req: Request, res: Response) => {
     const { agentId, date } = req.query as { agentId?: string; date?: string };

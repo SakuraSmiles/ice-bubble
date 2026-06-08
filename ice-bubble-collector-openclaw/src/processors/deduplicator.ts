@@ -11,6 +11,21 @@ import { Logger } from '../utils/logger.js';
 const sqliteLogger = new Logger('Deduplicator');
 
 /**
+ * 计算消息的内容指纹（content fingerprint）
+ *
+ * 用于在 ID 去重之外进行内容级去重。
+ * Gateway 的 subagent_announce 机制可能在后续 run 中重新注入已完成 subagent 的报告，
+ * 产生新的 event ID 但内容完全相同。此指纹用于检测这类"不同 ID、相同内容"的重复。
+ *
+ * 格式：sessionKey:messageType:content前200字符
+ * 只取前 200 字符是因为 subagent 报告通常较长，但重复时内容完全一致，
+ * 200 字符已足够区分不同消息。
+ */
+export function contentFingerprint(sessionKey: string, messageType: string, content: string | undefined): string {
+  return `${sessionKey}:${messageType}:${(content ?? '').substring(0, 200)}`;
+}
+
+/**
  * 去重器配置
  */
 export interface DeduplicatorConfig {
@@ -223,13 +238,28 @@ class LRUCache {
  */
 export class Deduplicator {
     private cache: LRUCache;
-    private config: Required<DeduplicatorConfig>;
+    private readonly config: Required<DeduplicatorConfig>;
+    /**
+     * 内容级去重缓存（content fingerprint → 最近处理时间戳）
+     *
+     * Gateway subagent_announce 会在后续 run 中重新注入已完成 subagent 的报告，
+     * 产生不同 event ID 但内容完全相同的重复消息。ID 去重无法拦截，因此增加
+     * 内容级去重：用 (sessionKey:messageType:content前200字符) 作为指纹，
+     * 在 30 秒窗口内相同指纹视为重复。
+     *
+     * 使用独立 Map 而非复用 ID cache，因为两者淘汰策略不同：
+     * ID cache 需要长期保留（防跨批次重复），指纹 cache 只需短期窗口。
+     */
+    private contentFingerprints: Map<string, number>;
+    private static readonly CONTENT_DEDUP_WINDOW_MS = 30_000; // 30 秒窗口
+    private static readonly CONTENT_CACHE_MAX = 5000;
 
     constructor(config?: DeduplicatorConfig) {
         this.config = {
             cacheSize: config?.cacheSize ?? 10000,
         };
         this.cache = new LRUCache(this.config.cacheSize);
+        this.contentFingerprints = new Map();
     }
 
     /**
@@ -263,23 +293,59 @@ export class Deduplicator {
     }
 
     /**
+     * 检查消息内容是否在最近 30 秒窗口内重复
+     *
+     * 与 isDuplicate（ID 级去重）不同，此方法比较消息的实际内容。
+     * 用于拦截 Gateway subagent_announce 产生的同内容不同 ID 的重复消息。
+     *
+     * @param message - 待检查的 UnifiedMessage
+     * @returns true 表示内容重复，应跳过
+     */
+    isContentDuplicate(message: UnifiedMessage): boolean {
+        const fp = contentFingerprint(message.sessionKey, message.messageType, message.content);
+        const now = Date.now();
+        const lastSeen = this.contentFingerprints.get(fp);
+
+        if (lastSeen !== undefined && (now - lastSeen) < Deduplicator.CONTENT_DEDUP_WINDOW_MS) {
+            return true;
+        }
+
+        // 更新指纹时间戳（无论是否命中都更新，保持 LRU 效果）
+        this.contentFingerprints.set(fp, now);
+
+        // 淘汰超量条目（简单策略：超过上限时清空旧条目）
+        if (this.contentFingerprints.size > Deduplicator.CONTENT_CACHE_MAX) {
+            this.pruneContentFingerprints();
+        }
+
+        return false;
+    }
+
+    /**
+     * 清理过期的内容指纹条目
+     */
+    private pruneContentFingerprints(): void {
+        const cutoff = Date.now() - Deduplicator.CONTENT_DEDUP_WINDOW_MS;
+        for (const [key, ts] of this.contentFingerprints) {
+            if (ts < cutoff) {
+                this.contentFingerprints.delete(key);
+            }
+        }
+    }
+
+    /**
      * 批量过滤，返回唯一消息
      *
-     * 自动去重并标记已处理的消息
+     * 自动去重并标记已处理的消息（同时进行 ID 级和内容级去重）
      *
      * @param messages 消息列表
      * @returns 唯一消息列表
-     *
-     * @example
-     * const messages = [msg1, msg2, msg3];
-     * const unique = deduplicator.filterDuplicates(messages);
-     * console.log(unique.length); // 去重后的数量
      */
     filterDuplicates(messages: UnifiedMessage[]): UnifiedMessage[] {
         const unique: UnifiedMessage[] = [];
 
         for (const message of messages) {
-            if (!this.isDuplicate(message.id)) {
+            if (!this.isDuplicate(message.id) && !this.isContentDuplicate(message)) {
                 this.markAsProcessed(message.id);
                 unique.push(message);
             }
@@ -293,10 +359,6 @@ export class Deduplicator {
      *
      * @param messages 消息列表
      * @returns 唯一消息列表和统计信息
-     *
-     * @example
-     * const { unique, stats } = deduplicator.filterWithStats(messages);
-     * console.log(`去重率: ${(stats.hitRate * 100).toFixed(2)}%`);
      */
     filterWithStats(messages: UnifiedMessage[]): {
         unique: UnifiedMessage[];
@@ -306,7 +368,7 @@ export class Deduplicator {
         let duplicates = 0;
 
         for (const message of messages) {
-            if (!this.isDuplicate(message.id)) {
+            if (!this.isDuplicate(message.id) && !this.isContentDuplicate(message)) {
                 this.markAsProcessed(message.id);
                 unique.push(message);
             } else {
@@ -326,13 +388,11 @@ export class Deduplicator {
     }
 
     /**
-     * 清空缓存
-     *
-     * @example
-     * deduplicator.clear();
+     * 清空缓存（ID 缓存 + 内容指纹缓存）
      */
     clear(): void {
         this.cache.clear();
+        this.contentFingerprints.clear();
     }
 
     /**

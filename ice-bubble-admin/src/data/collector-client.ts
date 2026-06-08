@@ -32,6 +32,7 @@ export interface CollectorSession {
 
 export interface CollectorMessage {
     id: number | null;
+    message_id: string | null;
     session_key: string;
     message_type: string;
     content: string | null;
@@ -62,6 +63,7 @@ export interface GetSessionsResponse {
 export interface GetMessagesResponse {
     count: number;
     max_time_updated?: number;
+    max_id?: number | null;      // ID 游标（null = Collector 不支持 after_id）
     messages: CollectorMessage[];
 }
 
@@ -141,20 +143,23 @@ export class CollectorClient {
      *
      * @param params.session_key - 可选，session 标识（不填则返回所有消息）
      * @param params.limit - 每页数量 (default 100, max 1000)
-     * @param params.offset - 偏移量 (default 0)
+     * @param params.offset - 偏移量 (default 0) — 仅在 since 模式生效
      * @param params.since - ISO 时间戳，仅返回该时间之后的消息
+     * @param params.after_id - ID 游标（优先于 since/offset），仅返回 id > after_id 的消息
      */
     async getMessages(params: {
         session_key?: string;
         limit?: number;
         offset?: number;
         since?: string;
+        after_id?: number;
     }): Promise<GetMessagesResponse> {
         const searchParams = new URLSearchParams();
         if (params.session_key) searchParams.set('session_key', params.session_key);
         if (params?.limit !== undefined) searchParams.set('limit', String(params.limit));
         if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
         if (params?.since) searchParams.set('since', params.since);
+        if (params?.after_id !== undefined && params.after_id > 0) searchParams.set('after_id', String(params.after_id));
 
         const url = `${this.baseUrl}/api/data/messages?${searchParams.toString()}`;
         const response = await fetch(url, { signal: AbortSignal.timeout(10000) });

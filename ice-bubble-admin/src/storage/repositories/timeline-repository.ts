@@ -50,6 +50,8 @@ export class TimelineRepository {
     search?: string;
     exclude_system_noise?: boolean;
     exclude_cron?: boolean;
+    /** 多个 session key，用于跨 session 查询。优先于 session_key */
+    session_keys?: string[];
   } = {}): {
     messages: TimelineMessage[];
     has_more: boolean;
@@ -71,13 +73,20 @@ export class TimelineRepository {
       }
     }
 
-    // 预解析 session_key（Gateway 格式 → SQLite 格式），供 content 和 tool 查询共享
+    // 预解析 session_key / session_keys（Gateway 格式 → SQLite 格式），供 content 和 tool 查询共享
     let resolvedSessionKeys: string[] | undefined;
-    if (params.session_key) {
+
+    if (params.session_keys && params.session_keys.length > 0) {
+      const resolved: string[] = [];
+      for (const sk of params.session_keys) {
+        resolved.push(...this.sessionRepo.resolveSessionKey(sk));
+      }
+      resolvedSessionKeys = [...new Set(resolved)].filter(k => !k.endsWith('.trajectory'));
+    } else if (params.session_key) {
       resolvedSessionKeys = this.sessionRepo.resolveSessionKey(params.session_key);
     }
 
-    if (params.session_key && resolvedSessionKeys) {
+    if (resolvedSessionKeys) {
       if (resolvedSessionKeys.length === 1) {
         contentConditions.push('m.session_key = ?');
         values.push(resolvedSessionKeys[0]);
@@ -164,7 +173,7 @@ export class TimelineRepository {
     const toolConditions: string[] = [];
     const toolValues: unknown[] = [];
 
-    if (params.session_key && resolvedSessionKeys) {
+    if (resolvedSessionKeys) {
       if (resolvedSessionKeys.length === 1) {
         toolConditions.push('t.session_key = ?');
         toolValues.push(resolvedSessionKeys[0]);

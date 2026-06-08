@@ -53,7 +53,7 @@ export interface AdminSession {
 
 export interface AdminMessage {
   id?: number;
-  source_id: number | null;
+  source_id: string;
   source_module: string;
   session_key: string;
   message_type: string | null;
@@ -115,6 +115,7 @@ export interface SyncProgress {
   id?: number;
   table_name: string;
   last_sync_time: string | null;
+  last_sync_id: number;
   updated_at: string;
 }
 
@@ -335,6 +336,7 @@ export class DataRepository {
     search?: string;
     exclude_system_noise?: boolean;
     exclude_cron?: boolean;
+    session_keys?: string[];
   } = {}): {
     messages: TimelineMessage[];
     has_more: boolean;
@@ -412,8 +414,20 @@ export class DataRepository {
     return this.statsRepo.getSyncProgress(tableName);
   }
 
-  updateSyncProgress(tableName: string, lastDataTimestamp?: string | number): void {
-    return this.statsRepo.updateSyncProgress(tableName, lastDataTimestamp);
+  updateSyncProgress(tableName: string, lastDataTimestamp?: string | number, lastSyncId?: number): void {
+    return this.statsRepo.updateSyncProgress(tableName, lastDataTimestamp, lastSyncId);
+  }
+
+  getMaxId(tableName: string): number | null {
+    return this.statsRepo.getMaxId(tableName);
+  }
+
+  resetSyncProgress(tableName: string): void {
+    return this.statsRepo.resetSyncProgress(tableName);
+  }
+
+  resetSyncProgressByPrefix(prefix: string): number {
+    return this.statsRepo.resetSyncProgressByPrefix(prefix);
   }
 
   saveModelEvents(events: Array<{

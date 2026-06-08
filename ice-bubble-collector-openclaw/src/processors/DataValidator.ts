@@ -38,7 +38,7 @@ export interface ValidationResult {
  */
 export class DataValidator {
     /** SessionKey 格式正则表达式 */
-    private static readonly SESSION_KEY_REGEX = /^agent:[^:]+:[^:]+:[^:]*:(direct|guild):[^:]+$/;
+    private static readonly SESSION_KEY_REGEX = /^agent:[^:]+(:[^:]+){1,}$/;
     
     /** 有效的消息类型 */
     private static readonly VALID_MESSAGE_TYPES = ['user', 'agent', 'tool'] as const;
@@ -85,7 +85,7 @@ export class DataValidator {
         }
         
         if (!DataValidator.SESSION_KEY_REGEX.test(sessionKey)) {
-            return 'sessionKey: 格式不正确，期望格式: agent:{agentId}:{channel}:{accountId}:{type}:{targetId}';
+            return 'sessionKey: 格式不正确，期望格式: agent:xxx:xxx[...]';
         }
         
         return null;

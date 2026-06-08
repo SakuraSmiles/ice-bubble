@@ -79,6 +79,7 @@ export default defineConfig({
   },
   server: {
     port: VITE_PORT,
+    allowedHosts: ['host.docker.internal'],
     proxy: apiProxy,
     watch: {
       usePolling: true,

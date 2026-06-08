@@ -21,6 +21,12 @@ interface ClientRequest {
   params?: unknown;
 }
 
+interface ClientInfo {
+  platform: string;
+  appVersion?: string;
+  sessionId?: string;
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -80,6 +86,7 @@ export class GatewayWsServer {
   private attachmentStorage?: AttachmentStorage;
   private wss: WsServer | null = null;
   private clients = new Set<WsSocket>();
+  private clientInfoMap = new WeakMap<WsSocket, ClientInfo>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private cleanupFns: Array<() => void> = [];
   private pendingQueue: Array<{
@@ -240,7 +247,9 @@ export class GatewayWsServer {
     } catch { /* ignore */ }
 
     // Mark client as alive (for heartbeat)
-    (ws as WsSocket & { isAlive?: boolean }).isAlive = true;
+    const client = ws as WsSocket & { isAlive?: boolean };
+    client.isAlive = true;
+    // clientInfo will be set by client.identify and stored in clientInfoMap
 
     ws.on("message", (raw: Buffer | string) => {
       try {
@@ -251,7 +260,7 @@ export class GatewayWsServer {
     });
 
     ws.on("pong", () => {
-      (ws as WsSocket & { isAlive?: boolean }).isAlive = true;
+      client.isAlive = true;
     });
 
     ws.on("close", () => this.onClientDisconnect(ws));
@@ -303,6 +312,31 @@ export class GatewayWsServer {
       return;
     }
 
+    // Handle client identification — store clientInfo via WeakMap
+    if (method === "client.identify") {
+      const params = (req as Record<string, unknown>).params as Record<string, unknown> | undefined;
+      if (params?.clientInfo && typeof params.clientInfo === "object") {
+        const info = params.clientInfo as ClientInfo;
+        const platform = typeof info.platform === "string" && info.platform.length <= 64 ? info.platform : "unknown";
+        const appVersion = typeof info.appVersion === "string" && info.appVersion.length <= 32 ? info.appVersion : undefined;
+        const sessionId = typeof info.sessionId === "string" && info.sessionId.length <= 128 ? info.sessionId : undefined;
+
+        // Only store and confirm if platform is valid (not default)
+        if (platform !== "unknown") {
+          this.clientInfoMap.set(ws, { platform, appVersion, sessionId });
+          logger.info(`[WsServer] Client identified: ${platform} v${appVersion ?? "?"} (${this.clients.size} total)`);
+          try {
+            ws.send(JSON.stringify({ type: "event", event: "client.identified", payload: { platform } }));
+          } catch { /* socket closed */ }
+        } else {
+          logger.warn("[WsServer] Client identify rejected: invalid platform");
+        }
+      } else {
+        logger.warn("[WsServer] Client identify rejected: missing or invalid clientInfo");
+      }
+      return;
+    }
+
     this.forwardToGateway(ws, parsed);
   }
 
@@ -336,15 +370,14 @@ export class GatewayWsServer {
     }
 
     try {
-      // Intercept chat.send / sessions.send to save attachments
-      if (this.attachmentStorage &&
-          (req.method === 'chat.send' || req.method === 'sessions.send') &&
+      // Intercept chat.send / sessions.send to save attachments and tag source
+      if ((req.method === 'chat.send' || req.method === 'sessions.send') &&
           req.params && typeof req.params === 'object') {
         const p = req.params as Record<string, unknown>;
         const atts = p.attachments;
         const sessionKey = (p.sessionKey || p.key) as string | undefined;
         const message = (p.message || p.text) as string | undefined;
-        if (sessionKey && Array.isArray(atts) && atts.length > 0) {
+        if (sessionKey && Array.isArray(atts) && atts.length > 0 && this.attachmentStorage) {
           void this.attachmentStorage.saveAttachments(sessionKey, atts as any[], message);
         }
       }

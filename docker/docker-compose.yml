@@ -1,0 +1,169 @@
+services:
+  # ============================================================
+  # OpenClaw Gateway (temp port was 18789, now production 18789)
+  # ============================================================
+  openclaw-gateway:
+    build:
+      context: .
+      dockerfile: dockerfiles/openclaw-gateway/Dockerfile
+    container_name: openclaw
+    init: true
+    restart: unless-stopped
+    ports:
+      - "18789:18789"
+    environment:
+      - OPENCLAW_GATEWAY_TOKEN=1a25db77ba80e41a3f4f54811fc92dba9525dce96f5a1c18
+      - OPENCLAW_GATEWAY_PORT=18789
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - HOME=/home/dabai
+      - TMPDIR=/tmp
+      - OPENCLAW_SERVICE_MARKER=openclaw
+      - OPENCLAW_SERVICE_KIND=gateway
+      - CHROME_PATH=/usr/bin/chromium
+      - CHROME_BIN=/usr/bin/chromium
+      - OPENCLAW_SESSION_WRITE_LOCK_ACQUIRE_TIMEOUT_MS=300000
+      - OPENCLAW_SESSION_WRITE_LOCK_STALE_MS=600000
+    command: ["sh", "-c", "find /home/dabai/.openclaw -name '*.lock' ! -path '*/node_modules/*' -delete 2>/dev/null; node /app/fix-config.js; (while true; do sleep 30; node /app/fix-config.js; done) & exec node /usr/local/lib/node_modules/openclaw/dist/index.js gateway --port 18789 --bind lan"]
+    volumes:
+      - /home/dabai/.openclaw:/home/dabai/.openclaw
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/d/workspace:/mnt/d/workspace
+      - ./configs/fix-config.js:/app/fix-config.js:ro
+    networks:
+      - ice-bubble-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');http.get('http://127.0.0.1:18789/health',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>{process.exit(r.statusCode===200?0:1)})}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================================
+  # Ice Bubble Admin (port 13000)
+  # Bind-mounts source code from host; config from docker/configs/
+  # ============================================================
+  ice-bubble-admin:
+    build:
+      context: .
+      dockerfile: dockerfiles/ice-bubble-admin/Dockerfile
+    container_name: ice-bubble-admin
+    restart: unless-stopped
+    working_dir: /mnt/d/workspace/ice-bubble/ice-bubble-admin
+    ports:
+      - "13000:13000"
+    environment:
+      - HOME=/home/dabai
+      - ADMIN_DB_PATH=/home/dabai/.local/share/ice-bubble/data/admin.db
+      - ADMIN_AVATARS_DIR=/home/dabai/.local/share/ice-bubble/data/avatars
+      - GATEWAY_URL=ws://openclaw-gateway:18789/ws
+    volumes:
+      - /home/dabai/.local/share/ice-bubble/data:/home/dabai/.local/share/ice-bubble/data
+      - ./configs/admin-config.json:/mnt/d/workspace/ice-bubble/ice-bubble-admin/config/config.json:ro
+      - /mnt/d/workspace/ice-bubble:/mnt/d/workspace/ice-bubble
+      - /home/dabai:/home/dabai:ro
+    networks:
+      ice-bubble-net:
+        ipv4_address: 172.19.0.104
+    depends_on:
+      openclaw-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:13000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ============================================================
+  # Ice Bubble Collector OpenClaw (production port 13100)
+  # ============================================================
+  ice-bubble-collector-openclaw:
+    build:
+      context: .
+      dockerfile: dockerfiles/ice-bubble-collector-openclaw/Dockerfile
+    container_name: ice-bubble-collector-openclaw
+    restart: unless-stopped
+    working_dir: /mnt/d/workspace/ice-bubble/ice-bubble-collector-openclaw
+    ports:
+      - "13100:13100"
+    environment:
+      - HOME=/home/dabai
+    user: "0:0"
+    volumes:
+      - /home/dabai/.local/share/ice-bubble/data:/home/dabai/.local/share/ice-bubble/data
+      - ./configs/collector-openclaw-config.json:/mnt/d/workspace/ice-bubble/ice-bubble-collector-openclaw/config/config.json:ro
+      - /home/dabai/.openclaw:/home/dabai/.openclaw:ro
+      - /mnt/d/workspace/ice-bubble:/mnt/d/workspace/ice-bubble
+      - /home/dabai:/home/dabai:ro
+    networks:
+      - ice-bubble-net
+    depends_on:
+      openclaw-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "const net=require('net');const s=net.createConnection({port:13100,host:'127.0.0.1'},()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3000)"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ============================================================
+  # Ice Bubble Collector OpenCode (production port 13101)
+  # ============================================================
+  ice-bubble-collector-opencode:
+    build:
+      context: .
+      dockerfile: dockerfiles/ice-bubble-collector-opencode/Dockerfile
+    container_name: ice-bubble-collector-opencode
+    restart: unless-stopped
+    working_dir: /mnt/d/workspace/ice-bubble/ice-bubble-collector-opencode
+    ports:
+      - "13101:13101"
+    environment:
+      - HOME=/home/dabai
+    volumes:
+      - /home/dabai/.local/share/ice-bubble/data:/home/dabai/.local/share/ice-bubble/data
+      - /home/dabai/.local/share/opencode:/home/dabai/.local/share/opencode
+      - ./configs/collector-opencode-config.json:/mnt/d/workspace/ice-bubble/ice-bubble-collector-opencode/config/config.json:ro
+      - /mnt/d/workspace/ice-bubble:/mnt/d/workspace/ice-bubble
+      - /home/dabai:/home/dabai:ro
+    networks:
+      - ice-bubble-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "const net=require('net');const s=net.createConnection({port:13101,host:'127.0.0.1'},()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3000)"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
+
+  # ============================================================
+  # OpenDesign Daemon (temp port 7457, production 7456)
+  # TODO: not ready yet, uncomment when done
+  # ice-bubble-opendesign:
+  #   build:
+  #     context: /mnt/d/workspace/open-design
+  #     dockerfile: /mnt/d/workspace/ice-bubble/docker/dockerfiles/ice-bubble-opendesign/Dockerfile
+  #   container_name: ice-bubble-opendesign
+  #   restart: unless-stopped
+  #   working_dir: /app
+  #   ports:
+  #     - "7457:7457"
+  #   environment:
+  #     - HOME=/home/dabai
+  #     - OD_PORT=7457
+  #   user: "${UID}:${GID}"
+  #   networks:
+  #     - ice-bubble-net
+  #   healthcheck:
+  #     test: ["CMD", "node", "-e", "const net=require('net');const s=net.createConnection({port:7457,host:'127.0.0.1'},()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3000)"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 15s
+
+networks:
+  ice-bubble-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16

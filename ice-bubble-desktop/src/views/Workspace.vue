@@ -11,7 +11,8 @@
 import { ref, reactive, watch, computed, nextTick, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useChatInputStore } from '@/stores/chat-input'
-import { gatewayClient } from '@/services/gateway-client'
+import { wsManager, type WebSocketManager } from '@/services/websocket-manager'
+import type { ConnectionState } from '@/types/connection'
 import { request, api } from '../api/client'
 import AppFooter from '../components/AppFooter.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -20,7 +21,7 @@ import OpenCodeChatPanel from './components/chat/OpenCodeChatPanel.vue'
 import SessionList from './components/SessionList.vue'
 import { Loading } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
-import { getMainSessionKey } from './components/chat/session-cache'
+import { getMainSessionKey, setMainSessionKey, clearMainSessionKey } from './components/chat/session-cache'
 import AgentSelector from './components/chat/AgentSelector.vue'
 import type { AgentOption } from './components/chat/AgentSelector.vue'
 import { sendOpenCodeChat } from '../api/opencode'
@@ -31,6 +32,8 @@ import { sendOpenCodeChat } from '../api/opencode'
 const route = useRoute()
 const router = useRouter()
 const gatewayConnected = inject<{ value: boolean }>('gatewayConnected') ?? { value: false }
+const wsManagerRef = inject<{ value: WebSocketManager }>('wsManager')
+const wsConnectionState = computed<ConnectionState>(() => wsManagerRef?.value?.state?.value ?? 'IDLE')
 
 // ============================================================
 // Agent 动态列表（从 Admin API 获取）
@@ -147,6 +150,13 @@ const inputContextKey = computed(() => {
 })
 
 // ============================================================
+// 自动跟随状态机（Session 自动切换跟随）
+// ============================================================
+const autoFollowEnabled = ref(true);       // 用户手动切换后禁用
+const pendingAutoSwitch = ref<string | null>(null);  // 等待切换的目标 session key
+const lastAutoSwitchTime = ref(0);          // 防止短时间内多次切换
+
+// ============================================================
 // 视图状态机
 // ============================================================
 type ViewState = 'loading' | 'list' | 'chat' | 'no-session'
@@ -188,27 +198,33 @@ async function loadRecentSession(agent: AgentOption): Promise<string | null> {
       agentSessionMap[agentKey] = sid
       return sid
     }
-    // OpenClaw
-    const res = await request(`/sessions/unified?agentId=${encodeURIComponent(agent.agent)}&limit=1`)
+    // OpenClaw: 默认使用 agent:{agentId}:main session（与 webchat 一致）
+    const defaultSessionKey = `agent:${agent.agent}:main`
+    // excludeSubagents=true: 排除 subagent 会话，确保只返回主会话
+    const res = await request(`/sessions/unified?agentId=${encodeURIComponent(agent.agent)}&limit=50&excludeSubagents=true`)
     if (!res.ok) return null
     const data = await res.json()
     const sessions = (data.sessions || []) as any[]
-    if (sessions.length === 0) return null
-    const latest = sessions.sort((a: any, b: any) =>
+    // 优先匹配 main session，否则取最新的
+    const mainSession = sessions.find((s: any) =>
+      s.session_key === defaultSessionKey || s.key === defaultSessionKey
+    )
+    const chosen = mainSession || sessions.sort((a: any, b: any) =>
       new Date(b.last_message_at || b.updated_at || 0).getTime()
       - new Date(a.last_message_at || a.updated_at || 0).getTime(),
     )[0]
-    const sk = latest.session_key || latest.key
-    if (!sk) return null
-    agentSessionMap[agentKey] = sk
-    return sk
+    const sk = chosen?.session_key || chosen?.key
+    // 如果 API 返回了会话就用它的 key，否则 fallback 到默认 main key
+    const finalKey = sk || defaultSessionKey
+    agentSessionMap[agentKey] = finalKey
+    return finalKey
   } catch {
     return null
   }
 }
 
 /** 解析 /chat 路由：查缓存 → 缓存命中跳转 → 否则 API 加载 → 无会话则 no-session */
-async function resolveChatRoute() {
+async function resolveChatRoute(seq?: number) {
   const agent = selectedAgent.value
   const agentKey = getAgentKey(agent)
 
@@ -227,24 +243,47 @@ async function resolveChatRoute() {
   if (agent.platform === 'openclaw' && agent.agent === 'main') {
     const cached = getMainSessionKey()
     if (cached) {
-      agentSessionMap[agentKey] = cached
-      router.replace('/workspace/' + encodeURIComponent(cached))
-      return
+      if (cached === 'agent:main:main') {
+        agentSessionMap[agentKey] = cached
+        router.replace('/workspace/' + encodeURIComponent(cached))
+        return
+      } else {
+        clearMainSessionKey()
+      }
     }
   }
 
-  // 3. API 加载最近会话
+  // 3. API 加载最近会话（P0: 带超时保护）
   view.value = 'loading'
-  const sk = await loadRecentSession(agent)
+  try {
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null
+    const timeoutP = new Promise<null>((_resolve, reject) => {
+      timeoutTimer = setTimeout(() => reject(new Error('Session load timed out')), 10_000)
+    })
+    const sk = await Promise.race([loadRecentSession(agent), timeoutP])
+    // P1: 成功后清理 timeout timer（防止泄漏）
+    if (timeoutTimer) clearTimeout(timeoutTimer)
 
-  if (sk) {
-    if (agent.platform === 'openclaw') {
-      router.replace('/workspace/' + encodeURIComponent(sk))
+    // P1: resolveSeq 竞态检查
+    if (seq !== undefined && resolveSeq !== seq) return
+
+    if (sk) {
+      if (agent.platform === 'openclaw') {
+        if (agent.agent === 'main') {
+          setMainSessionKey(sk)
+        }
+        router.replace('/workspace/' + encodeURIComponent(sk))
+      } else {
+        openCodeSessionId.value = sk
+        view.value = 'chat'
+      }
     } else {
-      openCodeSessionId.value = sk
-      view.value = 'chat'
+      view.value = 'no-session'
     }
-  } else {
+  } catch {
+    // P0: 超时或失败，显示 no-session 而非无限 loading
+    console.warn('[resolveChatRoute] Session load failed or timed out')
+    if (seq !== undefined && resolveSeq !== seq) return
     view.value = 'no-session'
   }
 }
@@ -270,6 +309,8 @@ watch(
         }
       }
       agentSessionMap[getAgentKey(selectedAgent.value)] = urlSessionKey.value
+      // 恢复自动跟随（导航到新 session 时重新启用）
+      autoFollowEnabled.value = true;
       view.value = 'chat'
       return
     }
@@ -278,7 +319,7 @@ watch(
     resolveSeq++
     const seq = resolveSeq
     initAgentFromQuery()
-    await resolveChatRoute()
+    await resolveChatRoute(seq)
     // 防止竞态：如果 resolveChatRoute 之后有新的路由变化，忽略本次结果
     if (resolveSeq === seq && view.value === 'loading') {
       view.value = 'no-session'
@@ -323,7 +364,42 @@ async function onAgentSwitch(newAgent: AgentOption) {
 // 会话列表选择 → 导航
 // ============================================================
 function onSessionSelect(sessionKeyStr: string) {
+  // 用户手动切换 session → 禁用自动跟随，取消待处理的自动切换
+  autoFollowEnabled.value = false;
+  pendingAutoSwitch.value = null;
   router.push('/workspace/' + encodeURIComponent(sessionKeyStr))
+}
+
+// ============================================================
+// 自动跟随：Session Chain 推进时自动切换
+// ============================================================
+function onSessionChainAdvanced(payload: {
+  newSessionKey: string;
+  oldSessionKey: string;
+  reason: string;
+}) {
+  // 用户手动切换后不自动跟随
+  if (!autoFollowEnabled.value) return;
+  // 3 秒内不重复切换
+  if (Date.now() - lastAutoSwitchTime.value < 3000) return;
+  // Agent 正在处理 → 暂存，等处理完再切
+  if (isAgentProcessing.value) {
+    pendingAutoSwitch.value = payload.newSessionKey;
+    return;
+  }
+  performAutoSwitch(payload.newSessionKey);
+}
+
+function performAutoSwitch(newSessionKey: string) {
+  lastAutoSwitchTime.value = Date.now();
+  pendingAutoSwitch.value = null;
+  const agentKey = getAgentKey(selectedAgent.value);
+  agentSessionMap[agentKey] = newSessionKey;
+  // 更新 main agent 的 localStorage 缓存
+  if (selectedAgent.value.agent === 'main' && selectedAgent.value.platform === 'openclaw') {
+    setMainSessionKey(newSessionKey);
+  }
+  router.replace('/workspace/' + encodeURIComponent(newSessionKey));
 }
 
 // ============================================================
@@ -352,6 +428,18 @@ const isAgentProcessing = computed(() => {
 const isBusy = computed(() => sending.value || isAgentProcessing.value)
 const canSteer = computed(() => isAgentProcessing.value && inputText.value.trim().length > 0)
 const aborting = ref(false)
+
+// Agent 处理结束 → 检查是否有待处理的自动切换
+watch(isAgentProcessing, (newVal, oldVal) => {
+  if (oldVal && !newVal && pendingAutoSwitch.value && autoFollowEnabled.value) {
+    // 延迟 500ms，等 chat.final 的 pollNow 完成
+    setTimeout(() => {
+      if (pendingAutoSwitch.value) {
+        performAutoSwitch(pendingAutoSwitch.value);
+      }
+    }, 500);
+  }
+});
 
 // ============================================================
 // 附件
@@ -427,7 +515,24 @@ function onDrop(e: DragEvent) {
 // ============================================================
 // 发送能力
 // ============================================================
-const canSend = computed(() => isOpenCodeMode.value || !!activeSessionKey.value)
+const canSend = computed(() => {
+  if (isOpenCodeMode.value) return true
+  if (!activeSessionKey.value) return false
+  const st = wsConnectionState.value
+  if (st === 'FAILED' || st === 'DISCONNECTED') return false
+  return true
+})
+
+/** 输入框 placeholder 随连接状态变化 */
+const inputPlaceholder = computed(() => {
+  if (isAgentProcessing.value) return '追加消息到当前回复…'
+  const st = wsConnectionState.value
+  if (st === 'CONNECTED') return canSend.value ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '此会话已完成，不可发送消息'
+  if (st === 'RECONNECTING') return '消息将在重连后发送…'
+  if (st === 'FAILED') return '连接已断开，请点击上方按钮重连'
+  if (st === 'CONNECTING') return '正在连接…'
+  return canSend.value ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '此会话已完成，不可发送消息'
+})
 
 // ============================================================
 // 发送消息
@@ -435,13 +540,28 @@ const canSend = computed(() => isOpenCodeMode.value || !!activeSessionKey.value)
 async function sendMessage() {
   const text = inputText.value.trim()
   const isOpenCode = isOpenCodeMode.value
+
+  // 如果没有 activeSessionKey（/chat 路由且缓存为空），先解析获取一个
+  if (!activeSessionKey.value && !isOpenCode) {
+    await resolveChatRoute()
+    // resolveChatRoute 成功后，agentSessionMap 缓存会被更新。
+    // 直接检查缓存（避免 router.replace 的异步更新延迟）。
+    const agentKey = getAgentKey(selectedAgent.value)
+    let sk = agentSessionMap[agentKey]
+    if (!sk) {
+      // P1: 构造默认 session key（无需 Admin 端点）
+      sk = `agent:${selectedAgent.value.agent}:main`
+      agentSessionMap[agentKey] = sk
+    }
+  }
+
   if ((!text && attachments.value.length === 0) || (!activeSessionKey.value && !isOpenCode) || sending.value) return
 
   // ===== Steer（追加消息） =====
   if (isAgentProcessing.value) {
     if (!text && attachments.value.length === 0) return
     try {
-      await gatewayClient.steerSession(activeSessionKey.value, text)
+      await wsManager.clientRef.steerSession(activeSessionKey.value, text)
       inputText.value = ''
       resetInputHeight()
       nextTick(() => inputRef.value?.focus())
@@ -498,25 +618,14 @@ async function sendMessage() {
       attachmentDataUrls,
       optimisticId,
     )
-    if (gatewayConnected.value) {
-      await gatewayClient.sendMessage(
-        activeSessionKey.value,
-        text || '(图片)',
-        attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
-      )
-    } else {
-      const res = await request('/chat/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionKey: activeSessionKey.value,
-          message: text || '(图片)',
-          attachments: attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
-        }),
-      })
-      const data = await res.json()
-      if (!data.success) throw new Error(data.error)
-    }
+    // 统一通过 wsManager.send() 发送，已连接直接走 WS，断连自动入队重发
+    await wsManager.send('chat.send', {
+      sessionKey: activeSessionKey.value,
+      message: text || '(图片)',
+      deliver: false,
+      idempotencyKey: crypto.randomUUID(),
+      ...(attachmentPayloads.length > 0 ? { attachments: attachmentPayloads } : {}),
+    })
   } catch (e) {
     inputText.value = text
     // 标记 optimistic 消息为失败（仅 OpenClaw 分支）
@@ -547,7 +656,7 @@ async function handleAbort() {
   if (aborting.value || !isAgentProcessing.value || !activeSessionKey.value) return
   aborting.value = true
   try {
-    await gatewayClient.abortTurn(activeSessionKey.value)
+    await wsManager.clientRef.abortTurn(activeSessionKey.value)
   } catch (e) {
     console.error('中止失败', e)
   }
@@ -655,12 +764,13 @@ const headerSubtitle = computed(() => {
             ref="openCodePanelRef"
             :session-id="openCodeSessionId"
           />
-          <!-- OpenClaw 模式：消息时间线 -->
+          <!-- OpenClaw 模式：消息时间线（仅在 chat 视图显示，与 no-session 互斥） -->
           <ChatTimeline
-            v-else
+            v-else-if="view === 'chat'"
             ref="timelineRef"
             :key="timelineKey"
             :session-key="timelineSessionKey"
+            @session-chain-advanced="onSessionChainAdvanced"
           />
 
           <!-- 输入区 -->
@@ -690,7 +800,7 @@ const headerSubtitle = computed(() => {
                   ref="inputRef"
                   v-model="inputText"
                   class="chat-input"
-                  :placeholder="isAgentProcessing ? '追加消息到当前回复…' : (canSend ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '此会话已完成，不可发送消息')"
+                  :placeholder="inputPlaceholder"
                   :disabled="!canSend"
                   @keydown="onKeyDown"
                   @input="autoResize"

@@ -4,19 +4,21 @@
  */
 
 import { Router } from "express";
+import { logger } from "../utils/index.js";
 import type { GatewayProxy } from "../gateway/gateway-proxy.js";
+import type { DataRepository } from "../storage/data-repository.js";
 
 // ─── Chat Proxy Router ───────────────────────────────────────────────────────
 
-export function createChatProxyRouter(proxy: GatewayProxy): Router {
+export function createChatProxyRouter(proxy: GatewayProxy, repository?: DataRepository): Router {
   const router = Router();
 
   // GET /history?sessionKey=xxx&limit=50&before=ISO_timestamp
   router.get("/history", async (req, res) => {
+    const sessionKey = req.query.sessionKey as string | undefined;
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    const before = req.query.before as string | undefined;
     try {
-      const sessionKey = req.query.sessionKey as string | undefined;
-      const limit = parseInt(req.query.limit as string, 10) || 50;
-      const before = req.query.before as string | undefined;
 
       if (!sessionKey) {
         res.status(400).json({ error: "sessionKey is required" });
@@ -30,7 +32,29 @@ export function createChatProxyRouter(proxy: GatewayProxy): Router {
       res.json(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      res.status(502).json({ error: "Gateway request failed", detail: msg });
+      // P1: 降级到 Admin SQLite 历史数据
+      logger.warn('[ChatProxy] Gateway chat.history failed, falling back to Admin SQLite', { error: msg });
+      if (repository) {
+        try {
+          const result = repository.getMessages({
+            session_key: sessionKey,
+            limit,
+          });
+          res.json({
+            messages: result.messages.map((m: any) => ({
+              ...m,
+              id: m.id,
+              source: 'sqlite',
+            })),
+            history: [],
+          });
+        } catch (fallbackErr) {
+          logger.error('[ChatProxy] Admin SQLite fallback also failed', { error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr) });
+          res.json({ messages: [], history: [] });
+        }
+      } else {
+        res.json({ messages: [], history: [] });
+      }
     }
   });
 
@@ -52,7 +76,9 @@ export function createSessionProxyRouter(proxy: GatewayProxy): Router {
       res.json(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      res.status(502).json({ error: "Gateway request failed", detail: msg });
+      // P1: 返回空结果而不是 502
+      logger.warn('[SessionProxy] Gateway sessions.list failed, returning empty result', { error: msg });
+      res.json({ sessions: [] });
     }
   });
 

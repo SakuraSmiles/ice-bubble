@@ -6,10 +6,9 @@ import type { AttachmentStorage } from "./attachment-storage.js";
 /**
  * Chat Controller — handles message sending, aborting, and SSE streaming.
  *
- * Uses `sessions.send` RPC to correctly target the specified session.
- * For active sessions, the message is delivered and agent turn starts.
- * For completed subagent sessions, the Gateway may create a new session;
- * the new sessionKey is returned so the frontend can follow it.
+ * Uses chat.send RPC to deliver message to the specified session.
+ * Since Gateway does not push chat events to proxy clients,
+ * we poll chat.history after send to detect new messages and push via SSE.
  */
 export class ChatController {
   constructor(
@@ -47,26 +46,25 @@ export class ChatController {
 
     const idempotencyKey = crypto.randomUUID();
 
-    // Save attachments before forwarding (fire-and-forget, non-blocking)
+    // Save attachments before forwarding
     if (this.attachmentStorage && attachments && Array.isArray(attachments)) {
       void this.attachmentStorage.saveAttachments(sessionKey, attachments as any[], message);
     }
 
-    // Use sessions.send to target the exact session.
-    // sessions.send only accepts: key, message, idempotencyKey (no label).
-    const rpcPromise = this.rpc.request("sessions.send", {
-      key: sessionKey,
+    // Get current history snapshot to compare later
+    const historyBefore = await this.getHistorySnapshot(sessionKey);
+
+    // chat.send to deliver message
+    const rpcPromise = this.rpc.request("chat.send", {
+      sessionKey,
       message,
       idempotencyKey,
       ...(attachments ? { attachments } : {}),
     });
 
-    // Wait for the RPC response with a generous timeout (agent turns can be long).
-    // The SSE stream handles streaming updates; this is for the initial acknowledgment.
-    const timeoutMs = 120_000; // 2 minutes
-    const timer = setTimeout(() => {
-      // Timed out but message may still be processing — tell client it was accepted
-    }, timeoutMs);
+    // Wait for the RPC response (generous timeout for agent turns)
+    const timeoutMs = 120_000;
+    const timer = setTimeout(() => {}, timeoutMs);
 
     try {
       const result = await Promise.race([
@@ -79,12 +77,13 @@ export class ChatController {
       clearTimeout(timer);
 
       const payload = result as Record<string, unknown> | null;
-
-      // Gateway sessions.send may return a new session key if it created a continuation
       const newSessionKey =
         (payload?.sessionKey as string) ??
         (payload?.canonicalKey as string) ??
         null;
+
+      // Start polling for new messages in background
+      this.pollForNewMessages(sessionKey, historyBefore, idempotencyKey);
 
       res.json({
         success: true,
@@ -93,12 +92,12 @@ export class ChatController {
       });
     } catch (err) {
       clearTimeout(timer);
-
-      // RPC error or timeout — message may still be processing
-      // Tell client it was accepted so SSE can pick up updates
       console.error(
-        `[ChatController] sessions.send RPC: ${err instanceof Error ? err.message : String(err)}`,
+        `[ChatController] chat.send RPC: ${err instanceof Error ? err.message : String(err)}`,
       );
+
+      // Still start polling — message may have been accepted
+      this.pollForNewMessages(sessionKey, historyBefore, idempotencyKey);
 
       res.json({
         success: true,
@@ -108,8 +107,30 @@ export class ChatController {
   }
 
   /**
+   * GET /api/chat/history?session=xxx
+   */
+  async history(req: Request, res: Response): Promise<void> {
+    const sessionKey = (req.query.session ?? req.query.sessionKey) as string | undefined;
+
+    if (!sessionKey) {
+      res.status(400).json({ error: "Missing query parameter: session" });
+      return;
+    }
+
+    try {
+      const result = await this.rpc.request("chat.history", {
+        sessionKey,
+        limit: 100,
+      }) as { messages?: Array<Record<string, unknown>> };
+      res.json({ success: true, messages: result?.messages ?? [] });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ success: false, error: msg });
+    }
+  }
+
+  /**
    * POST /api/chat/abort
-   * Body: { sessionKey }
    */
   async abort(req: Request, res: Response): Promise<void> {
     const { sessionKey, runId } = req.body as {
@@ -118,10 +139,7 @@ export class ChatController {
     };
 
     if (!sessionKey) {
-      res.status(400).json({
-        success: false,
-        error: "Missing required field: sessionKey",
-      });
+      res.status(400).json({ success: false, error: "Missing required field: sessionKey" });
       return;
     }
 
@@ -131,14 +149,14 @@ export class ChatController {
       await this.rpc.request("chat.abort", params);
       res.json({ success: true, aborted: true });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      res.json({ success: false, error: message });
+      const msg = err instanceof Error ? err.message : String(err);
+      res.json({ success: false, error: msg });
     }
   }
 
   /**
    * GET /api/chat/stream?session=xxx
-   * Establishes an SSE connection for real-time message streaming.
+   * SSE connection for real-time message streaming.
    */
   stream(req: Request, res: Response): void {
     const sessionKey = req.query.session as string | undefined;
@@ -157,5 +175,83 @@ export class ChatController {
     req.on("close", () => {
       this.sseManager.removeClient(sessionKey, res);
     });
+  }
+
+  // ── Private helpers ──
+
+  private async getHistorySnapshot(sessionKey: string): Promise<number> {
+    try {
+      const result = await this.rpc.request("chat.history", {
+        sessionKey,
+        limit: 1,
+      }) as { messages?: Array<unknown> };
+      return result?.messages?.length ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Poll chat.history until a new message appears, then push via SSE.
+   * Runs for up to 2 minutes (matching agent turn timeout).
+   */
+  private pollForNewMessages(
+    sessionKey: string,
+    messageCountBefore: number,
+    runId: string,
+  ): void {
+    let attempts = 0;
+    const maxAttempts = 60; // 60 * 2s = 120s
+    const pollInterval = 2000;
+
+    const timer = setInterval(async () => {
+      attempts++;
+      if (attempts > maxAttempts) {
+        clearInterval(timer);
+        return;
+      }
+
+      try {
+        const result = await this.rpc.request("chat.history", {
+          sessionKey,
+          limit: 5,
+        }) as { messages?: Array<Record<string, unknown>> };
+
+        const messages = result?.messages ?? [];
+        if (messages.length > messageCountBefore) {
+          // Find new messages (those not in the original snapshot)
+          for (let i = messages.length - 1; i >= 0; i--) {
+            const msg = messages[i];
+            const role = String(msg.role ?? "assistant");
+            const rawContent = msg.content;
+            const content = typeof rawContent === "string"
+              ? rawContent
+              : (Array.isArray(rawContent)
+                  ? rawContent
+                      .filter((c: any) => c.type === "text" || c.type === "toolResult")
+                      .map((c: any) => c.text ?? "")
+                      .join("")
+                  : String(rawContent ?? ""));
+            const timestamp = String(msg.timestamp ?? new Date().toISOString());
+
+            this.sseManager.broadcast(sessionKey, "message", {
+              role,
+              content,
+              timestamp,
+              messageId: String(msg.id ?? runId),
+              state: "final",
+            });
+
+            // Only push the latest new message
+            if (messages.length - messageCountBefore >= 1) break;
+          }
+          clearInterval(timer);
+        }
+      } catch {
+        // Ignore poll errors, keep trying
+      }
+    }, pollInterval);
+
+    // Don't block — let the interval clean up on its own
   }
 }

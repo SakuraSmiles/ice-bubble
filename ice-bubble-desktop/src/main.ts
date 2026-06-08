@@ -44,6 +44,8 @@ const router = createRouter({
           path: 'chat',
           component: () => import('./views/Workspace.vue'),
         },
+        { path: 'design', component: () => import('./views/Design.vue') },
+        { path: 'design/:projectId', component: () => import('./views/Design.vue') },
         { path: 'workspace/:key', component: () => import('./views/Workspace.vue') },
         { path: 'sessions', component: () => import('./views/AllSessions.vue') },
         { path: 'tasks', component: () => import('./views/Tasks.vue') },

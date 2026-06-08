@@ -183,9 +183,11 @@ export function convertUserMessage(
     metadata: {
       eventId: event.id,
       parentId: event.parentId || undefined,
-      contentCount: event.message.content.length,
+      contentCount: typeof event.message.content === 'string' ? 1 : event.message.content.length,
       // 保留原始消息时间戳
       messageTimestamp: event.message.timestamp,
+      // 标记是否为 Sender metadata 全量版（重复源，由 pipeline 过滤）
+      is_duplicate_source: isSenderMetadataFullVersion(textContent) || undefined,
     },
     raw: event,
   };
@@ -390,6 +392,9 @@ export function convertToolResultMessage(
  * extractTextContent(content); // '第一段\n第二段'
  */
 function extractTextContent(content: Message['content']): string {
+  // 兼容 OpenClaw Gateway 的字符串格式（user 消息的 content 是纯字符串）
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
   return content
     .filter((c): c is TextContent => c.type === 'text')
     .map(c => c.text)
@@ -484,4 +489,28 @@ export function shouldSkipEmptyMessage(event: MessageEvent): boolean {
   }
 
   return false;
+}
+
+/**
+ * 检测消息是否为 OpenClaw 的 Sender metadata 全量版（重复源）
+ * 
+ * OpenClaw 将用户消息写两遍到 JSONL:
+ * 1. 全量版: "Sender (untrusted metadata): ```json ... ```\n[Day YYYY-MM-DD HH:MM GMT...] ..."
+ * 2. 截断版: "[Day YYYY-MM-DD HH:MM GMT...] ..."（保留日期头 + 正文）
+ * 
+ * 全量版特征:
+ * - content 以 "Sender (untrusted metadata):" 开头
+ * - 去掉 metadata JSON 块后，剩余内容以 [Day YYYY-MM-DD HH:MM GMT...] 开头
+ * 
+ * @param content - 消息文本内容
+ * @returns 是否为全量版（应被过滤）
+ */
+export function isSenderMetadataFullVersion(content: string): boolean {
+  if (!content || content.length > 1_000_000) return false;
+  if (!content.startsWith('Sender (untrusted metadata):')) return false;
+  const afterMeta = content.replace(
+    /Sender \(untrusted metadata\):\s*```json\s*[\s\S]*?```\s*\n*/,
+    ''
+  );
+  return /^\[(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2} \d{2}:\d{2} GMT[^\]]*\]/.test(afterMeta);
 }

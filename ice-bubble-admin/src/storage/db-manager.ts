@@ -389,6 +389,7 @@ export class DBManager {
         CREATE INDEX IF NOT EXISTS idx_admin_messages_session ON admin_messages(session_key);
         CREATE INDEX IF NOT EXISTS idx_admin_messages_timestamp ON admin_messages(timestamp);
         CREATE INDEX IF NOT EXISTS idx_admin_messages_type ON admin_messages(message_type);
+        CREATE INDEX IF NOT EXISTS idx_admin_messages_session_type_ts ON admin_messages(session_key, message_type, timestamp);
       `);
 
       // 11b. 数据管理 - tool_calls 表（存储 tool 类型消息，独立归档策略）
@@ -440,6 +441,7 @@ export class DBManager {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           table_name TEXT NOT NULL UNIQUE,
           last_sync_time TIMESTAMP,
+          last_sync_id INTEGER DEFAULT 0,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
@@ -1061,6 +1063,19 @@ export class DBManager {
         }
         break;
  }
+      case 27:
+        // v27: sync_progress 表新增 last_sync_id 列（ID 游标替代时间戳游标）
+        {
+          const columns = this.db.prepare("PRAGMA table_info(sync_progress)").all() as { name: string }[];
+          const hasLastSyncId = columns.some(col => col.name === 'last_sync_id');
+          if (!hasLastSyncId) {
+            this.db.exec('ALTER TABLE sync_progress ADD COLUMN last_sync_id INTEGER DEFAULT 0');
+            logger.info('Migration v27: Added last_sync_id column to sync_progress');
+          } else {
+            logger.info('Migration v27: last_sync_id column already exists, skipping');
+          }
+        }
+        break;
       default:
         logger.warn(`No migration defined for version ${version}`);
     }

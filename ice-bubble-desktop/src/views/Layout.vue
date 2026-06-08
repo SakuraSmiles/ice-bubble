@@ -57,6 +57,7 @@ onUnmounted(() => {
 const menuItems = [
   { path: '/', label: '工作台', match: (p: string) => p === '/' },
   { path: '/chat', label: '聊天', match: (p: string) => p === '/chat' || p.startsWith('/workspace/') },
+  { path: '/design', label: '设计', match: (p: string) => p.startsWith('/design') },
   { path: '/agents', label: '成员', match: (p: string) => p === '/agents' },
   { path: '/sessions', label: '会话', match: (p: string) => p === '/sessions' },
   { path: '/modules', label: '模块', match: (p: string) => p === '/modules' },
@@ -109,6 +110,10 @@ const menuItems = [
               <!-- 文档图标 -->
               <path d="M4 0h5.5v1.5H4V0zm0 3h5.5v1.5H4V3zM2 1a1 1 0 011-1h1v1.5H3.5v11h1V14H3a1 1 0 01-1-1V1z"/>
               <path d="M9.5 0v1.5H11L8.5 4 7.1 2.6 9.5.2V0h-1L6 3 8.5 5.5 12 2H10.5V0h-1zM4 6h5.5v1.5H4V6zm0 3h5.5v1.5H4V9z"/>
+            </svg>
+            <svg v-else-if="item.path === '/design'" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <!-- 画笔图标 -->
+              <path d="M11.5 1.5a1.414 1.414 0 012 2L5.5 11.5 2 12.5l1-3.5L11.5 1.5z"/>
             </svg>
             <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <!-- 聊天气泡图标 -->

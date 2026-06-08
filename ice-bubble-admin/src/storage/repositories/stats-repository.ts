@@ -17,6 +17,10 @@ import * as path from 'path';
 import { logger } from '../../utils/index.js';
 import type { AdminMessage, SyncProgress } from '../data-repository.js';
 
+// Allowed table names for parameterized queries (to prevent SQL injection)
+// const ALLOWED_SYNC_TABLES = new Set(['admin_messages', 'admin_model_events', 'admin_tool_calls', 'admin_sessions', 'admin_agents']);
+// NOTE: used in getMaxId() via inline allowlist
+
 export class StatsRepository {
   private db: Database;
 
@@ -122,6 +126,50 @@ export class StatsRepository {
   // ========== 同步进度 ==========
 
   /**
+   * 获取指定表中最大的 id（用于游标漂移校验）
+   */
+  getMaxId(tableName: string): number | null {
+    const idColumn = 'id';
+    // 仅对已知包含 id 列的表执行查询
+    const allowedTables = ['admin_messages', 'admin_model_events', 'admin_tool_calls'];
+    if (!allowedTables.includes(tableName)) return null;
+    try {
+      const row = this.db.prepare(`SELECT MAX(${idColumn}) as max_id FROM ${tableName}`).get() as { max_id: number | null } | undefined;
+      return row?.max_id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 重置同步游标（将 last_sync_time 置 null、last_sync_id 置 0）
+   * 用于游标漂移自动修复或手动重置 API
+   */
+  resetSyncProgress(tableName: string): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO sync_progress (table_name, last_sync_time, last_sync_id, updated_at)
+      VALUES (?, NULL, 0, CURRENT_TIMESTAMP)
+      ON CONFLICT(table_name) DO UPDATE SET
+        last_sync_time = NULL,
+        last_sync_id = 0,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+    stmt.run(tableName);
+    logger.info(`[StatsRepository] Sync cursor reset for ${tableName}`);
+  }
+
+  /**
+   * 按前缀批量重置同步游标
+   */
+  resetSyncProgressByPrefix(prefix: string): number {
+    const rows = this.db.prepare('SELECT table_name FROM sync_progress WHERE table_name LIKE ?').all(`${prefix}%`) as Array<{ table_name: string }>;
+    for (const row of rows) {
+      this.resetSyncProgress(row.table_name);
+    }
+    return rows.length;
+  }
+
+  /**
    * 获取同步进度
    */
   getSyncProgress(tableName: string): SyncProgress | null {
@@ -135,8 +183,9 @@ export class StatsRepository {
    * @param lastDataTimestamp 实际数据时间戳（毫秒数或 ISO 字符串）。
    *   传入时语义为「数据中最大的时间点」，而非同步执行时间。
    *   不传时回退到 CURRENT_TIMESTAMP（兼容旧逻辑）。
+   * @param lastSyncId ID 游标（优先于时间戳游标），用于消除 timestamp 乱序导致的 11% 数据缺口
    */
-  updateSyncProgress(tableName: string, lastDataTimestamp?: string | number): void {
+  updateSyncProgress(tableName: string, lastDataTimestamp?: string | number, lastSyncId?: number): void {
     // 统一转为 ISO 字符串存储（parseSince 能处理毫秒数和 ISO 两种格式）
     const tsValue = lastDataTimestamp != null
       ? (typeof lastDataTimestamp === 'number'
@@ -144,14 +193,17 @@ export class StatsRepository {
           : lastDataTimestamp)
       : null;
 
+    // COALESCE(excluded.last_sync_time, CURRENT_TIMESTAMP)：当 tsValue 为 null 时（ID 游标模式），
+    // 将 last_sync_time 更新为当前时间，而非保留旧值（避免降级回时间戳模式时使用过期时间戳）。
     const stmt = this.db.prepare(`
-      INSERT INTO sync_progress (table_name, last_sync_time, updated_at)
-      VALUES (?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+      INSERT INTO sync_progress (table_name, last_sync_time, last_sync_id, updated_at)
+      VALUES (?, COALESCE(?, CURRENT_TIMESTAMP), COALESCE(?, 0), CURRENT_TIMESTAMP)
       ON CONFLICT(table_name) DO UPDATE SET
         last_sync_time = COALESCE(excluded.last_sync_time, CURRENT_TIMESTAMP),
+        last_sync_id = COALESCE(excluded.last_sync_id, sync_progress.last_sync_id, 0),
         updated_at = CURRENT_TIMESTAMP
     `);
-    stmt.run(tableName, tsValue);
+    stmt.run(tableName, tsValue, lastSyncId ?? 0);
   }
 
   // ========== 模型事件 ==========

@@ -64,7 +64,7 @@ export function processMessage(row: CollectorMessage, sourceModule: string, plat
   }
 
   return {
-    source_id: row.id ?? null,
+    source_id: row.message_id ?? String(row.id ?? ''),
     source_module: sourceModule,
     session_key: row.session_key,
     message_type: row.message_type ?? null,

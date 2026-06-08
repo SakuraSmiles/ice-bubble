@@ -14,7 +14,7 @@
     }
   ],
   "_authToken_comment": "要获取 authToken，访问 Admin 的 /api/auth/status 端点（如 http://<admin-host>:13000/api/auth/status）。如果 needsToken 为 true，说明 token 是自动生成的，你需要：1) 在 Admin 的 config.json 中设置 auth.token 为固定值；2) 将同一个值填入此处的 authToken 字段。",
-  "authToken": "",
+  "authToken": "e926d9e48798d6e6cc41863fca9ebb206657c081c889936f",
   "cors": {
     "enabled": true,
     "origins": []

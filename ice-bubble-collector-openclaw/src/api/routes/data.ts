@@ -67,11 +67,12 @@ export function createDataRouter(collector: FileCollector): Router {
      * Query params:
      *   - session_key: string (optional, filter by session)
      *   - limit: number (default 100, max 1000)
-     *   - offset: number (default 0)
-     *   - since: ISO timestamp string (optional)
+     *   - offset: number (default 0) — 仅在 since 模式下生效，after_id 模式忽略
+     *   - since: ISO timestamp string (optional, 向后兼容)
+     *   - after_id: number (optional, ID 游标，优先于 since/offset)
      *
      * Response:
-     *   { count: number, messages: SessionMessage[] }
+     *   { count: number, max_id: number|null, max_time_updated: undefined, messages: SessionMessage[] }
      */
     router.get('/messages', async (req: Request, res: Response) => {
         try {
@@ -79,14 +80,32 @@ export function createDataRouter(collector: FileCollector): Router {
             const limit = Math.min(parseInt(String(req.query.limit ?? '100')), 1000);
             const offset = parseInt(String(req.query.offset ?? '0'));
             const since = req.query.since ? String(req.query.since) : undefined;
+            const afterId = req.query.after_id ? parseInt(String(req.query.after_id)) : undefined;
 
+            // after_id > 0 时走 ID 游标路径（修复 timestamp 乱序带来的 11% 数据缺口）
+            if (afterId !== undefined && afterId > 0) {
+                const result = await collector.getMessagesAfterId({ sessionKey, limit, afterId });
+                const messages = result.messages.map(messageToJson);
+                res.json({
+                    count: result.count,
+                    max_id: result.maxId,
+                    max_time_updated: undefined,
+                    messages,
+                });
+                dataLogger.debug(`返回 ${result.count} 条 messages (after_id=${afterId}, max_id=${result.maxId})`);
+                return;
+            }
+
+            // 向后兼容：无 after_id 时走 since 路径，但仍返回 max_id 供 Admin 下次切换 ID 游标
             const result = await collector.getMessages({ sessionKey, limit, offset, since });
-
-            // 转换 Date 为 ISO 字符串以便 JSON 序列化
             const messages = result.messages.map(messageToJson);
+            // 查询全表最大 id，使 Admin 能在下次同步时切换到 ID 游标模式
+            const maxIdResult = await collector.getMessagesAfterId({ sessionKey, limit: 1, afterId: 0 });
 
             res.json({
                 count: result.count,
+                max_id: maxIdResult.maxId,
+                max_time_updated: undefined,
                 messages,
             });
             const sessionLog = sessionKey ? ` (session: ${sessionKey})` : ' (all sessions)';
@@ -215,6 +234,7 @@ function sessionToJson(s: Session): Record<string, unknown> {
 function messageToJson(m: SessionMessage): Record<string, unknown> {
     return {
         id: m.id ?? null,
+        message_id: m.messageId ?? null,
         session_key: m.sessionKey,
         message_type: m.messageType,
         content: m.content ?? null,

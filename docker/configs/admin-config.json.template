@@ -1,0 +1,85 @@
+{
+  "server": {
+    "port": 13001,
+    "host": "0.0.0.0"
+  },
+  "auth": {
+    "token": "<GENERATE_A_SECURE_TOKEN>"
+  },
+  "cors": {
+    "origins": [
+      "http://localhost:3000",
+      "http://localhost:1420",
+      "tauri://localhost",
+      "http://tauri.localhost",
+      "https://tauri.localhost"
+    ]
+  },
+  "logging": {
+    "level": "info",
+    "format": "pretty"
+  },
+  "database": {
+    "path": "../data/admin.db",
+    "walMode": true,
+    "foreignKeys": true,
+    "performance": {
+      "cacheSize": -64000,
+      "mmapSize": 268435456,
+      "pageSize": 4096,
+      "busyTimeout": 5000
+    }
+  },
+  "cleanup": {
+    "enabled": true,
+    "healthDaysToKeep": 30,
+    "eventDaysToKeep": 90,
+    "statsDaysToKeep": 365,
+    "schedule": "0 2 * * *"
+  },
+  "modules": [
+    {
+      "moduleKey": "collector-openclaw",
+      "name": "OpenClaw数据采集",
+      "baseUrl": "http://ice-bubble-collector-openclaw:13110",
+      "enabled": true,
+      "pollInterval": 30000
+    },
+    {
+      "moduleKey": "collector-opencode",
+      "name": "OpenCode数据采集",
+      "baseUrl": "http://ice-bubble-collector-opencode:13111",
+      "enabled": true,
+      "pollInterval": 30000,
+      "sync": {
+        "enabled": true,
+        "pollInterval": 30000,
+        "batchSize": 500
+      }
+    },
+    {
+      "moduleKey": "opendesign",
+      "name": "OpenDesign AI设计工具",
+      "baseUrl": "http://ice-bubble-opendesign:7457",
+      "enabled": true,
+      "pollInterval": 0,
+      "proxy": {
+        "type": "opendesign",
+        "authToken": "",
+        "timeoutMs": 30000,
+        "sseTimeoutMs": 120000,
+        "defaultAgentId": "opencode"
+      }
+    }
+  ],
+  "dataSync": {
+    "collectorBaseUrl": "http://ice-bubble-collector-openclaw:13110",
+    "pollInterval": 60000,
+    "batchSize": 500,
+    "subagentParserEnabled": true
+  },
+  "gateway": {
+    "url": "ws://openclaw-gateway:18789",
+    "token": "<GENERATE_A_SECURE_TOKEN>"
+  }
+}

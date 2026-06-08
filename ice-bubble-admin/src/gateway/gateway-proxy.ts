@@ -46,7 +46,7 @@ const OPENCLAW_CONFIG_PATH = join(
   ".openclaw",
   "openclaw.json"
 );
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const BASE_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_ATTEMPTS = 50;
@@ -136,7 +136,7 @@ export class GatewayProxy {
       }
 
       const socket = new WebSocket(this.gatewayUrl, {
-        headers: { Origin: "http://localhost:13000" },
+        headers: { Origin: process.env.GATEWAY_WS_ORIGIN || `http://localhost:${process.env.PORT || 13000}` },
       });
       let settled = false;
 

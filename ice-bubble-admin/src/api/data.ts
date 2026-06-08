@@ -18,6 +18,7 @@ import type { GatewayProxy } from '../gateway/index.js';
 import { createSessionsRouter } from './data/sessions/index.js';
 import { createMessagesRouter } from './data/messages.js';
 import { createAgentsRouter } from './data/agents.js';
+import { createSyncRouter } from './data/sync.js';
 
 /** Admin 服务启动时间（模块加载时刻） */
 const startTime = Date.now();
@@ -30,6 +31,8 @@ export interface DataRouterConfig {
   agentOverviewService?: AgentOverviewService;
   /** Gateway 代理（可选） */
   gatewayProxy?: GatewayProxy | null;
+  /** 数据同步实例数组（可选，用于 /api/sync/progress 返回游标异常状态） */
+  dataSyncs?: import('../data/data-sync.js').DataSync[];
 }
 
 /**
@@ -47,6 +50,9 @@ export function createDataRouter(config: DataRouterConfig): Router {
 
   // Agent 域：/agents/*
   router.use(createAgentsRouter(config));
+
+  // Sync 域：/sync/*
+  router.use(createSyncRouter({ ...config, dataSyncs: config.dataSyncs }));
 
   return router;
 }

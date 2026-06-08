@@ -416,7 +416,22 @@ export class WebSocketManager {
   private onHeartbeatDead(): void {
     this.lastError.value = new Error('心跳超时，连接可能已断开')
     this.heartbeat.stop()
-    // 触发重连
+
+    // P0 fix: 必须先关闭底层 WS，否则 connect() 会因 ws.readyState === OPEN 而直接 return。
+    // 不能用 client.disconnect()（它设 intentionalClose=true 阻止 scheduleReconnect），
+    // 需要绕过 disconnect，直接操作底层 ws。
+    const client = this.client as any
+    const ws: WebSocket | null = client?.ws ?? null
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      ws.close(4000, 'Heartbeat dead')
+    }
+    // reset client's intentionalClose flag so onclose handler fires normally
+    // and scheduleReconnect is not blocked
+    if ('intentionalClose' in client) {
+      client.intentionalClose = false
+    }
+
+    // 触发重连（由 ws.onclose → handleUnexpectedClose → scheduleReconnect，或这里直接触发）
     this.scheduleReconnect()
   }
 

@@ -32,6 +32,15 @@ export interface ModuleConfig {
     pollInterval?: number;
     batchSize?: number;
   };
+  /** 代理类型配置（用于 opendesign 等代理模块） */
+  proxy?: {
+    type?: 'opendesign';
+    authToken?: string;
+    timeoutMs?: number;
+    sseTimeoutMs?: number;
+    /** 默认 agent ID，当客户端未提供时自动注入 */
+    defaultAgentId?: string;
+  };
 }
 
 export interface DataSyncConfig {
@@ -64,6 +73,15 @@ export interface OpenCodeConfig {
   enabled?: boolean;
 }
 
+export interface OpenDesignConfig {
+  enabled?: boolean;
+  baseUrl?: string;
+  authToken?: string;
+  timeoutMs?: number;
+  sseTimeoutMs?: number;
+  defaultAgentId?: string;
+}
+
 export interface AppConfig {
   server?: ServerConfig;
   modules?: ModuleConfig[];
@@ -73,6 +91,7 @@ export interface AppConfig {
   gateway?: GatewayConfig;
   cors?: CorsConfig;
   opencode?: OpenCodeConfig;
+  opendesign?: OpenDesignConfig;
 }
 
 // ── 配置加载 ──

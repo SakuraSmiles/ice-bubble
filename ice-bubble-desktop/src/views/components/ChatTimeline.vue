@@ -18,6 +18,14 @@ const props = withDefaults(defineProps<{
   sessionKey: undefined,
 });
 
+const emit = defineEmits<{
+  (e: 'sessionChainAdvanced', payload: {
+    newSessionKey: string;
+    oldSessionKey: string;
+    reason: string;
+  }): void;
+}>();
+
 // ── 数据层 ──
 const chatData = useChatData(() => props.sessionKey);
 
@@ -26,6 +34,9 @@ const gwStream = useGatewayStream({
   getSessionKey: () => props.sessionKey,
   messages: chatData.messages,
   knownIds: chatData.knownIds,
+  addId: chatData.addId,
+  hasId: chatData.hasId,
+  registerAlias: chatData.registerAlias,
   atBottom: chatData.atBottom,
   showTypingIndicator: chatData.showTypingIndicator,
   agentAvatar: chatData.agentAvatar,
@@ -34,6 +45,7 @@ const gwStream = useGatewayStream({
   normalizeTimestamp: chatData.normalizeTimestamp,
   simpleHash: chatData.simpleHash,
   scrollToBottom: chatData.scrollToBottom,
+  pollNow: chatData.pollNow,
 });
 
 // ── 时间/分组辅助 ──
@@ -65,6 +77,8 @@ const lastAgentGroupIndex = computed(() => {
 
 // ── 重新生成 ──
 
+let unsubSessionsChanged: (() => void) | null = null;
+
 async function regenerate() {
   const msgs = chatData.messages.value;
   // 找到最后的 agent 消息，往前找关联的 user 消息
@@ -77,7 +91,11 @@ async function regenerate() {
   // 删除最后一条 agent 消息及之后的所有消息
   const removed = msgs.splice(lastAgentIdx);
   // 从 knownIds 中清除被删除的消息
-  for (const m of removed) chatData.knownIds.delete(m.id);
+  for (const m of removed) {
+    const ids = new Set(chatData.knownIds.value);
+    ids.delete(m.id);
+    chatData.knownIds.value = ids;
+  }
 
   // 找到前一条 user 消息
   const lastUserMsg = [...msgs].reverse().find(m => m.message_type === 'user');
@@ -97,6 +115,7 @@ watch(() => props.sessionKey, async (newKey) => {
   if (newKey !== undefined) {
     chatData.reset();
     await chatData.loadLatest();
+    nextTick(() => chatData.scrollToBottom(false));
   }
 });
 
@@ -104,6 +123,7 @@ onMounted(async () => {
   await chatData.loadLatest();
   gwStream.subscribe();
   chatData.checkBottom();
+  nextTick(() => chatData.scrollToBottom(false));
 
   // 重连成功后重新订阅事件
   const unsub = wsManager.onStateChange((state) => {
@@ -112,10 +132,53 @@ onMounted(async () => {
     }
   });
   // 清理将在 onUnmounted 中通过 gwStream.unsubscribe 处理
+
+  // 监听 session 变化事件
+  unsubSessionsChanged = wsManager.clientRef.on('sessions.changed', async (payload: unknown) => {
+    if (!props.sessionKey) return;
+
+    const data = payload as {
+      sessionKey?: string;
+      reason?: string;
+      parentSessionKey?: string;
+    };
+
+    // 记录变更前的 chain 长度
+    const prevChainLength = chatData.chainSessions.value.length;
+    await chatData.fetchSessionChain(props.sessionKey);
+
+    const chain = chatData.chainSessions.value;
+    if (chain.length === 0) return;
+
+    // 当前 session 在 chain 中的位置
+    const currentIndex = chain.findIndex(s => s.session_key === props.sessionKey);
+
+    // 自动跟随判定：
+    // 1. 新 session 被创建（reason === 'create'）
+    // 2. 当前 session 在链中部（不是最末尾）
+    // 3. 变化的 session 是链尾最新 session
+    if (
+      data.reason === 'create' &&
+      currentIndex >= 0 &&
+      currentIndex < chain.length - 1 &&
+      data.sessionKey
+    ) {
+      const latestInChain = chain[chain.length - 1];
+      if (latestInChain.session_key === data.sessionKey) {
+        emit('sessionChainAdvanced', {
+          newSessionKey: latestInChain.session_key,
+          oldSessionKey: props.sessionKey,
+          reason: 'agent_created_new_session',
+        });
+      }
+    }
+  });
 });
 
 onUnmounted(() => {
   gwStream.unsubscribe();
+  chatData.stopPolling();
+  if (unsubSessionsChanged) { unsubSessionsChanged(); unsubSessionsChanged = null; }
 });
 
 defineExpose({
@@ -123,40 +186,10 @@ defineExpose({
   activeRunId: gwStream.activeRunId,
   getMessages: () => chatData.messages.value,
   addOptimisticMessage(content: string, role: string = 'user', attachmentDataUrls?: string[], optimisticId?: string) {
-    const msg = {
-      id: optimisticId || `gw_${Date.now()}`,
-      _optimistic: optimisticId ? true : undefined,
-      _sendFailed: false,
-      session_key: props.sessionKey || '',
-      agent_id: role === 'user' ? 'user' : 'assistant',
-      agent_name: role === 'user' ? 'You' : '',
-      avatar: null,
-      message_type: role === 'user' ? 'user' : 'agent',
-      content,
-      clean_content: content,
-      content_summary: null,
-      is_cron: false,
-      is_system_noise: false,
-      source_channel: role === 'user' ? 'desktop' : null,
-      model: null,
-      timestamp: new Date().toISOString(),
-      attachments: attachmentDataUrls?.map(dataUrl => ({
-        type: 'image',
-        mimeType: 'image/jpeg',
-        fileName: 'image',
-        content: '',
-        dataUrl,
-      })),
-    } as any;
-    chatData.knownIds.add(msg.id);
-    chatData.messages.value = [...chatData.messages.value, msg];
-    nextTick(() => chatData.scrollToBottom(false));
+    return chatData.addOptimisticMessage(content, role, attachmentDataUrls, optimisticId);
   },
   markMessageFailed(msgId: string) {
-    const idx = chatData.messages.value.findIndex(m => m.id === msgId);
-    if (idx >= 0) {
-      chatData.messages.value[idx] = { ...chatData.messages.value[idx], _sendFailed: true } as any;
-    }
+    chatData.markOptimisticFailed(msgId);
   },
 });
 </script>
@@ -191,6 +224,13 @@ defineExpose({
           <span class="date-divider-line"></span>
           <span class="date-divider-text">{{ grp.dateLabel }}</span>
           <span class="date-divider-line"></span>
+        </div>
+        <!-- 会话切换分隔线 -->
+        <div v-else-if="grp.type === 'session-divider'" class="session-divider">
+          <span class="session-divider-line"></span>
+          <span class="session-divider-text">会话切换 · {{ grp.dateLabel }}</span>
+          <span class="session-divider-detail">{{ grp.sessionLabel }}</span>
+          <span class="session-divider-line"></span>
         </div>
         <MessageBubble
           v-else
@@ -310,6 +350,34 @@ defineExpose({
 .date-divider-text {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
+  white-space: nowrap;
+}
+
+/* 会话切换分隔线 */
+.session-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 16px 0 8px;
+  user-select: none;
+}
+.session-divider-line {
+  width: 100%;
+  height: 1px;
+  background: var(--el-color-warning-light-5);
+}
+.session-divider-text {
+  font-size: 12px;
+  color: var(--el-color-warning);
+  font-weight: 500;
+}
+.session-divider-detail {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

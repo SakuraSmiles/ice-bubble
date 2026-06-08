@@ -109,6 +109,19 @@ export async function initConfig(): Promise<void> {
     if (data?.url) cachedUrl = data.url;
     if (data?.authToken) cachedAuthToken = data.authToken;
     cachedSetupDone = localStorage.getItem(SETUP_DONE_KEY) === 'true';
+
+    // Dev 模式 fallback：如果 localStorage 没有 authToken，从 modules.json 读取
+    if (!cachedAuthToken && isDev()) {
+      try {
+        const modulesConfig = await import('../../config/modules.json');
+        // 动态 import() 返回 { default: <json> }，需通过 .default 访问
+        const token = modulesConfig.default?.authToken || (modulesConfig as any).authToken;
+        if (token) {
+          cachedAuthToken = token;
+          console.log('[config] Loaded authToken from modules.json fallback');
+        }
+      } catch { /* ignore */ }
+    }
   }
 
   // 更新 API_BASE

@@ -39,6 +39,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   (e: 'update:modelValue', sessionKey: string): void
   (e: 'refresh'): void
+  (e: 'manualSwitch', sessionKey: string): void
 }>()
 
 // ============ 计算属性 ============

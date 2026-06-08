@@ -49,7 +49,7 @@ const statusMessage = computed(() => {
     case 'AUTH_FAILED':
       return 'Token 不正确，请检查后重试';
     case 'CONN_FAILED':
-      return 'Admin 服务未启动或端口未开放';
+      return 'Admin 服务不可达。请检查 Docker Desktop 端口映射是否正常，或尝试重启 Docker。';
     case 'DISCONNECTED':
       return 'Admin 连接已断开，正在自动重连…';
     case 'CONNECTED':

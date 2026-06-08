@@ -54,8 +54,35 @@ export class MessageRepository {
 
       const newlyInsertedContent: boolean[] = [];
 
+      /**
+       * 内容级去重：过滤掉与现有记录内容完全相同的消息
+       *
+       * Gateway subagent_announce 会在后续 run 中重新注入已完成 subagent 的报告，
+       * 产生不同 source_id 但内容完全相同的重复记录。INSERT OR IGNORE 只能拦截
+       * source_id 相同的情况，无法拦截这类"不同 ID、相同内容"的重复。
+       *
+       * 策略：对每条待插入消息，检查同 session_key + 同 message_type +
+       * content 前 200 字符是否已在最近 30 秒内存在。
+       */
+      const recentContentCheck = this.db.prepare(`
+        SELECT 1 FROM admin_messages
+        WHERE session_key = ? AND message_type = ? AND substr(content, 1, 200) = ?
+          AND timestamp >= datetime(?, '-30 seconds')
+        LIMIT 1
+      `);
+
       const insertContent = this.db.transaction((rows: AdminMessage[]) => {
+        const thirtySecAgo = new Date(Date.now() - 30_000).toISOString();
         for (const row of rows) {
+          // 内容级去重检查：跳过 30 秒内同 session 同类型同内容的重复
+          const contentPrefix = (row.content ?? '').substring(0, 200);
+          const recent = recentContentCheck.get(row.session_key, row.message_type ?? '', contentPrefix, thirtySecAgo);
+          if (recent) {
+            logger.debug(`[MessageRepo] 跳过内容重复消息: session=${row.session_key}, source_id=${row.source_id}`);
+            newlyInsertedContent.push(false);
+            continue;
+          }
+
           const result = stmt.run(
             row.source_id ?? null,
             row.source_module,

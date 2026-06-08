@@ -288,9 +288,15 @@ export interface SettingsDTO {
 // ============ 内部工具 ============
 
 /**
+ * P0: 统一请求超时（毫秒）。
+ * 防止 Gateway WS RPC 超时（30s）导致前端无限等待。
+ */
+const REQUEST_TIMEOUT_MS = 8_000;
+
+/**
  * 统一请求方法
  * @param pathOrUrl - 相对路径（如 '/stats'）或完整 URL（如 'http://159.75.104.9:13000/api/auth/verify'）
- * @param options - fetch options
+ * @param options - fetch options（可传入自定义 signal）
  * @returns Response（不自动解析 JSON）
  */
 export async function request(pathOrUrl: string, options?: RequestInit): Promise<Response> {
@@ -306,6 +312,20 @@ export async function request(pathOrUrl: string, options?: RequestInit): Promise
   const url = pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')
     ? pathOrUrl
     : `${API_BASE}${pathOrUrl}`;
+
+  // P0: 注入 AbortController 超时（除非调用方已提供 signal）
+  let controller: AbortController | undefined;
+  if (!options?.signal) {
+    controller = new AbortController();
+    const timer = setTimeout(() => controller!.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(url, { ...options, headers, signal: controller.signal });
+    } catch (e) {
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   return fetch(url, { ...options, headers });
 }

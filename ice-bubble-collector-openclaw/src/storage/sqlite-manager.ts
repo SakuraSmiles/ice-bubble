@@ -615,46 +615,74 @@ export class SQLiteManager {
 
         if (messages.length === 0) return { inserted: 0, duplicates: 0 };
 
-        try {
-            // 使用 IMMEDIATE 事务避免 SQLITE_BUSY
-            const insertMany = this.db.transaction((msgs: SessionMessage[]) => {
-                // 批量转换为数据库行
-                const dbRows = SessionMessageMapper.batchToDb(msgs);
-                
-                // 动态构建 SQL
-                const columns = getDbColumns('session_messages').filter(col => col !== 'id');
-                const placeholders = getPlaceholders(columns);
-                
-                const stmt = this.db!.prepare(`
-                    INSERT OR IGNORE INTO session_messages (${columns.join(', ')})
-                    VALUES (${placeholders})
-                `);
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY_MS = 100;
+        let lastError: unknown;
 
-                let actualInserts = 0;
-                for (const row of dbRows) {
-                    const values = columns.map(col => row[col]);
-                    const result = stmt.run(...values);
-                    // result.changes > 0 表示实际插入了新行，0 表示被 IGNORE（重复）
-                    if (result.changes > 0) {
-                        actualInserts++;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                // 使用 IMMEDIATE 事务避免 SQLITE_BUSY
+                const insertMany = this.db.transaction((msgs: SessionMessage[]) => {
+                    // 批量转换为数据库行
+                    const dbRows = SessionMessageMapper.batchToDb(msgs);
+                    
+                    // 动态构建 SQL
+                    const columns = getDbColumns('session_messages').filter(col => col !== 'id');
+                    const placeholders = getPlaceholders(columns);
+                    
+                    const stmt = this.db!.prepare(`
+                        INSERT OR IGNORE INTO session_messages (${columns.join(', ')})
+                        VALUES (${placeholders})
+                    `);
+
+                    let actualInserts = 0;
+                    for (const row of dbRows) {
+                        const values = columns.map(col => row[col]);
+                        const result = stmt.run(...values);
+                        // result.changes > 0 表示实际插入了新行，0 表示被 IGNORE（重复）
+                        if (result.changes > 0) {
+                            actualInserts++;
+                        }
                     }
+
+                    return actualInserts;
+                });
+
+                // 使用 IMMEDIATE 事务模式，避免并发冲突
+                const actualInserts = insertMany.immediate(messages);
+                const duplicates = messages.length - actualInserts;
+
+                if (attempt > 0) {
+                    sqliteLogger.info(`batchInsertMessages succeeded on retry ${attempt}`);
                 }
 
-                return actualInserts;
-            });
+                return { inserted: actualInserts, duplicates };
+            } catch (error: unknown) {
+                lastError = error;
+                const err = error instanceof Error ? error : new Error(String(error));
 
-            // 使用 IMMEDIATE 事务模式，避免并发冲突
-            const actualInserts = insertMany.immediate(messages);
-            const duplicates = messages.length - actualInserts;
+                // SQLITE_BUSY: 数据库忙，等待后重试
+                if (attempt < MAX_RETRIES) {
+                    sqliteLogger.warn(
+                        `batchInsertMessages attempt ${attempt + 1} failed with ${err.message}, retrying in ${RETRY_DELAY_MS}ms (${MAX_RETRIES - attempt} retries left)`
+                    );
+                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                    continue;
+                }
 
-            return { inserted: actualInserts, duplicates };
-        } catch (error) {
-            throw new SQLiteError(
-                'Failed to batch insert messages',
-                'SQLITE_QUERY_FAILED',
-                error
-            );
+                // 所有重试耗尽
+                sqliteLogger.error(
+                    `batchInsertMessages failed after ${MAX_RETRIES + 1} attempts`,
+                    err
+                );
+            }
         }
+
+        throw new SQLiteError(
+            'Failed to batch insert messages',
+            'SQLITE_QUERY_FAILED',
+            lastError
+        );
     }
 
     /**
@@ -1144,6 +1172,64 @@ export class SQLiteManager {
         } catch (error) {
             throw new SQLiteError(
                 'Failed to get sessions',
+                'SQLITE_QUERY_FAILED',
+                error
+            );
+        }
+    }
+
+    /**
+     * 根据 rowid 游标获取消息（ID 分页）
+     *
+     * 替代 timestamp + offset 分页，使用全局递增的 id（INTEGER PRIMARY KEY）作为游标，
+     * 消除 timestamp 乱序写入导致的 11% 数据缺口。
+     *
+     * @param params.sessionKey - 可选，session 过滤
+     * @param params.limit - 每页数量
+     * @param params.afterId - 游标起点（id > afterId），0 或不传视为从头开始
+     * @returns count 为总行数，messages 按 id ASC 排序，maxId 为满足 WHERE 条件的全局最大 id
+     *
+     * 注意：maxId 是满足查询条件的全局最大 id（非本批返回数据的最大 id），
+     * Admin 用此值作为下一次轮询的游标起点。
+     */
+    async getMessagesAfterId(params: {
+        sessionKey?: string;
+        limit?: number;
+        afterId?: number;
+    }): Promise<{ count: number; messages: SessionMessage[]; maxId: number }> {
+        if (!this.db || !this.isInitialized) {
+            throw new SQLiteError('Database not initialized', 'SQLITE_CONNECTION_CLOSED');
+        }
+
+        try {
+            const limit = params.limit ?? 100;
+            const conditions: string[] = [];
+            const queryParams: unknown[] = [];
+
+            if (params.sessionKey) {
+                conditions.push('session_key = ?');
+                queryParams.push(params.sessionKey);
+            }
+            if (params.afterId && params.afterId > 0) {
+                conditions.push('id > ?');
+                queryParams.push(params.afterId);
+            }
+
+            const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+            const db = this.db;
+
+            const countRow = db.prepare(`SELECT COUNT(*) as count FROM session_messages${whereClause}`).get(...queryParams) as SqlRow;
+            const rows = db.prepare(`SELECT * FROM session_messages${whereClause} ORDER BY id ASC LIMIT ?`).all(...queryParams, limit) as SqlRow[];
+            const maxIdRow = db.prepare(`SELECT COALESCE(MAX(id), 0) as maxId FROM session_messages${whereClause}`).get(...queryParams) as SqlRow;
+
+            return {
+                count: countRow.count as number,
+                messages: rows.map(row => this.rowToMessage(row)),
+                maxId: maxIdRow.maxId as number,
+            };
+        } catch (error) {
+            throw new SQLiteError(
+                'Failed to get messages after ID',
                 'SQLITE_QUERY_FAILED',
                 error
             );

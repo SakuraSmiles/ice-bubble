@@ -6,7 +6,7 @@ import { useNow } from '@/composables/useNow';
 import { api } from '@/api/client';
 import type { SessionDTO } from '@/api/client';
 import { useSessionPreferencesStore } from '@/stores/sessionPreferencesStore';
-import { gatewayClient } from '@/services/gateway-client';
+import { wsManager } from '@/services/websocket-manager';
 import { API_BASE } from '../config';
 import PageHeader from '../components/PageHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
@@ -236,7 +236,7 @@ onMounted(async () => {
   }
   await fetchAllSessions();
 
-  unsubSessionsChanged = gatewayClient.on('sessions.changed', () => {
+  unsubSessionsChanged = wsManager.clientRef.on('sessions.changed', () => {
     fetchAllSessions();
   });
 });

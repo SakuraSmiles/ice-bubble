@@ -269,6 +269,10 @@ export class BatchWriter extends EventEmitter {
             // 发送事件
             this.emit('flush', { count: result.inserted, duplicates: result.duplicates });
         } catch (error) {
+            // 批量写入失败：保留消息在重试队列，下次 flush 重试
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.error(`[BatchWriter] Message batch write failed, preserving ${messages.length} messages in retry queue`, err);
+
             // 失败消息移入专用队列，不与后续新消息混合，保持顺序
             // 超限则精确丢弃最旧消息
             const totalFailed = messages.length;
@@ -278,12 +282,10 @@ export class BatchWriter extends EventEmitter {
                 this.failedMessages.splice(0, overflow);
             }
             this.failedMessages.push(...messages);
-            this.stats.buffered = this.buffer.length;
+            this.stats.failedBuffered = this.failedMessages.length;
 
-            // 发送错误事件
-            this.emit('error', error);
-
-            throw error;
+            // 发送错误事件（但不抛出，让后续 flush 继续处理）
+            this.emit('error', err);
         }
     }
 

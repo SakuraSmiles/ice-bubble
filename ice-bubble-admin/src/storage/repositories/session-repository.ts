@@ -153,8 +153,49 @@ export class SessionRepository {
     }
 
     // 1. 先尝试直接匹配
-    const direct = this.db.prepare('SELECT session_key FROM admin_sessions WHERE session_key = ?').get(sessionKey);
-    if (direct) return [sessionKey];
+    const directRow = this.db.prepare(
+      'SELECT session_key, agent_id, last_message_at FROM admin_sessions WHERE session_key = ?'
+    ).get(sessionKey) as { session_key: string; agent_id: string | null; last_message_at: string | null } | undefined;
+    if (directRow) {
+      // 1a. 精确匹配到简写格式的 key（如 agent:main:main），检查该 agent 是否有
+      //     更新的活跃 session。简写 key 的特征：segment 数量 ≤ 3 且没有 UUID。
+      const parts = sessionKey.split(':');
+      const hasUuid = sessionKey.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+      const isShorthandKey = parts.length <= 3 && !hasUuid;
+
+      if (isShorthandKey && directRow.agent_id) {
+        // 查找该 agent 最新的 session（排除 trajectory/checkpoint）
+        const latestRow = this.db.prepare(
+          `SELECT session_key, last_message_at FROM admin_sessions
+           WHERE agent_id = ? AND session_key != ?
+             AND session_key NOT LIKE '%.trajectory' AND session_key NOT LIKE '%.checkpoint'
+             AND message_count > 0
+           ORDER BY last_message_at DESC NULLS LAST
+           LIMIT 1`
+        ).get(directRow.agent_id, sessionKey) as { session_key: string; last_message_at: string | null } | undefined;
+
+        if (latestRow && latestRow.last_message_at && directRow.last_message_at) {
+          if (latestRow.last_message_at > directRow.last_message_at) {
+            // agent 有比精确匹配更新的 session → 使用最新 session
+            return [latestRow.session_key];
+          }
+        }
+        // 即使 last_message_at 相等或精确匹配的更新，也优先返回精确匹配
+        // 但如果没有 last_message_at 可比较，则尝试查找有消息的最新 session
+        if (!latestRow && !directRow.last_message_at) {
+          const anyActiveRow = this.db.prepare(
+            `SELECT session_key FROM admin_sessions
+             WHERE agent_id = ? AND session_key != ?
+               AND session_key NOT LIKE '%.trajectory' AND session_key NOT LIKE '%.checkpoint'
+               AND message_count > 0
+             ORDER BY last_message_at DESC NULLS LAST
+             LIMIT 1`
+          ).get(directRow.agent_id, sessionKey) as { session_key: string } | undefined;
+          if (anyActiveRow) return [anyActiveRow.session_key];
+        }
+      }
+      return [sessionKey];
+    }
 
     // 解析 agentId: agent:{agentId}:{slug}
     const parts = sessionKey.split(':');
@@ -170,16 +211,18 @@ export class SessionRepository {
       if (rows.length > 0) return rows.map(r => r.session_key);
     }
 
-    // 3. 非 UUID 格式（如 agent:main:main）: 按 agent_id 查找消息最多的那个 session
+    // 3. 非 UUID 格式（如 agent:main:main）且无精确匹配: 按 agent_id 查找最新 session
     //    注意：subagent 会话不回退查找，因为 Collector 不存储 subagent 消息
     if (agentId && !sessionKey.includes(':subagent:')) {
-      const rows = this.db.prepare(
+      // 查找该 agent 最新的活跃 session（不限 channel）
+      const latestRows = this.db.prepare(
         `SELECT session_key FROM admin_sessions
-         WHERE agent_id = ? AND session_key NOT LIKE '%.trajectory' AND session_key NOT LIKE '%.checkpoint'
-         ORDER BY message_count DESC NULLS LAST, last_message_at DESC NULLS LAST
+         WHERE agent_id = ?
+           AND session_key NOT LIKE '%.trajectory' AND session_key NOT LIKE '%.checkpoint'
+         ORDER BY last_message_at DESC NULLS LAST, message_count DESC NULLS LAST
          LIMIT 1`
       ).all(agentId) as { session_key: string }[];
-      if (rows.length > 0) return rows.map(r => r.session_key);
+      if (latestRows.length > 0) return latestRows.map(r => r.session_key);
     }
 
     return [];
@@ -414,24 +457,31 @@ export class SessionRepository {
    * 按 session_key 索引
    */
   getSessionFirstMessageMap(): Map<string, { first_message: string | null }> {
+    const t0 = Date.now();
+    // Efficient query: uses a composite subquery via MIN(timestamp) instead of
+    // a correlated subquery with ORDER BY + LIMIT per row.
     const rows = this.db.prepare(`
       SELECT
         s.session_key,
-        (
-          SELECT substr(fm.content, 1, 120)
-          FROM admin_messages fm
-          WHERE fm.session_key = s.session_key
-            AND fm.message_type = 'user'
-          ORDER BY fm.timestamp ASC
-          LIMIT 1
-        ) as first_message
+        substr(mf.content, 1, 120) as first_message
       FROM admin_sessions s
+      LEFT JOIN (
+        SELECT session_key, MIN(timestamp) as min_ts
+        FROM admin_messages
+        WHERE message_type = 'user'
+        GROUP BY session_key
+      ) fm ON fm.session_key = s.session_key
+      LEFT JOIN admin_messages mf ON mf.session_key = fm.session_key
+        AND mf.timestamp = fm.min_ts
+        AND mf.message_type = 'user'
       WHERE s.session_key IS NOT NULL
       GROUP BY s.session_key
     `).all() as Array<{
       session_key: string;
       first_message: string | null;
     }>;
+    const t1 = Date.now();
+    console.log(`[SessionRepo][perf] getSessionFirstMessageMap: ${t1 - t0}ms (${rows.length} rows)`);
     const map = new Map<string, { first_message: string | null }>();
     for (const row of rows) {
       map.set(row.session_key, { first_message: row.first_message });

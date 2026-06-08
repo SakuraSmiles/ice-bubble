@@ -5,7 +5,7 @@ import { api } from '@/api/client';
 import type { SessionDTO } from '@/api/client';
 import { useSessionGroupStore } from '@/stores/sessionGroupStore';
 import { useSessionPreferencesStore } from '@/stores/sessionPreferencesStore';
-import { gatewayClient } from '@/services/gateway-client';
+import { wsManager } from '@/services/websocket-manager';
 import NewChatDialog from './NewChatDialog.vue';
 
 const router = useRouter();
@@ -292,12 +292,12 @@ onMounted(async () => {
   }
   fetchAll();
 
-  unsubSessionsChanged = gatewayClient.on('sessions.changed', () => {
+  unsubSessionsChanged = wsManager.clientRef.on('sessions.changed', () => {
     fetchAll();
   });
 
   timer = setInterval(() => {
-    if (!gatewayClient.isConnected) {
+    if (!wsManager.isConnected) {
       fetchAll();
     }
   }, 60000);

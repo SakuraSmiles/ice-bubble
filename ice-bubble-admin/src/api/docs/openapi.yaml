@@ -733,7 +733,11 @@ paths:
   /api/agents/token-summary:
     get:
       tags: [Agents]
-      summary: Token 统计
+      summary: Token 统计（仅 LLM 调用消息）
+      description: >
+        返回每个 agent 的 token 消耗汇总。message_count 仅统计有 token 记录的消息
+        （tokens_input/tokens_output/cost_total 任一非空），不含心跳、系统噪声等。
+        与 /api/agents 返回的 admin_agents.message_count 不同——后者包含所有消息类型。
       parameters:
         - name: agentId
           in: query

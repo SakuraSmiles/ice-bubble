@@ -35,7 +35,15 @@ type StateChangeCallback = (state: ConnectionState) => void;
 // ============ 常量 ============
 
 const HEALTH_CHECK_INTERVAL = 30000; // 30秒心跳检测
-const DEFAULT_ADMIN_URL = 'http://localhost:13000';
+const CANDIDATE_TIMEOUT = 3000; // 每个候选地址超时 3 秒
+
+/** 候选地址列表，依次尝试，第一个通的就用。可通过 VITE_ADMIN_URL 环境变量覆盖 */
+const ADMIN_CANDIDATES: string[] = [
+  import.meta.env.VITE_ADMIN_URL
+    ? String(import.meta.env.VITE_ADMIN_URL)
+    : 'http://localhost:13000',
+  'http://ice-bubble-admin:13000', // 容器名 DNS 解析（Docker 端口转发失败时兜底）
+];
 
 // ============ 内部工具 ============
 
@@ -75,22 +83,29 @@ class AdminConnection {
       return;
     }
 
-    // 无配置：尝试默认地址自动检测（不保存到 Store，直到用户确认）
-    this.currentUrl = DEFAULT_ADMIN_URL;
+    // 无配置：依次尝试候选地址自动检测
+    this.currentUrl = ADMIN_CANDIDATES[0];
     this.autoDetectDefault();
   }
 
-  /** 无配置时自动检测默认地址，成功则静默连接 */
+  /** 无配置时自动检测默认地址，依次尝试候选列表，第一个通的就用 */
   private async autoDetectDefault(): Promise<void> {
     if (this.autoDetecting) return;
     this.autoDetecting = true;
     this.setState('CONFIGURING');
     try {
-      await this.fetchDirect<any>(`${DEFAULT_ADMIN_URL}/api/stats`);
-      this.saveConfig(DEFAULT_ADMIN_URL);
-      this.setState('CONNECTED');
-      this.startHealthCheck();
-    } catch {
+      for (const url of ADMIN_CANDIDATES) {
+        try {
+          await this.fetchWithTimeout<any>(`${url}/api/stats`, CANDIDATE_TIMEOUT);
+          this.saveConfig(url);
+          this.setState('CONNECTED');
+          this.startHealthCheck();
+          return;
+        } catch {
+          // 当前候选不通，继续尝试下一个
+        }
+      }
+      // 所有候选都不通
       if (this.state === 'CONFIGURING') {
         this.currentUrl = '';
         this.setState('UNCONFIGURED');
@@ -107,6 +122,21 @@ class AdminConnection {
       throw new Error(`HTTP ${response.status}`);
     }
     return response.json();
+  }
+
+  /** 带超时的 fetch，用于候选地址探测 */
+  private async fetchWithTimeout<T>(url: string, timeoutMs: number, options?: RequestInit): Promise<T> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.json();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private saveConfig(url: string): void {
@@ -184,7 +214,9 @@ class AdminConnection {
         } else if (this.state === 'DISCONNECTED') {
           this.reconnectFailCount++;
           if (this.reconnectFailCount >= 5) {
-            this.setState('CONN_FAILED');
+            // 多次重连失败，重新尝试候选地址
+            this.stopHealthCheck();
+            this.autoDetectDefault();
           }
         }
       }

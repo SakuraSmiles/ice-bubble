@@ -25,6 +25,7 @@ import { AttachmentStorage } from './server/chat/attachment-storage.js';
 import { OpenCodeHttpClient } from './server/chat/opencode-client.js';
 import { createOpenCodeChatRouter } from './api/opencode-chat.js';
 import { GatewayProxy } from './gateway/index.js';
+import { createSessionCacheManager } from './services/session-cache.js';
 import { GatewayWsServer } from './gateway/ws-server.js';
 import { createChatProxyRouter, createSessionProxyRouter } from './api/chat-proxy.js';
 import { createSessionsUnifiedRouter } from './api/sessions-unified.js';
@@ -126,7 +127,7 @@ export async function startAdmin(): Promise<void> {
   const dbPath = process.env.ADMIN_DB_PATH || join(__dirname, '..', '..', 'data', 'admin.db');
   const dbManager = new DBManager();
   await dbManager.init({ dbPath });
-  await dbManager.migrate(25);  // 执行数据库迁移（v25: platform 多平台支持）
+  await dbManager.migrate(27);  // 执行数据库迁移（v27: sync_progress last_sync_id 游标）
   const repository = new ModuleRepository(dbManager.getConnection());
   logger.info('[Admin] 数据库初始化完成');
 
@@ -238,6 +239,7 @@ export async function startAdmin(): Promise<void> {
 
   // ── GatewayProxy (初始化提前，供后续路由使用) ──
   let gatewayProxy: GatewayProxy | null = null;
+  let sessionCache: ReturnType<typeof createSessionCacheManager> | null = null;
   try {
     const gatewayOpts: { gatewayUrl?: string; authToken?: string } = {};
     if (configData.gateway?.url) {
@@ -250,6 +252,11 @@ export async function startAdmin(): Promise<void> {
     logger.info('[Admin] GatewayProxy connecting...', { url: gatewayOpts.gatewayUrl || process.env.GATEWAY_URL || 'default' });
     await gatewayProxy.connect();
     logger.info('[Admin] GatewayProxy connected');
+
+    // ── Session Cache: start background refresh loop ──
+    sessionCache = createSessionCacheManager(gatewayProxy);
+    sessionCache.start();
+    logger.info('[Admin] SessionCacheManager started (30s refresh)');
   } catch (err) {
     logger.warn('[Admin] GatewayProxy connection failed (non-fatal)', {
       error: err instanceof Error ? err.message : String(err),
@@ -325,12 +332,13 @@ export async function startAdmin(): Promise<void> {
   // 注册 API 路由
   // IMPORTANT: Unified sessions route must be BEFORE data router,
   // because data router's /sessions/:key would match /sessions/unified
-  if (gatewayProxy) {
-    app.use('/api', createSessionsUnifiedRouter({ proxy: gatewayProxy, repository: dataRepository }));
+  if (gatewayProxy && sessionCache) {
+    app.use('/api', createSessionsUnifiedRouter({ sessionCache, repository: dataRepository }));
   }
   app.use('/api', createDataRouter({
     repository: dataRepository,
     db: dbManager.getConnection(),
+    dataSyncs,
     agentOverviewService: new AgentOverviewService(
       dataRepository,
       new CollectorClient({ baseUrl: moduleConfigs.find(m => m.moduleKey.startsWith('collector-') && m.enabled)?.baseUrl || 'http://localhost:13100' })
@@ -434,7 +442,7 @@ export async function startAdmin(): Promise<void> {
 
   // HTTP proxy routes (via GatewayProxy)
   if (gatewayProxy) {
-    app.use('/api/chat', createChatProxyRouter(gatewayProxy));
+    app.use('/api/chat', createChatProxyRouter(gatewayProxy, dataRepository));
     app.use('/api/gateway', createSessionProxyRouter(gatewayProxy));
     logger.info('[Admin] GatewayProxy HTTP routes registered');
   }
@@ -460,6 +468,9 @@ export async function startAdmin(): Promise<void> {
 
   // OpenAPI 文档（在 auth middleware 之后，需 Bearer Token）
   app.use('/api/docs', createDocsRouter());
+
+  // /api/openapi.json 快捷入口（重定向到 /api/docs/openapi.json）
+  app.get('/api/openapi.json', (_req, res) => res.redirect('/api/docs/openapi.json'));
 
   // 启动调度器
   scheduler.start();

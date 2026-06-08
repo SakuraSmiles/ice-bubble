@@ -10,6 +10,7 @@ import type { TimelineMessage } from '@/views/components/chat/types'
 export interface CachedSession {
   messages: TimelineMessage[]
   knownIds: string[]          // 序列化的 Set（Set 不易从 ref 恢复）
+  idAlias?: Array<[string, string]>  // 序列化的 Map（aliasId → canonicalId）
   hasMore: boolean
   adminPageCursor: string | null
   agentAvatar: string | null

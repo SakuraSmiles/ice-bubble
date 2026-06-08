@@ -394,6 +394,16 @@ export function createModulesRouter(scheduler: ModuleScheduler): Router {
       
       if (!response.ok) {
         if (response.status === 404) {
+          // 尝试 /api/health（opendesign 等非 collector 模块）
+          const healthUrl = normalizedUrl.replace(/\/$/, '') + '/api/health';
+          try {
+            const healthResponse = await fetch(healthUrl, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            if (healthResponse.ok) {
+              const healthData = await healthResponse.json() as { ok: boolean; version?: string };
+              res.json({ success: true, moduleKey: 'opendesign', moduleType: 'proxy', status: 'running', version: healthData.version });
+              return;
+            }
+          } catch { /* ignore */ }
           res.status(404).json({ error: '该地址不支持 /api/meta/status 接口' });
           return;
         }

@@ -88,6 +88,11 @@ export class ModuleScheduler {
   start(): void {
     this.logger.info('[ModuleScheduler] 启动调度器');
     for (const module of this.modules) {
+      // pollInterval=0 或代理类模块不轮询
+      if (module.pollInterval === 0) {
+        this.logger.info(`[ModuleScheduler] 模块 ${module.moduleKey} pollInterval=0，跳过轮询`);
+        continue;
+      }
       this.pollModule(module);
       const interval = module.pollInterval || 30000;
       const timer = setInterval(() => this.pollModule(module), interval);

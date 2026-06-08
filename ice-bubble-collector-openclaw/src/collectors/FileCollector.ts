@@ -18,7 +18,7 @@ import { BaseCollector } from './base.js';
 import { FileWatcher } from './FileWatcher.js';
 import { CollectionPipeline } from './CollectionPipeline.js';
 import { readJsonlFileIncremental } from '../utils/file-reader.js';
-import { buildSessionKeyFromPath, extractAgentId } from '../utils/session-key-builder.js';
+import { buildSessionKeyFromPath, extractAgentId, reloadSessionMappings } from '../utils/session-key-builder.js';
 import { Collector } from '../types/index.js';
 import { OpenClawEvent } from '../types/openclaw.js';
 import { Logger } from '../utils/logger.js';
@@ -540,6 +540,8 @@ export class FileCollector extends BaseCollector implements Collector {
     this.scanTimer = setInterval(async () => {
       if (!this.isRunning) return;
       try {
+        // 每次定时扫描前刷新 session 映射，确保新创建的 session 能被反查
+        reloadSessionMappings(this.config.openclawDataDir);
         logger.debug('执行定时扫描...');
         await this.scanAllFiles();
       } catch (error) {
@@ -559,7 +561,8 @@ export class FileCollector extends BaseCollector implements Collector {
   private async processFile(filePath: string, _isInitialScan: boolean, fileStats: fs.Stats): Promise<void> {
     logger.debug(`处理文件: ${filePath}`);
 
-    const sessionKey = buildSessionKeyFromPath(filePath);
+    // 使用模块级 sessions.json 映射反查 Gateway 原始 key
+    const sessionKey = buildSessionKeyFromPath(filePath, this.config.openclawDataDir);
 
     // 检查 agent 是否在 openclaw.json 配置中，跳过幽灵 agent 的文件
     const agentId = extractAgentId(sessionKey);
@@ -665,8 +668,10 @@ export class FileCollector extends BaseCollector implements Collector {
           const sessionId = entry.sessionId as string | undefined;
           if (!sessionId) continue;
 
-          // 通过 UUID 构造 Collector 的 session_key
-          const sessionKey = `agent:${agentId}:local:default:direct:${sessionId}`;
+          // 优先使用 Gateway 原始 key（如 agent:main:main），找不到时 fallback 到从 UUID 重建
+          const sessionKey = (typeof entry.key === 'string' && entry.key.startsWith('agent:'))
+            ? entry.key
+            : `agent:${agentId}:local:default:direct:${sessionId}`;
 
           const changes = await this.sqliteManager.updateSessionMetadata(sessionKey, {
             label: (entry.label as string) || null,
@@ -707,6 +712,10 @@ export class FileCollector extends BaseCollector implements Collector {
 
   async getMessages(params: { sessionKey?: string; limit?: number; offset?: number; since?: string }) {
     return this.sqliteManager.getMessages(params);
+  }
+
+  async getMessagesAfterId(params: { sessionKey?: string; limit?: number; afterId?: number }) {
+    return this.sqliteManager.getMessagesAfterId(params);
   }
 
   async getDataStats() {

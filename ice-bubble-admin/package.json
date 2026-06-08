@@ -1,6 +1,6 @@
 {
   "name": "@ice-bubble/admin",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "ice-bubble 管理后台 API 服务",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@ice-bubble/logger": "*",
-    "better-sqlite3": "^9.4.0",
+    "better-sqlite3": "^12.10.0",
     "dotenv": "^16.4.0",
     "express": "^4.18.0",
     "express-rate-limit": "^8.5.2",

@@ -2,13 +2,16 @@
  * useGatewayStream — Gateway WebSocket 实时事件处理
  */
 import { nextTick, ref, type Ref } from 'vue';
-import { gatewayClient } from '@/services/gateway-client';
+import { wsManager } from '@/services/websocket-manager';
 import type { TimelineMessage, ToolCallEntry, GatewayMessage, GatewayContentBlock } from './types';
 
 interface UseGatewayStreamOptions {
   getSessionKey: () => string | undefined;
   messages: { value: TimelineMessage[] };
-  knownIds: Set<string>;
+  knownIds: { value: Set<string> };
+  addId: (id: string) => void;
+  hasId: (id: string) => boolean;
+  registerAlias: (aliasId: string, canonicalId: string) => void;
   atBottom: { value: boolean };
   showTypingIndicator: { value: boolean };
   agentAvatar: { value: string | null };
@@ -17,6 +20,8 @@ interface UseGatewayStreamOptions {
   normalizeTimestamp: (ts: string | number | undefined) => string;
   simpleHash: (str: string) => number;
   scrollToBottom: (smooth?: boolean) => void;
+  /** Poll on chat.final to fill in missing user messages (Admin + Gateway history) */
+  pollNow?: () => Promise<void>;
   onProcessingChange?: (processing: boolean) => void;
   onRunIdChange?: (runId: string | null) => void;
 }
@@ -28,6 +33,11 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
 
   const activeRunId: Ref<string | null> = ref(null);
   const isProcessing: Ref<boolean> = ref(false);
+
+  // Flag to poll Admin once per run when the first agent reply arrives
+  // (Gateway session.message does not broadcast user messages, so we need
+  //  an immediate Admin poll to fill in the missing user message.)
+
 
   // ── helpers ──
 
@@ -85,6 +95,14 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
 
   function findStreamMsgIndex(runId: string): number {
     return opts.messages.value.findIndex(m => m.streamRunId === runId && m.streamState !== 'complete' && m.streamState !== 'error');
+  }
+
+  function stableMsgSort(a: TimelineMessage, b: TimelineMessage): number {
+    const diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    if (diff !== 0) return diff;
+    const numA = parseInt(a.id.replace(/^[a-z]+_/, ''), 10) || 0;
+    const numB = parseInt(b.id.replace(/^[a-z]+_/, ''), 10) || 0;
+    return numA - numB;
   }
 
   function ensureStreamMsg(runId: string) {
@@ -207,7 +225,7 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
         timestamp: new Date().toISOString(),
         attachments: attachments || opts.messages.value[idx].attachments,
       };
-      opts.knownIds.add(finalId);
+      opts.addId(finalId);
     }
     opts.showTypingIndicator.value = false;
     setActiveRunId(null);
@@ -216,11 +234,11 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
 
     // 流式文本中 MEDIA: 已被 Gateway 剥离，通过 chat.history 获取完整内容以渲染图片
     const sessionKey = opts.getSessionKey();
-    if (sessionKey && gatewayClient.isConnected) {
+    if (sessionKey && wsManager.isConnected) {
       setTimeout(async () => {
         try {
           // 获取最近 5 条消息，增加匹配概率
-          const res = await gatewayClient.getChatHistory(sessionKey, 5);
+          const res = await wsManager.clientRef.getChatHistory(sessionKey, 5);
           const history = res as { messages?: GatewayMessage[] } | null;
           const messages = history?.messages || [];
           if (messages.length === 0) return;
@@ -360,21 +378,23 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
   // ── 订阅/取消 ──
 
   function subscribe() {
-    unsubSessionMsg = gatewayClient.on('session.message', (payload: unknown) => {
+    unsubSessionMsg = wsManager.clientRef.on('session.message', (payload: unknown) => {
       const data = payload as Record<string, unknown> | undefined;
       if (!data) return;
+      // Broadcast event — accept messages for the active session or messages with
+      // no sessionKey (e.g. system notifications). Do NOT block cross-client broadcasts.
       const msgSessionKey = data.sessionKey as string | undefined;
-      if (opts.getSessionKey() && msgSessionKey !== opts.getSessionKey()) {
-        console.warn('[GW msg] sessionKey mismatch:', msgSessionKey, '!=', opts.getSessionKey());
+      const mySessionKey = opts.getSessionKey();
+      if (mySessionKey && msgSessionKey && msgSessionKey !== mySessionKey) {
         return;
       }
       const msg = payloadToMessage(data);
-      if (!msg || opts.knownIds.has(msg.id)) return;
+      if (!msg || opts.hasId(msg.id)) return;
       if (opts.isSystemNoise(msg.content)) return;
       const dup = opts.messages.value.find(m =>
         m.content && msg.content &&
         m.content.substring(0, 200) === msg.content.substring(0, 200) &&
-        Math.abs(new Date(m.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 5000
+        Math.abs(new Date(m.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 2000
       );
       if (dup) {
         // 合并 attachments（流式 chat final 可能不含附件，session.message 才有）
@@ -385,18 +405,16 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
         }
         return;
       }
-      opts.knownIds.add(msg.id);
-      opts.messages.value = [...opts.messages.value, msg].sort(
-        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
+      opts.addId(msg.id);
+      opts.messages.value = [...opts.messages.value, msg].sort(stableMsgSort);
       if (opts.atBottom.value) { nextTick(() => opts.scrollToBottom(false)); } else { opts.newMsgCount.value++; }
     });
 
-    unsubChat = gatewayClient.on('chat', (payload: unknown) => {
+    unsubChat = wsManager.clientRef.on('chat', (payload: unknown) => {
       const data = payload as Record<string, unknown> | undefined;
       if (!data) return;
       if (data.sessionKey !== opts.getSessionKey()) {
-        if (data.state === 'delta' || data.state === 'final') console.warn('[GW stream] sessionKey mismatch:', data.sessionKey, '!=', opts.getSessionKey());
+        if (data.state === 'delta' || data.state === 'final') console.debug('[GW stream] sessionKey mismatch:', data.sessionKey, '!=', opts.getSessionKey());
         return;
       }
       const runId = data.runId as string | undefined;
@@ -405,13 +423,13 @@ export function useGatewayStream(opts: UseGatewayStreamOptions) {
         case 'start': setProcessing(true); if (runId) setActiveRunId(runId); break;
         default: break;
         case 'delta': handleChatDelta(data, runId || ''); break;
-        case 'final': handleChatFinal(data, runId || ''); break;
+        case 'final': handleChatFinal(data, runId || ''); opts.pollNow?.(); break;
         case 'error': handleChatError(data, runId || ''); break;
         case 'aborted': handleChatAborted(data, runId || ''); break;
       }
     });
 
-    unsubAgent = gatewayClient.on('agent', (payload: unknown) => {
+    unsubAgent = wsManager.clientRef.on('agent', (payload: unknown) => {
       const data = payload as Record<string, unknown> | undefined;
       if (!data || data.sessionKey !== opts.getSessionKey()) return;
       const stream = data.stream as string | undefined;

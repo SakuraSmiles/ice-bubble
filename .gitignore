@@ -11,6 +11,10 @@ build/
 .env.local
 .env.*.local
 
+# Docker configs (contain sensitive tokens)
+docker/configs/*.json
+!docker/configs/*.json.template
+
 # IDE
 .idea/
 .vscode/
@@ -49,6 +53,12 @@ data/*.sqlite
 *.bak
 *.tmp
 *.temp
+
+# Docker build cache
+.docker/
+
+# OpenClaw runtime data (5GB+, bind-mounted)
+.openclaw/
 
 # Coverage reports
 coverage/

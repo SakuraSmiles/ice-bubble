@@ -16,7 +16,7 @@ import {
   SSEStatusEvent,
 } from '@/api/chat'
 import { api } from '@/api/client'
-import { gatewayClient } from '@/services/gateway-client'
+import { wsManager } from '@/services/websocket-manager'
 
 // ============ 类型 ============
 
@@ -354,7 +354,7 @@ export function useChat(
   function connectGatewayStream() {
     disconnectGatewayStream()
 
-    unsubChat = gatewayClient.on('chat', (payload: any) => {
+    unsubChat = wsManager.clientRef.on('chat', (payload: any) => {
       if (!payload) return
 
       // 只处理当前 session 的消息

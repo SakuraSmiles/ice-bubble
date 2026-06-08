@@ -1,10 +1,18 @@
 /**
- * useChatData — 消息列表数据管理
+ * useChatData — 消息列表数据管理（重构版）
+ *
+ * 关键设计决策：
+ *   1. knownIds → shallowRef<Set<string>>（响应式引用，解决闭包引用断裂）
+ *   2. idAlias 归一化映射（Admin/Gateway ID 互去重）
+ *   3. generation counter 生命周期管理（替代 boolean active flag）
+ *   4. session key 守卫（异步操作中防止缓存污染）
+ *   5. 统一 optimistic message 管理
+ *   6. syncCache() 统一缓存写入入口
  */
-import { ref, computed, nextTick } from 'vue';
+import { ref, shallowRef, computed, nextTick } from 'vue';
 import { request } from '../../../api/client';
 import { API_BASE } from '../../../config';
-import type { TimelineMessage, TimelineResponse, GatewayMessage, GatewayContentBlock, GatewayToolCallBlock, GatewayHistoryResponse, MediaBatchResponse, MediaBatchItem } from './types';
+import type { TimelineMessage, TimelineResponse, GatewayMessage, GatewayContentBlock, GatewayToolCallBlock, GatewayHistoryResponse, MediaBatchResponse, MediaBatchItem, MsgGroup } from './types';
 
 import { parseMediaAttached, stripMediaAttachedMarkers, detectInlineImages } from './media-parser';
 import { messageCache } from '@/stores/message-cache';
@@ -20,11 +28,185 @@ export function useChatData(getSessionKey: () => string | undefined) {
   const showTypingIndicator = ref(false);
   const agentAvatar = ref<string | null>(null);
 
-  let knownIds = new Set<string>();
+  // ── P0: knownIds 改为 shallowRef<Set<string>> ──
+  const knownIds = shallowRef<Set<string>>(new Set<string>());
+
+  // ── P0: idAlias 归一化映射（所有别名 → 唯一主 key）──
+  const idAlias = shallowRef<Map<string, string>>(new Map<string, string>());
+
+  // ── P0: generation counter 生命周期管理（替代 boolean active flag）──
+  const generation = ref(0);
+
+  // ── P1: 统一 optimistic message 管理 ──
+  const optimisticMap = new Map<string, string>(); // optimisticId → realId mapping
+
   let adminPageCursor: string | null = null;
   const PAGE_SIZE = 30;
+  const MAX_MESSAGES = 1000;
+  const TRIM_TO = 800;
 
-  // ── 工具函数 ──
+  // ── 定时轮询 ──
+  const POLL_INTERVAL = 15_000;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let lastPollTimestamp: string | null = null;
+
+  // ── 辅助函数 ──
+
+  /** Register an alias: aliasId → canonicalId */
+  function registerAlias(aliasId: string, canonicalId: string) {
+    if (aliasId === canonicalId) return;
+    const map = new Map(idAlias.value);
+    map.set(aliasId, canonicalId);
+    idAlias.value = map;
+    // Also update knownIds if canonicalId is known
+    const ids = new Set(knownIds.value);
+    if (ids.has(canonicalId) && !ids.has(aliasId)) {
+      ids.add(aliasId);
+      knownIds.value = ids;
+    }
+  }
+
+  /** Resolve an ID through alias map to find if it's already known */
+  function resolveId(id: string): string {
+    return idAlias.value.get(id) || id;
+  }
+
+  /** Check if an ID (or its alias) is already known */
+  function hasId(id: string): boolean {
+    if (knownIds.value.has(id)) return true;
+    const canonical = idAlias.value.get(id);
+    return canonical ? knownIds.value.has(canonical) : false;
+  }
+
+  /** Add an ID to known set and register it */
+  function addId(id: string) {
+    const ids = new Set(knownIds.value);
+    ids.add(id);
+    knownIds.value = ids;
+  }
+
+  /** Match two messages from different sources by session_key + clean_content hash + timestamp ±2s */
+  function matchMessageByContent(
+    msgA: { session_key?: string; clean_content?: string | null; timestamp: string },
+    msgB: { session_key?: string; clean_content?: string | null; timestamp: string },
+  ): boolean {
+    if (msgA.session_key && msgB.session_key && msgA.session_key !== msgB.session_key) return false;
+    const contentA = (msgA.clean_content || '').substring(0, 200);
+    const contentB = (msgB.clean_content || '').substring(0, 200);
+    if (!contentA || !contentB) return false;
+    if (simpleHash(contentA) !== simpleHash(contentB)) return false;
+    const tsA = new Date(msgA.timestamp).getTime();
+    const tsB = new Date(msgB.timestamp).getTime();
+    return Math.abs(tsA - tsB) <= 30000; // ±30s window (covers collector sync latency)
+  }
+
+  /** Try to find an existing message that matches the given one (for cross-source dedup) */
+  function findMatchingMessage(
+    msg: TimelineMessage,
+  ): TimelineMessage | null {
+    // Quick check by alias first
+    const canonical = resolveId(msg.id);
+    if (knownIds.value.has(canonical)) return null; // Already known under canonical
+
+    // Content-based matching for cross-source dedup
+    for (const existing of messages.value) {
+      if (matchMessageByContent(existing, msg)) {
+        return existing;
+      }
+    }
+    return null;
+  }
+
+  // ── Polling ──
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(pollNewMessages, POLL_INTERVAL);
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  async function pollNewMessages() {
+    const sessionKey = getSessionKey();
+    if (!sessionKey) return;
+    const gen = generation.value;
+
+    try {
+      const sinceParam = lastPollTimestamp
+        ? `&since=${encodeURIComponent(lastPollTimestamp)}`
+        : '';
+      const res = await request(`/messages/timeline?limit=20&${getActiveFilters()}${sinceParam}`);
+      if (!res.ok || generation.value !== gen) return;
+      const data: TimelineResponse = await res.json();
+      if (generation.value !== gen) return;
+
+      const incoming: TimelineMessage[] = [];
+      for (const m of (data.messages || [])) {
+        const mapped: TimelineMessage = {
+          ...m,
+          id: `admin_${m.id}`,
+          clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+          is_turn_failed: isAssistantTurnFailed(m.clean_content || m.content),
+        };
+        if (isTimelineSystemNoise(mapped)) continue;
+        if (hasId(mapped.id)) continue;
+        // Cross-source dedup: check if a gw_ equivalent exists
+        const match = findMatchingMessage(mapped);
+        if (match) {
+          registerAlias(mapped.id, match.id);
+          continue; // Don't insert duplicate
+        }
+        incoming.push(mapped);
+      }
+
+      if (incoming.length === 0) return;
+
+      const latestTs = incoming.reduce((max, m) => {
+        const t = new Date(m.timestamp).getTime();
+        return t > max ? t : max;
+      }, 0);
+      if (latestTs > 0) {
+        lastPollTimestamp = new Date(latestTs).toISOString();
+      }
+
+      incoming.forEach(m => addId(m.id));
+      const merged = [...messages.value, ...incoming].sort(stableMsgSort);
+      messages.value = merged;
+
+      if (atBottom.value) {
+        await nextTick();
+        scrollToBottom(false);
+      } else {
+        newMsgCount.value += incoming.length;
+      }
+
+      enforceMessageLimit();
+      syncCache();
+    } catch {
+      // 轮询失败静默忽略
+    }
+  }
+
+  /** Immediate poll — called externally when a chat.final event arrives to
+   *  catch user messages that the Gateway did not broadcast via session.message.
+   *  Polls Admin timeline first, then fetches Gateway /chat/history for
+   *  guaranteed coverage (Admin sync may lag, but Gateway history is authoritative). */
+  async function pollNow() {
+    const sk = getSessionKey();
+    const gen = generation.value;
+    await pollNewMessages();
+    // Also pull Gateway history — it always contains user messages
+    if (sk) {
+      refreshInBackground(sk, gen);
+    }
+  }
+
+  // ── 工具函数（保留不变） ──
 
   function normalizeTimestamp(ts: string | number | undefined): string {
     if (!ts) return new Date().toISOString();
@@ -66,9 +248,8 @@ export function useChatData(getSessionKey: () => string | undefined) {
   function isTimelineSystemNoise(m: TimelineMessage): boolean {
     const content = m.content || '';
     const clean = m.clean_content || '';
-    if (m.message_type === 'agent' && !content.trim() && !clean.trim()) return true;
     if (content.startsWith('Sender (untrusted metadata):') && !clean.trim()) return true;
-    if (clean.trim() === 'NO_REPLY') return true;
+    if ((clean.trim() || content.trim()) === 'NO_REPLY') return true;
     return false;
   }
 
@@ -79,36 +260,107 @@ export function useChatData(getSessionKey: () => string | undefined) {
     return cleaned.trim() || text;
   }
 
-  function contentKey(m: TimelineMessage): string {
-    return (m.clean_content || m.content || '').substring(0, 200).trim();
-  }
+  // ── P0: setMessages 简化为纯赋值（去掉内置去重） ──
 
-  function dedupByContent(msgs: TimelineMessage[], existing: TimelineMessage[]): TimelineMessage[] {
-    const existingKeys = new Set(existing.map(m => contentKey(m)));
-    const seenInBatch = new Set<string>();
-    return msgs.filter(m => {
-      const ck = contentKey(m);
-      if (existingKeys.has(ck) || seenInBatch.has(ck)) return false;
-      seenInBatch.add(ck);
-      return true;
-    });
+  // Fix 3: stable sort — tiebreak same-millisecond messages by ID (numeric part)
+  function stableMsgSort(a: TimelineMessage, b: TimelineMessage): number {
+    const diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    if (diff !== 0) return diff;
+    const numA = parseInt(a.id.replace(/^[a-z]+_/, ''), 10) || 0;
+    const numB = parseInt(b.id.replace(/^[a-z]+_/, ''), 10) || 0;
+    return numA - numB;
   }
 
   function setMessages(msgs: TimelineMessage[]) {
-    knownIds.clear();
     const seen = new Set<string>();
-    const seenContent = new Set<string>();
     const filtered = msgs.filter(m => {
       if (isEmptyUserMsg(m) || seen.has(m.id)) return false;
-      const ck = contentKey(m);
-      if (seenContent.has(ck)) return false;
-      seenContent.add(ck);
       seen.add(m.id);
       return true;
     });
-    filtered.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    filtered.sort(stableMsgSort);
     messages.value = filtered;
-    filtered.forEach(m => knownIds.add(m.id));
+    knownIds.value = new Set(seen);
+  }
+
+  // ── P1: 统一缓存写入入口 ──
+
+  function syncCache() {
+    const sk = getSessionKey();
+    if (!sk || generation.value === 0) return;
+    messageCache.set(sk, {
+      messages: messages.value,
+      knownIds: [...knownIds.value],
+      idAlias: [...idAlias.value.entries()],
+      hasMore: hasMore.value,
+      adminPageCursor,
+      agentAvatar: agentAvatar.value,
+      cachedAt: Date.now(),
+    });
+  }
+
+  // ── P1: 统一 optimistic message 管理 ──
+
+  function addOptimisticMessage(
+    content: string,
+    role: string = 'user',
+    attachmentDataUrls?: string[],
+    optimisticId?: string,
+  ) {
+    const id = optimisticId || `optimistic_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const msg: TimelineMessage = {
+      id,
+      _optimistic: optimisticId ? true : undefined,
+      _sendFailed: false,
+      session_key: getSessionKey() || '',
+      agent_id: role === 'user' ? 'user' : 'assistant',
+      agent_name: role === 'user' ? 'You' : '',
+      avatar: null,
+      message_type: role === 'user' ? 'user' : 'agent',
+      content,
+      clean_content: content,
+      content_summary: null,
+      is_cron: false,
+      is_system_noise: false,
+      source_channel: role === 'user' ? 'desktop' : null,
+      model: null,
+      timestamp: new Date().toISOString(),
+      attachments: attachmentDataUrls?.map(dataUrl => ({
+        type: 'image',
+        mimeType: 'image/jpeg',
+        fileName: 'image',
+        content: '',
+        dataUrl,
+      })),
+    } as any;
+    addId(id);
+    messages.value = [...messages.value, msg];
+    nextTick(() => scrollToBottom(false));
+    return id;
+  }
+
+  function resolveOptimisticMessage(optimisticId: string, realId: string) {
+    const idx = messages.value.findIndex(m => m.id === optimisticId);
+    if (idx >= 0) {
+      const msg = messages.value[idx];
+      messages.value[idx] = { ...msg, id: realId, streamState: undefined } as any;
+      // Update knownIds: remove optimistic, add real
+      const ids = new Set(knownIds.value);
+      ids.delete(optimisticId);
+      ids.add(realId);
+      knownIds.value = ids;
+      // Register alias for cross-source dedup
+      registerAlias(optimisticId, realId);
+    }
+    optimisticMap.delete(optimisticId);
+  }
+
+  function markOptimisticFailed(optimisticId: string) {
+    const idx = messages.value.findIndex(m => m.id === optimisticId);
+    if (idx >= 0) {
+      messages.value[idx] = { ...messages.value[idx], _sendFailed: true } as any;
+    }
+    optimisticMap.delete(optimisticId);
   }
 
   /**
@@ -118,7 +370,6 @@ export function useChatData(getSessionKey: () => string | undefined) {
     const userMsgs = msgs.filter(m => m.message_type === 'user' && (!m.attachments || m.attachments.length === 0));
     if (userMsgs.length === 0) return;
 
-    // 批量收集所有需要查询的 media ID
     const msgMediaMap = new Map<TimelineMessage, string[]>();
     for (const m of userMsgs) {
       const refs = parseMediaAttached(m.content || '');
@@ -127,7 +378,6 @@ export function useChatData(getSessionKey: () => string | undefined) {
       }
     }
 
-    // 批量查询 media 元数据
     const allIds = [...new Set([...msgMediaMap.values()].flat())];
     if (allIds.length === 0) return;
 
@@ -143,7 +393,6 @@ export function useChatData(getSessionKey: () => string | undefined) {
     }
     if (mediaItems.length === 0) return;
 
-    // 按 ID 索引
     const mediaMap = new Map(mediaItems.map(item => [item.id, item]));
 
     let changed = false;
@@ -159,10 +408,9 @@ export function useChatData(getSessionKey: () => string | undefined) {
         }));
         m.content = stripMediaAttachedMarkers(m.content || '');
         if (m.clean_content) m.clean_content = stripMediaAttachedMarkers(m.clean_content);
-        // 如果有附件且文本只是占位符（如「(图片)」），清空文本
         if (m.attachments.length > 0) {
           const cleaned = m.content
-            ?.replace(/^\[.*?\]\s*/, '')  // 移除时间戳前缀
+            ?.replace(/^\[.*?\]\s*/, '')
             .trim();
           if (cleaned === '(图片)' || cleaned === '' || cleaned === '图片') {
             m.content = '';
@@ -224,7 +472,6 @@ export function useChatData(getSessionKey: () => string | undefined) {
         let text = extractContentText(m.content);
         if (!text.trim() || text.trim() === 'NO_REPLY' || text.includes('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>')) continue;
         const msg = makeMsg('user', 'user', 'You', null, text, timestamp, m.id, null, runId);
-        // 处理 Gateway history 的 images 字段（inline base64 images）
         const inlineImages = detectInlineImages(m);
         if (inlineImages.length > 0) {
           msg.attachments = inlineImages.map(img => ({
@@ -273,18 +520,85 @@ export function useChatData(getSessionKey: () => string | undefined) {
         result.push(makeMsg('tool', sessionAgentId || 'assistant', null, null, text.substring(0, 500), timestamp, m.id, null, runId));
       }
     }
-    result.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    result.sort(stableMsgSort);
     return result;
+  }
+
+  // ── Session Chain 状态 ──
+  const chainSessions = ref<Array<{
+    session_key: string;
+    agent_id: string;
+    agent_name: string | null;
+    avatar: string | null;
+    channel: string | null;
+    message_count: number;
+    user_message_count: number;
+    first_message_at: string | null;
+    last_message_at: string | null;
+    first_message: string | null;
+    label: string | null;
+  }>>([]);
+  const chainCurrentIndex = ref(-1);
+  const chainHasOlder = ref(false);
+
+  // ── Session Chain 获取 ──
+  async function fetchSessionChain(sessionKey: string): Promise<void> {
+    try {
+      const res = await request(`/sessions/chain?session_key=${encodeURIComponent(sessionKey)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      chainSessions.value = data.chain || [];
+      chainCurrentIndex.value = data.currentIndex;
+      chainHasOlder.value = data.has_older;
+    } catch (e) {
+      console.warn('[useChatData] fetchSessionChain failed', e);
+    }
+  }
+
+  // ── chainFilters: 跨 session 查询参数 ──
+  const chainFilters = computed<string | null>(() => {
+    const chainKeys = chainSessions.value
+      .filter(s => s.message_count > 0)
+      .map(s => s.session_key);
+    if (chainKeys.length <= 1) return null;
+    const agentId = getSessionKey()?.match(/^agent:([^:]+)/)?.[1];
+    const parts = [
+      `session_keys=${chainKeys.map(k => encodeURIComponent(k)).join(',')}`,
+      'exclude_system_noise=true',
+      'exclude_cron=true',
+      'message_types=user,agent',
+    ];
+    if (agentId) parts.push(`agent_ids=${agentId}`);
+    return parts.join('&');
+  });
+
+  // ── 消息硬上限淘汰 ──
+  function enforceMessageLimit() {
+    if (messages.value.length > MAX_MESSAGES) {
+      const trimmed = messages.value.slice(-TRIM_TO);
+      const newKnownIds = new Set<string>();
+      for (const m of trimmed) newKnownIds.add(m.id);
+      knownIds.value = newKnownIds;
+      messages.value = trimmed;
+    }
+  }
+
+  /** Helper: get active filters (chainFilters or fallback to filters) */
+  function getActiveFilters(): string {
+    return chainFilters.value || filters.value;
   }
 
   // ── 过滤 ──
 
   const filters = computed(() => {
-    const agentId = getSessionKey()?.match(/^agent:([^:]+)/)?.[1];
-    return `exclude_system_noise=true&exclude_cron=true&message_types=user,agent${agentId ? `&agent_ids=${agentId}` : ''}`;
+    const sessionKey = getSessionKey();
+    const agentId = sessionKey?.match(/^agent:([^:]+)/)?.[1];
+    const parts = [`session_key=${encodeURIComponent(sessionKey || '')}`, 'exclude_system_noise=true', 'exclude_cron=true', 'message_types=user,agent'];
+    if (agentId) parts.push(`agent_ids=${agentId}`);
+    return parts.join('&');
   });
 
-  // ── 滚动 ──
+  // ── 滚动（保留不变） ──
 
   function checkBottom() {
     const el = containerRef.value;
@@ -341,16 +655,14 @@ export function useChatData(getSessionKey: () => string | undefined) {
         ...m, id: `admin_${m.id}`,
         clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
         is_turn_failed: isAssistantTurnFailed(m.clean_content || m.content),
-      })).filter(m => !knownIds.has(m.id)).filter(m => !isTimelineSystemNoise(m));
+      })).filter(m => !isTimelineSystemNoise(m)).filter(m => !hasId(m.id));
+
       if (newMsgs.length === 0) { hasMore.value = data.has_more; break; }
-      newMsgs.forEach(m => knownIds.add(m.id));
-      messages.value = [...newMsgs, ...messages.value].sort(
-        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
+      newMsgs.forEach(m => addId(m.id));
+      messages.value = [...newMsgs, ...messages.value].sort(stableMsgSort);
       hasMore.value = data.has_more;
       await nextTick();
       batches++;
-      // Load attachments for newly added messages
       const newUserMsgs = messages.value.filter(m => m.id.startsWith('admin_') && m.message_type === 'user' && !m.attachments?.length);
       if (newUserMsgs.length > 0) enrichAttachmentsFromContent(newUserMsgs);
     }
@@ -358,155 +670,183 @@ export function useChatData(getSessionKey: () => string | undefined) {
 
   async function loadLatest() {
     const sessionKey = getSessionKey();
+    const gen = ++generation.value; // Increment generation counter
 
     // P1: 有 sessionKey 时先查缓存
     if (sessionKey) {
       const cached = messageCache.get(sessionKey);
       if (cached) {
         messages.value = cached.messages;
-        knownIds = new Set(cached.knownIds);
+        knownIds.value = new Set(cached.knownIds);
+        // Restore idAlias if present
+        if (cached.idAlias) {
+          idAlias.value = new Map(cached.idAlias as Array<[string, string]>);
+        }
         hasMore.value = cached.hasMore;
         adminPageCursor = cached.adminPageCursor;
         agentAvatar.value = cached.agentAvatar;
         loading.value = false;
-        // 后台静默刷新，保证数据新鲜度
-        refreshInBackground(sessionKey);
+        // 后台静默刷新
+        refreshInBackground(sessionKey, gen);
+        if (messages.value.length > 0) {
+          const latest = messages.value[messages.value.length - 1];
+          lastPollTimestamp = latest.timestamp;
+        }
+        startPolling();
+        nextTick(() => scrollToBottom(false));
         return;
       }
     }
 
     loading.value = true;
-    knownIds.clear();
+    knownIds.value = new Set();
+    idAlias.value = new Map();
     resetAdminCursor();
 
     try {
-      // 并行请求 Gateway history 和 Admin timeline
+      // Step 1: 获取 session chain
+      if (sessionKey) {
+        await fetchSessionChain(sessionKey);
+      }
 
-      const gatewayPromise = (async (): Promise<TimelineMessage[]> => {
-        if (!sessionKey) return [];
-        try {
-          const historyUrl = `/chat/history?sessionKey=${encodeURIComponent(sessionKey)}&limit=10`;
-          const historyRes = await request(historyUrl);
-          if (historyRes.ok) {
+      let adminMsgs: TimelineMessage[] = [];
+      let adminHasMore = false;
+
+      // Step 2: 请求 Admin timeline（使用 chain filters）
+      try {
+        const activeFilters = getActiveFilters();
+        const adminUrl = `/messages/timeline?limit=${PAGE_SIZE}&${activeFilters}`;
+        const res = await request(adminUrl);
+        if (res.ok) {
+          const data: TimelineResponse = await res.json();
+          adminMsgs = (data.messages || []).map(m => ({
+            ...m,
+            id: `admin_${m.id}`,
+            clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
+            is_turn_failed: isAssistantTurnFailed(m.clean_content || m.content),
+          }));
+          adminHasMore = data.has_more;
+        }
+      } catch (e) {
+        console.warn('[ChatTimeline] Admin timeline fetch failed', e);
+      }
+
+      // 先用 Admin 数据渲染
+      const filteredAdminMsgs = adminMsgs.filter(m => !isTimelineSystemNoise(m));
+      filteredAdminMsgs.forEach(m => addId(m.id));
+      hasMore.value = adminHasMore;
+      setMessages(filteredAdminMsgs);
+
+      // Step 2: 异步加载 Gateway history（带 session key 守卫 + generation 守卫）
+      if (sessionKey) {
+        const capturedSessionKey = sessionKey;
+        Promise.resolve().then(async () => {
+          if (generation.value !== gen) return;
+          try {
+            const historyUrl = `/chat/history?sessionKey=${encodeURIComponent(capturedSessionKey)}&limit=10`;
+            const historyRes = await request(historyUrl);
+            if (!historyRes.ok || generation.value !== gen) return;
+            if (getSessionKey() !== capturedSessionKey) return; // session key 守卫
+
             const result = await historyRes.json() as GatewayHistoryResponse | GatewayMessage[];
+            if (generation.value !== gen) return;
             const rawMsgs = Array.isArray(result) ? result : ((result as GatewayHistoryResponse)?.messages ?? (result as GatewayHistoryResponse)?.history ?? []);
             const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
-            return gatewayMsgsToTimeline(arr);
+            const gatewayMsgs = gatewayMsgsToTimeline(arr);
+            if (gatewayMsgs.length === 0) return;
+
+            // 增量合并：检查 knownIds + cross-source dedup
+            const newGwMsgs: TimelineMessage[] = [];
+            for (const m of gatewayMsgs) {
+              if (hasId(m.id)) continue;
+              // Check if an admin_ equivalent already exists
+              const match = findMatchingMessage(m);
+              if (match) {
+                registerAlias(m.id, match.id);
+                continue;
+              }
+              newGwMsgs.push(m);
+            }
+            if (newGwMsgs.length === 0) return;
+            newGwMsgs.forEach(m => addId(m.id));
+
+            const merged = [...messages.value, ...newGwMsgs].sort(stableMsgSort);
+            messages.value = merged;
+
+            syncCache();
+          } catch (e) {
+            console.warn('[ChatTimeline] Gateway loadLatest failed, using Admin data only', e);
           }
-        } catch (e) {
-          console.warn('[ChatTimeline] Gateway loadLatest failed, falling back to Admin', e);
-        }
-        return [];
-      })();
+        });
+      }
 
-      const adminPromise = (async (): Promise<{ msgs: TimelineMessage[]; has_more: boolean }> => {
-        try {
-          const adminUrl = `/messages/timeline?limit=${PAGE_SIZE}&${filters.value}`;
-          const res = await request(adminUrl);
-          if (res.ok) {
-            const data: TimelineResponse = await res.json();
-            const msgs = (data.messages || []).map(m => ({
-              ...m,
-              id: `admin_${m.id}`,
-              clean_content: m.clean_content || stripOpenClawMetadata(m.content || '') || m.content,
-              is_turn_failed: isAssistantTurnFailed(m.clean_content || m.content),
-            }));
-            return { msgs, has_more: data.has_more };
-          }
-        } catch (e) {
-          console.warn('[ChatTimeline] Admin timeline fetch failed', e);
-        }
-        return { msgs: [], has_more: false };
-      })();
-
-      const [gatewayMsgs, adminResult] = await Promise.all([gatewayPromise, adminPromise]);
-
-      // 注册 gateway IDs 到 knownIds（用于去重）
-      gatewayMsgs.forEach(m => knownIds.add(m.id));
-
-      // 过滤 admin 消息：去除与 gateway 重复的 + 系统噪音
-      const adminMsgs = adminResult.msgs
-        .filter(m => !knownIds.has(m.id))
-        .filter(m => !isTimelineSystemNoise(m));
-      adminMsgs.forEach(m => knownIds.add(m.id));
-      hasMore.value = adminResult.has_more;
-
-      const merged = [...adminMsgs, ...gatewayMsgs].sort(
-        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
-      setMessages(merged);
-
-      // fetchAgentAvatar 不阻塞渲染，后台加载
+      // fetchAgentAvatar 不阻塞渲染
       fetchAgentAvatar();
-      enrichAttachmentsFromContent(merged); // 后台加载附件
+      enrichAttachmentsFromContent(filteredAdminMsgs);
       await fillScrollable();
     } catch (e) {
       console.error('加载聊天记录失败', e);
     } finally {
+      if (generation.value !== gen) return;
       loading.value = false;
       await nextTick();
       scrollToBottom(false);
-      // P1: 加载完成后写入缓存
-      const sk = getSessionKey();
-      if (sk) {
-        messageCache.set(sk, {
-          messages: messages.value,
-          knownIds: [...knownIds],
-          hasMore: hasMore.value,
-          adminPageCursor,
-          agentAvatar: agentAvatar.value,
-          cachedAt: Date.now(),
-        });
+
+      syncCache();
+
+      if (messages.value.length > 0) {
+        const latest = messages.value[messages.value.length - 1];
+        lastPollTimestamp = latest.timestamp;
       }
+      startPolling();
     }
   }
 
-  /**
-   * P1: 缓存命中后，后台静默刷新最近消息，保证数据新鲜度。
-   * 不改变 loading 状态，不阻塞 UI。
-   */
-  async function refreshInBackground(sessionKey: string) {
+  async function refreshInBackground(sessionKey: string, parentGen?: number) {
+    const gen = parentGen ?? generation.value;
     try {
       const res = await request(`/chat/history?sessionKey=${encodeURIComponent(sessionKey)}&limit=10`);
-      if (!res.ok) return;
+      if (!res.ok || generation.value !== gen) return;
+      if (getSessionKey() !== sessionKey) return; // session key 守卫
+
       const result = await res.json() as GatewayHistoryResponse | GatewayMessage[];
+      if (generation.value !== gen) return;
       const rawMsgs = Array.isArray(result) ? result : ((result as GatewayHistoryResponse)?.messages ?? (result as GatewayHistoryResponse)?.history ?? []);
       const arr = Array.isArray(rawMsgs) ? rawMsgs : [];
       const newMsgs = gatewayMsgsToTimeline(arr);
-      if (newMsgs.length === 0) return;
 
-      // 合并新消息到已有列表
       let changed = false;
       for (const m of newMsgs) {
-        if (!knownIds.has(m.id)) {
-          knownIds.add(m.id);
-          messages.value = [...messages.value, m].sort(
-            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-          );
-          changed = true;
+        if (hasId(m.id)) continue;
+        const match = findMatchingMessage(m);
+        if (match) {
+          registerAlias(m.id, match.id);
+          continue;
         }
+        addId(m.id);
+        messages.value = [...messages.value, m].sort(stableMsgSort);
+        changed = true;
       }
-      if (changed) {
-        messageCache.set(sessionKey, {
-          messages: messages.value,
-          knownIds: [...knownIds],
-          hasMore: hasMore.value,
-          adminPageCursor,
-          agentAvatar: agentAvatar.value,
-          cachedAt: Date.now(),
-        });
-      }
+      if (changed) syncCache();
     } catch {
- // 静默失败，不影响 UI
+      // 静默失败
     }
   }
 
   async function loadMore() {
     if (loadingMore.value || !hasMore.value || messages.value.length === 0) return;
+    if (messages.value.length >= MAX_MESSAGES) {
+      // 淘汰最旧的消息，留出 loadMore 空间
+      messages.value = messages.value.slice(-TRIM_TO);
+      const newKnownIds = new Set<string>();
+      for (const m of messages.value) newKnownIds.add(m.id);
+      knownIds.value = newKnownIds;
+    }
     loadingMore.value = true;
     const el = containerRef.value;
     const prevScrollTop = el?.scrollTop ?? 0;
     const prevScrollHeight = el?.scrollHeight ?? 0;
+    const gen = generation.value;
 
     try {
       let beforeTs: string;
@@ -516,9 +856,9 @@ export function useChatData(getSessionKey: () => string | undefined) {
         const oldest = messages.value[0].timestamp;
         beforeTs = new Date(new Date(oldest).getTime() - 1).toISOString();
       }
-      const url = `/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeTs)}&${filters.value}`;
+      const url = `/messages/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(beforeTs)}&${getActiveFilters()}`;
       const res = await request(url);
-      if (!res.ok) { hasMore.value = false; return; }
+      if (!res.ok || generation.value !== gen) { hasMore.value = false; return; }
       const data: TimelineResponse = await res.json();
       if (!Array.isArray(data.messages) || data.messages.length === 0) { hasMore.value = data.has_more; return; }
 
@@ -528,8 +868,7 @@ export function useChatData(getSessionKey: () => string | undefined) {
         is_turn_failed: isAssistantTurnFailed(m.clean_content || m.content),
       })).filter(m => !isTimelineSystemNoise(m));
 
-      const idFiltered = adminMsgs.filter(m => !knownIds.has(m.id));
-      const newMsgs = dedupByContent(idFiltered, messages.value);
+      const newMsgs = adminMsgs.filter(m => !hasId(m.id));
 
       const earliestReturned = adminMsgs.reduce((min, m) => {
         const t = new Date(m.timestamp).getTime();
@@ -540,9 +879,10 @@ export function useChatData(getSessionKey: () => string | undefined) {
       }
 
       if (newMsgs.length === 0) { hasMore.value = data.has_more; return; }
-      newMsgs.forEach(m => knownIds.add(m.id));
+      newMsgs.forEach(m => addId(m.id));
       messages.value = [...newMsgs, ...messages.value];
       hasMore.value = data.has_more;
+      enforceMessageLimit();
       enrichAttachmentsFromContent(newMsgs);
     } catch (e) {
       console.error('加载更多失败', e);
@@ -556,9 +896,10 @@ export function useChatData(getSessionKey: () => string | undefined) {
     }
   }
 
-  // ── 消息分组 ──
+  // ── 消息分组（保留不变） ──
 
-  const visibleMessages = computed(() => messages.value.filter(m => !m.is_system_context));
+  // Fix 2: also filter timeline system noise (cron/heartbeat) in Overview timeline
+  const visibleMessages = computed(() => messages.value.filter(m => !m.is_system_context && !isTimelineSystemNoise(m)));
 
   const groupedMessages = computed(() => {
     const groups: import('./types').MsgGroup[] = [];
@@ -591,7 +932,6 @@ export function useChatData(getSessionKey: () => string | undefined) {
     }
     if (current) groups.push(current);
 
-    // Insert date-divider groups between messages on different dates
     const withDividers: import('./types').MsgGroup[] = [];
     let lastDateStr = '';
     for (const grp of groups) {
@@ -614,22 +954,65 @@ export function useChatData(getSessionKey: () => string | undefined) {
       withDividers.push(grp);
     }
 
+    // 插入 session-divider：检测相邻消息的 session_key 变化
+    const withSessionDividers: MsgGroup[] = [];
+    let lastSessionKey = '';
     for (const grp of withDividers) {
+      if (grp.type !== 'date-divider' && grp.messages.length > 0) {
+        const grpSessionKey = grp.messages[0].session_key || '';
+        if (lastSessionKey && grpSessionKey && grpSessionKey !== lastSessionKey) {
+          withSessionDividers.push({
+            type: 'session-divider',
+            agentId: '',
+            agentName: null,
+            avatar: null,
+            timestamp: grp.timestamp,
+            messages: [],
+            toolMsgs: [],
+            hiddenToolCount: 0,
+            sessionLabel: getSessionLabel(grpSessionKey),
+            dateLabel: formatDateLabel(grp.timestamp),
+          });
+        }
+        if (grpSessionKey) lastSessionKey = grpSessionKey;
+      }
+      withSessionDividers.push(grp);
+    }
+
+    for (const grp of withSessionDividers) {
       if (grp.toolMsgs.length > 3) {
         grp.hiddenToolCount = grp.toolMsgs.length - 2;
         grp.toolMsgs = grp.toolMsgs.slice(0, 2);
       }
     }
-    return withDividers;
+    return withSessionDividers;
   });
 
   // ── 重置（session 切换时） ──
+  function getSessionLabel(sessionKey: string): string {
+    const chainSession = chainSessions.value.find(s => s.session_key === sessionKey);
+    if (chainSession?.label) return chainSession.label;
+    if (chainSession?.first_message) {
+      const truncated = chainSession.first_message.substring(0, 40);
+      return truncated.length < chainSession.first_message.length ? truncated + '...' : truncated;
+    }
+    const parts = sessionKey.split(':');
+    return parts.slice(-2).join(':');
+  }
 
+  // ── 重置（session 切换时） ──
   function reset() {
+    generation.value = 0;
+    chainSessions.value = [];
+    chainCurrentIndex.value = -1;
     agentAvatar.value = null;
-    knownIds.clear();
+    knownIds.value = new Set();
+    idAlias.value = new Map();
+    optimisticMap.clear();
     resetAdminCursor();
     messages.value = [];
+    stopPolling();
+    lastPollTimestamp = null;
   }
 
   // ── 工具辅助（给模板用） ──
@@ -682,10 +1065,21 @@ export function useChatData(getSessionKey: () => string | undefined) {
   return {
     messages, loading, loadingMore, hasMore, newMsgCount, atBottom,
     containerRef, showTypingIndicator, agentAvatar,
-    knownIds, isSystemNoise, normalizeTimestamp, simpleHash,
+    knownIds, idAlias, isSystemNoise, normalizeTimestamp, simpleHash,
     scrollToBottom, onScroll, goToBottom, checkBottom,
-    loadLatest, loadMore, reset, fetchAgentAvatar,
+    loadLatest, loadMore, reset, fetchAgentAvatar, startPolling, stopPolling, pollNow,
     groupedMessages,
     extractToolName, truncateToolContent, formatTime, toolSummary,
+    // P1: 统一 optimistic message 管理
+    addOptimisticMessage,
+    resolveOptimisticMessage,
+    markOptimisticFailed,
+    // P1: 统一缓存写入
+    syncCache,
+    // P0: ID 管理
+    hasId, addId, resolveId, registerAlias,
+    // Session Chain
+    chainSessions, chainCurrentIndex, chainHasOlder, fetchSessionChain,
+    getSessionLabel,
   };
 }

@@ -1,8 +1,15 @@
 /**
- * GatewayClient — 浏览器端 WebSocket 客户端
+ * GatewayClient — 浏览器端 WebSocket 客户端（纯传输层）
  *
  * 通过 Vite 代理连接到 Admin 的 /ws 端点，
  * 使用 req/res/event 协议与 Admin 通信，Admin 再转发到 Gateway。
+ *
+ * 【重构说明】
+ * 重连逻辑已移至 WebSocketManager，本类回归为纯传输层：
+ * - 移除 scheduleReconnect / reconnectAttempts / exponential backoff
+ * - 新增 onClose() — 暴露原始 CloseEvent 供上层判断 close code
+ * - 新增 onAnyMessage() — 每次收到消息时触发（供心跳重置）
+ * - 保留 request() / on() / connect() / disconnect() 等底层方法
  */
 
 // ============ 协议类型 ============
@@ -34,6 +41,25 @@ interface GatewayEvent {
 
 type GatewayMessage = GatewayRequest | GatewayResponse | GatewayEvent
 
+/** 客户端标识信息 */
+export interface ClientInfo {
+  platform: string       // desktop-win / desktop-mac / mobile-android / mobile-ios / web
+  appVersion?: string   // 应用版本号
+  sessionId?: string    // 本次连接的唯一 ID
+}
+
+/** 检测当前平台标识 */
+function detectPlatform(): string {
+  const ua = navigator.userAgent
+  // Mobile-first detection (mobile UAs often contain desktop markers)
+  if (/iPhone|iPad|iPod/.test(ua)) return 'mobile-ios'
+  if (/Android/.test(ua)) return 'mobile-android'
+  if (/Win/.test(ua)) return 'desktop-win'
+  if (/Mac/.test(ua)) return 'desktop-mac'
+  if (/Linux/.test(ua)) return 'desktop-linux'
+  return 'unknown'
+}
+
 /** pending 请求记录 */
 interface PendingRequest {
   resolve: (value: unknown) => void
@@ -51,15 +77,6 @@ import { getAdminUrl, getAdminAuthToken } from '../config'
 /** 请求超时时间（毫秒） */
 const REQUEST_TIMEOUT_MS = 30_000
 
-/** 最大重连间隔（毫秒） */
-const MAX_RECONNECT_INTERVAL_MS = 10_000
-
-/** 初始重连间隔（毫秒） */
-const INITIAL_RECONNECT_INTERVAL_MS = 1_000
-
-/** 重连退避因子 */
-const RECONNECT_BACKOFF_FACTOR = 2
-
 // ============ GatewayClient ============
 
 export class GatewayClient {
@@ -69,9 +86,12 @@ export class GatewayClient {
   private listeners = new Map<string, Set<EventCallback>>()
   private _connected = false
   private _sessionKey: string | null = null
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  private reconnectAttempts = 0
   private intentionalClose = false
+
+  // ── 新增：close 回调 ──
+  private closeCallbacks = new Set<(event: CloseEvent) => void>()
+  // ── 新增：任意消息回调 ──
+  private anyMessageCallbacks = new Set<() => void>()
 
   // ============ 连接生命周期 ============
 
@@ -115,7 +135,6 @@ export class GatewayClient {
     }
 
     // Append auth token as query parameter for WebSocket authentication
-    // (WebSocket API in browsers doesn't support custom headers)
     const authToken = getAdminAuthToken();
     if (authToken) {
       const sep = url.includes('?') ? '&' : '?';
@@ -132,12 +151,32 @@ export class GatewayClient {
       }
 
       this.ws.onopen = () => {
-        this.reconnectAttempts = 0
-        // 连接建立后，等待 connect.hello 响应确认认证成功
-        // Admin 会在 WebSocket 握手阶段处理认证
+        // 连接建立后，立即发送 clientInfo 标识
+        try {
+          const platform = detectPlatform()
+          let sessionId: string;
+          try {
+            sessionId = crypto.randomUUID();
+          } catch (_) {
+            sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          }
+          const clientInfo: ClientInfo = { platform, sessionId }
+          // 读取应用版本号（Vite 通过 define 注入）
+          try { clientInfo.appVersion = (globalThis as any).__APP_VERSION__; } catch (_) { /* ignore */ }
+          this.ws!.send(JSON.stringify({
+            type: 'req',
+            id: -1,
+            method: 'client.identify',
+            params: { clientInfo },
+          }))
+        } catch {
+          // 标识发送失败不影响连接
+        }
       }
 
       this.ws.onmessage = (event: MessageEvent) => {
+        // 通知任意消息监听器（供心跳重置）
+        this.notifyAnyMessage()
         try {
           const msg: GatewayMessage = JSON.parse(event.data as string)
           this.onMessage(msg)
@@ -151,12 +190,16 @@ export class GatewayClient {
         reject(new Error('WebSocket connection error'))
       }
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event: CloseEvent) => {
         if (this.intentionalClose) {
           this._connected = false
           this.cleanupPending(new Error('Client disconnected'))
         } else {
-          this.onConnectionLost()
+          // 通知上层处理（WebSocketManager 负责 close code 判断和重连）
+          this.notifyClose(event)
+          this._connected = false
+          this.cleanupPending(new Error('Connection lost'))
+          this.emit('disconnect', { message: 'Connection lost', code: event.code, reason: event.reason })
         }
       }
 
@@ -176,7 +219,6 @@ export class GatewayClient {
    */
   disconnect(): void {
     this.intentionalClose = true
-    this.clearReconnectTimer()
 
     if (this.ws) {
       this.ws.close(1000, 'Client disconnect')
@@ -306,6 +348,32 @@ export class GatewayClient {
     }
   }
 
+  // ============ 新增：Close 回调 ============
+
+  /**
+   * 注册 WebSocket close 事件回调
+   * 每次连接意外关闭时触发，传递原始 CloseEvent
+   * @returns 取消订阅函数
+   */
+  onClose(callback: (event: CloseEvent) => void): () => void {
+    this.closeCallbacks.add(callback)
+    return () => {
+      this.closeCallbacks.delete(callback)
+    }
+  }
+
+  /**
+   * 注册任意消息接收回调
+   * 每次收到 WebSocket 消息时触发（供心跳重置计时器）
+   * @returns 取消订阅函数
+   */
+  onAnyMessage(callback: () => void): () => void {
+    this.anyMessageCallbacks.add(callback)
+    return () => {
+      this.anyMessageCallbacks.delete(callback)
+    }
+  }
+
   // ============ 状态访问器 ============
 
   /**
@@ -313,6 +381,13 @@ export class GatewayClient {
    */
   get isConnected(): boolean {
     return this._connected && this.ws !== null && this.ws.readyState === WebSocket.OPEN
+  }
+
+  /**
+   * WebSocket readyState（原始值）
+   */
+  get readyState(): number {
+    return this.ws?.readyState ?? WebSocket.CLOSED
   }
 
   /**
@@ -346,6 +421,8 @@ export class GatewayClient {
    * 处理响应消息
    */
   private handleResponse(res: GatewayResponse): void {
+    // Guard: negative IDs are fire-and-forget (e.g. client.identify)
+    if (typeof res.id === 'number' && res.id < 0) return
     const pending = this.pending.get(res.id)
     if (!pending) return
 
@@ -406,47 +483,6 @@ export class GatewayClient {
   }
 
   /**
-   * 连接丢失时的清理逻辑
-   */
-  private onConnectionLost(): void {
-    this._connected = false
-    this.cleanupPending(new Error('Connection lost'))
-    this.emit('disconnect', { message: 'Connection lost' })
-    this.scheduleReconnect()
-  }
-
-  /**
-   * 定时重连（指数退避）
-   */
-  private scheduleReconnect(): void {
-    if (this.intentionalClose) return
-    this.clearReconnectTimer()
-
-    const delay = Math.min(
-      INITIAL_RECONNECT_INTERVAL_MS * Math.pow(RECONNECT_BACKOFF_FACTOR, this.reconnectAttempts),
-      MAX_RECONNECT_INTERVAL_MS,
-    )
-
-    this.reconnectAttempts++
-
-    this.reconnectTimer = setTimeout(() => {
-      this.connect().catch(() => {
-        // connect 内部会继续重试
-      })
-    }, delay)
-  }
-
-  /**
-   * 清除重连定时器
-   */
-  private clearReconnectTimer(): void {
-    if (this.reconnectTimer !== null) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = null
-    }
-  }
-
-  /**
    * 清理所有 pending 请求
    */
   private cleanupPending(error: Error): void {
@@ -481,6 +517,24 @@ export class GatewayClient {
       unsubscribe()
       callback(...args)
     })
+  }
+
+  /**
+   * 通知 close 回调
+   */
+  private notifyClose(event: CloseEvent): void {
+    for (const cb of this.closeCallbacks) {
+      try { cb(event) } catch { /* ignore */ }
+    }
+  }
+
+  /**
+   * 通知任意消息回调
+   */
+  private notifyAnyMessage(): void {
+    for (const cb of this.anyMessageCallbacks) {
+      try { cb() } catch { /* ignore */ }
+    }
   }
 }
 

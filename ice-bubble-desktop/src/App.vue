@@ -1,44 +1,55 @@
 <script setup lang="ts">
 import { ref, provide, onMounted, onUnmounted } from 'vue';
 import { useLogger } from '@/composables/useLogger';
-import { gatewayClient } from '@/services/gateway-client';
+import { wsManager, WebSocketManager } from '@/services/websocket-manager';
+import ConnectionStatusBar from '@/components/ConnectionStatusBar.vue';
 
 useLogger();
 
-// GatewayClient 连接状态 — 与应用生命周期同步
+// WebSocketManager 全局单例，通过 provide/inject 传递
+const managerRef = ref(wsManager);
+provide('wsManager', managerRef);
+
+// GatewayClient 连接状态 — 与应用生命周期同步（保留兼容）
 const gatewayConnected = ref(false);
 provide('gatewayConnected', gatewayConnected);
 
 onMounted(async () => {
   try {
-    await gatewayClient.connect();
-    gatewayConnected.value = true;
+    const ok = await wsManager.connect();
+    gatewayConnected.value = ok;
   } catch (e) {
     gatewayConnected.value = false;
     console.warn('[App] Gateway 连接失败:', e);
   }
 
-  gatewayClient.on('connect', () => {
-    gatewayConnected.value = true;
+  // 监听状态变化，同步旧接口
+  wsManager.onStateChange((state) => {
+    gatewayConnected.value = state === 'CONNECTED';
   });
-  gatewayClient.on('disconnect', () => {
-    gatewayConnected.value = false;
+
+  // 监听队列错误，显示通知
+  wsManager.on('queue.error', (payload: unknown) => {
+    const data = payload as { method?: string; error?: string }
+    console.warn(`[App] 队列消息最终失败: ${data?.method}`, data?.error);
   });
 });
 
 // 浏览器关闭时断开连接
 const onBeforeUnload = () => {
-  gatewayClient.disconnect();
+  wsManager.disconnect();
 };
 onMounted(() => {
   window.addEventListener('beforeunload', onBeforeUnload);
 });
 onUnmounted(() => {
   window.removeEventListener('beforeunload', onBeforeUnload);
+  wsManager.destroy();
 });
 </script>
 
 <template>
+  <ConnectionStatusBar :manager="wsManager" />
   <RouterView v-slot="{ Component }">
     <Transition name="fade" mode="out-in">
       <component :is="Component" />

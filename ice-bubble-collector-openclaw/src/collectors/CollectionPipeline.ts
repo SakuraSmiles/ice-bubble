@@ -18,6 +18,7 @@ import { Deduplicator } from '../processors/deduplicator.js';
 import { BatchWriter } from '../processors/BatchWriter.js';
 import { SQLiteManager } from '../storage/sqlite-manager.js';
 import { convertOpenClawEvent } from '../converters/openclaw-to-unified.js';
+import { parseSessionKey } from '../utils/session-key-builder.js';
 
 const logger = new Logger('CollectionPipeline');
 
@@ -160,6 +161,13 @@ export class CollectionPipeline extends EventEmitter {
             continue;
           }
 
+          // 步骤1.5: 过滤 Sender metadata 全量版（重复源）
+          // OpenClaw 将用户消息写两遍到 JSONL（全量版 + 截断版），在此丢弃全量版
+          if (message.metadata?.is_duplicate_source === true) {
+            logger.debug(`跳过 Sender metadata 全量版（重复源）: ${message.id}`);
+            continue;
+          }
+
           // 步骤2: 数据验证
           const validation = this.validator.validate(message);
           if (!validation.valid) {
@@ -169,13 +177,22 @@ export class CollectionPipeline extends EventEmitter {
             continue;
           }
 
-          // 步骤3: 去重检查
+          // 步骤3: 去重检查（ID 级 + 内容级）
           if (this.deduplicator.isDuplicate(message.id)) {
             this.emit('duplicate', { messageId: message.id });
-            logger.debug(`重复消息，跳过: ${message.id}`);
+            logger.debug(`重复消息(ID)，跳过: ${message.id}`);
             continue;
           }
           this.deduplicator.markAsProcessed(message.id);
+
+          // 步骤3.5: 内容级去重
+          // Gateway subagent_announce 在后续 run 中重新注入已完成 subagent 报告，
+          // 产生新 event ID 但内容完全相同。ID 去重无法拦截，需内容级去重。
+          if (this.deduplicator.isContentDuplicate(message)) {
+            this.emit('duplicate', { messageId: message.id });
+            logger.debug(`重复消息(内容)，跳过: ${message.id}`);
+            continue;
+          }
 
           // 步骤4: 转换为 SessionMessage 格式
           const sessionMessage: SessionMessage = {
@@ -217,16 +234,12 @@ export class CollectionPipeline extends EventEmitter {
   /**
    * 确保 Session 存在于数据库中
    *
-   * @param sessionKey - Session Key（格式: agent:{agentId}:{channel}:{accountId}:{type}:{peerId}）
+   * @param sessionKey - Session Key（支持 4/5/6 段格式）
    */
   async ensureSession(sessionKey: string): Promise<void> {
-    // 解析 sessionKey
-    const parts = sessionKey.split(':');
-    if (parts.length !== 6 || parts[0] !== 'agent') {
-      throw new Error(`Invalid sessionKey format: ${sessionKey}`);
-    }
-
-    const [, agentId, channel, accountId, sessionType, peerId] = parts;
+    // 解析 sessionKey（使用 parseSessionKey 支持 4/5/6 段格式）
+    const components = parseSessionKey(sessionKey);
+    const { agentId, channel, accountId, type: sessionType, targetId: targetIdRaw } = components;
 
     // 检查 agent 是否在 openclaw.json 配置中，跳过幽灵 agent 的 session
     if (this.configuredAgentIds && !this.configuredAgentIds.has(agentId)) {
@@ -246,8 +259,8 @@ export class CollectionPipeline extends EventEmitter {
       agentId,
       channel,
       accountId: accountId || undefined,
-      peerId: peerId || undefined,
-      guildId: sessionType === 'guild' ? peerId : undefined,
+      peerId: targetIdRaw || undefined,
+      guildId: sessionType === 'guild' ? targetIdRaw : undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
     };

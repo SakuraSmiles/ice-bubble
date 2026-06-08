@@ -97,6 +97,7 @@ export function createDataRouter(collector: SQLiteCollector): Router {
 
             const result = {
                 count: limited.length,
+                max_id: null, // OpenCode 无全局递增 ID
                 max_time_updated: unifiedMessages.length > 0
                     ? Math.max(...unifiedMessages.map(m => m.timestamp.getTime()))
                     : (sinceParam ? parseSince(sinceParam) : collector.getMaxTimeUpdated()),

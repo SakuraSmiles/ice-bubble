@@ -24,6 +24,7 @@ import { createTimelineRouter } from './timeline.js';
 import { createFlowsRouter } from './flows.js';
 import { createSummaryRouter } from './summary.js';
 import { createDetailRouter } from './detail.js';
+import { createChainRouter } from './chain.js';
 
 export function createSessionsRouter(config: SessionsRouterConfig): Router {
   const router = Router();
@@ -33,6 +34,7 @@ export function createSessionsRouter(config: SessionsRouterConfig): Router {
   router.use(createTimelineRouter(config));
   router.use(createFlowsRouter(config));
   router.use(createSummaryRouter(config));
+  router.use(createChainRouter(config));
   router.use(createDetailRouter(config));
 
   return router;

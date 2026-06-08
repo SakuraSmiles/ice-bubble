@@ -27,8 +27,10 @@ function extractMedia(content: string): { cleaned: string; urls: string[] } {
   const urls: string[] = [];
   const lines = content.split('\n');
   const cleanedLines = lines.filter(line => {
-    if (line.startsWith('MEDIA:')) {
-      let url = line.slice(6).trim();
+    if (line.startsWith('MEDIA:') || line.startsWith('[media attached:')) {
+      let url = line.startsWith('MEDIA:')
+        ? line.slice(6).trim()
+        : line.slice(17, -1).trim(); // strip '[media attached:' and trailing ']'
       if (url) {
         // 如果是服务器绝对路径，转为 Admin media API 可访问的相对 URL
         if (url.startsWith('/') && !url.startsWith('http')) {
@@ -49,6 +51,12 @@ const messagesWithMedia = computed(() => {
   return props.group.messages.map(m => {
     const raw = m.clean_content || m.content || '';
     const { cleaned, urls } = extractMedia(raw);
+    // Fix 1: empty agent content with tool calls → show tool summary
+    if (!cleaned.trim() && !urls.length && m.message_type === 'agent') {
+      const toolNames = [...new Set(props.group.toolMsgs.map(tm => props.extractToolName(tm.content)))].slice(0, 2);
+      const fallback = toolNames.length > 0 ? `[工具调用: ${toolNames.join(', ')}]` : '';
+      return { message: m, displayContent: fallback, mediaUrls: urls };
+    }
     return { message: m, displayContent: cleaned, mediaUrls: urls };
   });
 });

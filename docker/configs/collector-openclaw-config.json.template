@@ -1,0 +1,10 @@
+{
+  "api": {
+    "enabled": true,
+    "port": 13110,
+    "host": "0.0.0.0"
+  },
+  "openclaw": {
+    "dataDir": "/home/dabai/.openclaw"
+  }
+}
